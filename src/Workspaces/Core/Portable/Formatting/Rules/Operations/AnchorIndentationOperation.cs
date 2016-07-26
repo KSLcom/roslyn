@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -27,10 +26,10 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             this.EndToken = endToken;
         }
 
-        public SyntaxToken AnchorToken { get; private set; }
-        public TextSpan TextSpan { get; private set; }
+        public SyntaxToken AnchorToken { get; }
+        public TextSpan TextSpan { get; }
 
-        public SyntaxToken StartToken { get; private set; }
-        public SyntaxToken EndToken { get; private set; }
+        public SyntaxToken StartToken { get; }
+        public SyntaxToken EndToken { get; }
     }
 }

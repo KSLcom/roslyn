@@ -12,12 +12,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
     Partial Friend NotInheritable Class LocalRewriter
         Public Overrides Function VisitConversion(node As BoundConversion) As BoundNode
 
-            If Not inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
+            If Not _inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
                 Return Visit(node.Operand)
             End If
 
             If node.Operand.Kind = BoundKind.UserDefinedConversion Then
-                If inExpressionLambda Then
+                If _inExpressionLambda Then
                     Return node.Update(DirectCast(Visit(node.Operand), BoundExpression),
                                        node.ConversionKind,
                                        node.Checked,
@@ -35,11 +35,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Return Visit(DirectCast(node.Operand, BoundUserDefinedConversion).UnderlyingExpression)
             End If
 
-            ' not all nullable conversins have Nullable flag
+            ' not all nullable conversions have Nullable flag
             ' For example   Nothing --> Boolean?  has conversionkind = WideningNothingLiteral
             If (node.Type IsNot Nothing AndAlso node.Type.IsNullableType OrElse
                 node.Operand.Type IsNot Nothing AndAlso node.Operand.Type.IsNullableType) AndAlso
-               Not inExpressionLambda Then
+               Not _inExpressionLambda Then
 
                 Return RewriteNullableConversion(node)
             End If
@@ -90,16 +90,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             ' Set "inExpressionLambda" if we're converting lambda to expression tree.
             Dim returnValue As BoundNode
-            Dim wasInExpressionlambda As Boolean = inExpressionLambda
+            Dim wasInExpressionlambda As Boolean = _inExpressionLambda
             If (node.ConversionKind And (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree)) = (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree) Then
-                inExpressionLambda = True
+                _inExpressionLambda = True
             End If
 
             If node.RelaxationLambdaOpt IsNot Nothing Then
-                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
-                                          node.ConversionKind, node.Checked, node.ExplicitCastInCode,
-                                          node.ConstantValueOpt, node.ConstructorOpt,
-                                          relaxationLambdaOpt:=Nothing, relaxationReceiverPlaceholderOpt:=Nothing, type:=node.Type)
+                returnValue = RewriteLambdaRelaxationConversion(node)
 
             ElseIf node.ConversionKind = ConversionKind.InterpolatedString Then
                 returnValue = RewriteInterpolatedStringConversion(node)
@@ -111,9 +108,91 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 End If
             End If
 
-            inExpressionLambda = wasInExpressionlambda
+            _inExpressionLambda = wasInExpressionlambda
             Return returnValue
         End Function
+
+        Private Function RewriteLambdaRelaxationConversion(node As BoundConversion) As BoundNode
+            Dim returnValue As BoundNode
+
+            If _inExpressionLambda AndAlso
+                 NoParameterRelaxation(node.Operand, node.RelaxationLambdaOpt.LambdaSymbol) Then
+
+                ' COMPAT: skip relaxation in this case. ET can drop the return value of the inner lambda.
+                returnValue = MyBase.VisitConversion(
+                    node.Update(node.Operand,
+                                      node.ConversionKind, node.Checked, node.ExplicitCastInCode,
+                                      node.ConstantValueOpt, node.ConstructorOpt,
+                                      relaxationLambdaOpt:=Nothing, relaxationReceiverPlaceholderOpt:=Nothing, type:=node.Type))
+
+                returnValue = TransformRewrittenConversion(DirectCast(returnValue, BoundConversion))
+            Else
+                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
+                                      node.ConversionKind, node.Checked, node.ExplicitCastInCode,
+                                      node.ConstantValueOpt, node.ConstructorOpt,
+                                      relaxationLambdaOpt:=Nothing, relaxationReceiverPlaceholderOpt:=Nothing, type:=node.Type)
+            End If
+
+            Return returnValue
+        End Function
+
+        Private Function RewriteLambdaRelaxationConversion(node As BoundDirectCast) As BoundNode
+            Dim returnValue As BoundNode
+
+            If _inExpressionLambda AndAlso
+                 NoParameterRelaxation(node.Operand, node.RelaxationLambdaOpt.LambdaSymbol) Then
+
+                ' COMPAT: skip relaxation in this case. ET can drop the return value of the inner lambda.
+                returnValue = MyBase.VisitDirectCast(
+                    node.Update(node.Operand,
+                                      node.ConversionKind, node.SuppressVirtualCalls,
+                                      node.ConstantValueOpt,
+                                      relaxationLambdaOpt:=Nothing, type:=node.Type))
+
+            Else
+                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
+                                      node.ConversionKind, node.SuppressVirtualCalls,
+                                      node.ConstantValueOpt,
+                                      relaxationLambdaOpt:=Nothing, type:=node.Type)
+            End If
+
+            Return returnValue
+        End Function
+
+        Private Function RewriteLambdaRelaxationConversion(node As BoundTryCast) As BoundNode
+            Dim returnValue As BoundNode
+
+            If _inExpressionLambda AndAlso
+                 NoParameterRelaxation(node.Operand, node.RelaxationLambdaOpt.LambdaSymbol) Then
+
+                ' COMPAT: skip relaxation in this case. ET can drop the return value of the inner lambda.
+                returnValue = MyBase.VisitTryCast(
+                    node.Update(node.Operand,
+                                      node.ConversionKind,
+                                      node.ConstantValueOpt,
+                                      relaxationLambdaOpt:=Nothing, type:=node.Type))
+
+            Else
+                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
+                                      node.ConversionKind,
+                                      node.ConstantValueOpt,
+                                      relaxationLambdaOpt:=Nothing, type:=node.Type)
+            End If
+
+            Return returnValue
+        End Function
+
+        Private Shared Function NoParameterRelaxation(from As BoundExpression, toLambda As LambdaSymbol) As Boolean
+            Dim fromLambda As LambdaSymbol = TryCast(from, BoundLambda)?.LambdaSymbol
+
+            ' are we are relaxing for the purpose of dropping return?
+            Return fromLambda IsNot Nothing AndAlso
+                Not fromLambda.IsSub AndAlso
+                toLambda.IsSub AndAlso
+                MethodSignatureComparer.HaveSameParameterTypes(fromLambda.Parameters, Nothing, toLambda.Parameters, Nothing, considerByRef:=True, considerCustomModifiers:=False)
+
+        End Function
+
 
         ' Rewrite Anonymous Delegate conversion into a delegate creation
         Private Function RewriteAnonymousDelegateConversion(node As BoundConversion) As BoundNode
@@ -123,10 +202,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                          node.Type.IsDelegateType() AndAlso
                          node.Type.SpecialType <> SpecialType.System_MulticastDelegate)
 
-            Dim F As New SyntheticBoundNodeFactory(Me.topMethod, Me.currentMethodOrLambda, node.Syntax, Me.compilationState, Me.diagnostics)
+            Dim F As New SyntheticBoundNodeFactory(Me._topMethod, Me._currentMethodOrLambda, node.Syntax, Me._compilationState, Me._diagnostics)
             If (node.Operand.IsDefaultValueConstant) Then
                 Return F.Null(node.Type)
-            ElseIf (Not Me.inExpressionLambda AndAlso CouldPossiblyBeNothing(F, node.Operand)) Then
+            ElseIf (Not Me._inExpressionLambda AndAlso CouldPossiblyBeNothing(F, node.Operand)) Then
                 Dim savedOriginalValue = F.SynthesizedLocal(node.Operand.Type)
                 Dim checkIfNothing = F.ReferenceIsNothing(F.Local(savedOriginalValue, False))
                 Dim conversionIfNothing = F.Null(node.Type)
@@ -164,16 +243,16 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Return False
                 Case BoundKind.Call
                     Dim t = DirectCast(node, BoundCall)
-                    Return t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Delegate__CreateDelegate, True) OrElse
-                        t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Delegate__CreateDelegate4, True) OrElse
-                        t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Reflection_MethodInfo__CreateDelegate, True)
+                    Return Not (t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Delegate__CreateDelegate, True) OrElse
+                                t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Delegate__CreateDelegate4, True) OrElse
+                                t.Method = F.WellKnownMember(Of MethodSymbol)(WellKnownMember.System_Reflection_MethodInfo__CreateDelegate, True))
                 Case Else
                     Return True
             End Select
         End Function
 
         Private Function RewriteNullableConversion(node As BoundConversion) As BoundExpression
-            Debug.Assert(Not inExpressionLambda)
+            Debug.Assert(Not _inExpressionLambda)
 
             Dim rewrittenOperand = DirectCast(Me.Visit(node.Operand), BoundExpression)
 
@@ -217,7 +296,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                     Dim convKind = Conversions.ClassifyConversion(rewrittenOperand.Type, innerTargetType, useSiteDiagnostics).Key
                     Debug.Assert(Conversions.ConversionExists(convKind))
-                    diagnostics.Add(node, useSiteDiagnostics)
+                    _diagnostics.Add(node, useSiteDiagnostics)
                     Return WrapInNullable(
                                     TransformRewrittenConversion(
                                         node.Update(rewrittenOperand,
@@ -246,7 +325,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                         Dim convKind = Conversions.ClassifyDirectCastConversion(unwrappedOperand.Type, resultType, useSiteDiagnostics)
                         Debug.Assert(Conversions.ConversionExists(convKind))
-                        diagnostics.Add(node, useSiteDiagnostics)
+                        _diagnostics.Add(node, useSiteDiagnostics)
                         Return New BoundDirectCast(node.Syntax,
                                                    unwrappedOperand,
                                                    convKind,
@@ -288,16 +367,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         ' converting null
                         Return NullableNull(result.Syntax, resultType)
                     Else
-                        If rewrittenOperand.Kind = BoundKind.LoweredConditionalAccess Then
-                            Dim conditional = DirectCast(rewrittenOperand, BoundLoweredConditionalAccess)
-
-                            If HasValue(conditional.WhenNotNull) AndAlso HasNoValue(conditional.WhenNullOpt) Then
-                                Return conditional.Update(conditional.ReceiverOrCondition,
-                                                          conditional.CaptureReceiver,
-                                                          conditional.PlaceholderId,
-                                                          FinishRewriteNullableConversion(node, resultType, NullableValueOrDefault(conditional.WhenNotNull), Nothing, Nothing, Nothing),
-                                                          NullableNull(result.Syntax, resultType),
-                                                          resultType)
+                        Dim whenNotNull As BoundExpression = Nothing
+                        Dim whenNull As BoundExpression = Nothing
+                        If IsConditionalAccess(rewrittenOperand, whenNotNull, whenNull) Then
+                            If HasValue(whenNotNull) AndAlso HasNoValue(whenNull) Then
+                                Return UpdateConditionalAccess(rewrittenOperand,
+                                                               FinishRewriteNullableConversion(node, resultType, NullableValueOrDefault(whenNotNull), Nothing, Nothing, Nothing),
+                                                               NullableNull(result.Syntax, resultType))
                             End If
                         End If
 
@@ -343,7 +419,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     operand = RewriteConstant(New BoundLiteral(node.Syntax, constantResult, unwrappedResultType), constantResult)
 
                 Else
-                    diagnostics.Add(node, useSiteDiagnostics)
+                    _diagnostics.Add(node, useSiteDiagnostics)
                     operand = TransformRewrittenConversion(
                                 New BoundConversion(node.Syntax,
                                                     operand,
@@ -395,7 +471,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                 Dim convKind = Conversions.ClassifyConversion(operandType, innerTargetType, useSiteDiagnostics).Key
                 Debug.Assert(Conversions.ConversionExists(convKind))
-                diagnostics.Add(node, useSiteDiagnostics)
+                _diagnostics.Add(node, useSiteDiagnostics)
                 Return WrapInNullable(
                             TransformRewrittenConversion(
                                 node.Update(rewrittenOperand,
@@ -420,7 +496,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                 Dim convKind = Conversions.ClassifyDirectCastConversion(rewrittenOperand.Type, resultType, useSiteDiagnostics)
                 Debug.Assert(Conversions.ConversionExists(convKind))
-                diagnostics.Add(node, useSiteDiagnostics)
+                _diagnostics.Add(node, useSiteDiagnostics)
                 Return TransformRewrittenConversion(
                             node.Update(rewrittenOperand,
                                         node.ConversionKind And (Not ConversionKind.Nullable),
@@ -449,7 +525,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                     Dim convKind = Conversions.ClassifyDirectCastConversion(unwrappedOperand.Type, resultType, useSiteDiagnostics)
                     Debug.Assert(Conversions.ConversionExists(convKind))
-                    diagnostics.Add(node, useSiteDiagnostics)
+                    _diagnostics.Add(node, useSiteDiagnostics)
                     Return New BoundDirectCast(node.Syntax,
                                                unwrappedOperand,
                                                convKind,
@@ -463,7 +539,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
                 Dim convKind = Conversions.ClassifyDirectCastConversion(rewrittenOperand.Type, resultType, useSiteDiagnostics)
                 Debug.Assert(Conversions.ConversionExists(convKind))
-                diagnostics.Add(node, useSiteDiagnostics)
+                _diagnostics.Add(node, useSiteDiagnostics)
                 Return New BoundDirectCast(node.Syntax,
                                            rewrittenOperand,
                                            convKind,
@@ -482,7 +558,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ' The structure of the nullable BoundUserDefinedConversion looks like this:
             '    [OPERAND] -> [IN-CONVERSION] -> [CALL] -> [OUT-CONVERSION]
             '
-            '   In-conversion also does unrapping.
+            '   In-conversion also does unwrapping.
             '   Out-conversion also does wrapping.
             '
             ' operand
@@ -591,7 +667,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 #Region "Post-rewrite conversion"
 
         Private Function TransformRewrittenConversion(rewrittenConversion As BoundConversion) As BoundExpression
-            If rewrittenConversion.HasErrors OrElse inExpressionLambda Then
+            If rewrittenConversion.HasErrors OrElse _inExpressionLambda Then
                 Return rewrittenConversion
             End If
 
@@ -645,18 +721,21 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     result = RewriteAsDirectCast(rewrittenConversion)
 
                 ElseIf underlyingTypeFrom.IsStringType() AndAlso
-                     (underlyingTypeTo.IsCharArrayRankOne() OrElse underlyingTypeTo.IsIntrinsicValueType()) Then
+                     (underlyingTypeTo.IsCharSZArray() OrElse underlyingTypeTo.IsIntrinsicValueType()) Then
                     result = RewriteFromStringConversion(rewrittenConversion, underlyingTypeFrom, underlyingTypeTo)
 
                 ElseIf underlyingTypeTo.IsStringType() AndAlso
-                    (underlyingTypeFrom.IsCharArrayRankOne() OrElse underlyingTypeFrom.IsIntrinsicValueType()) Then
+                    (underlyingTypeFrom.IsCharSZArray() OrElse underlyingTypeFrom.IsIntrinsicValueType()) Then
                     result = RewriteToStringConversion(rewrittenConversion, underlyingTypeFrom, underlyingTypeTo)
 
-                ElseIf underlyingTypeFrom.IsReferenceType AndAlso underlyingTypeTo.IsCharArrayRankOne() Then
+                ElseIf underlyingTypeFrom.IsReferenceType AndAlso underlyingTypeTo.IsCharSZArray() Then
                     result = RewriteReferenceTypeToCharArrayRankOneConversion(rewrittenConversion, underlyingTypeFrom, underlyingTypeTo)
 
                 ElseIf underlyingTypeTo.IsReferenceType Then
                     result = RewriteAsDirectCast(rewrittenConversion)
+
+                ElseIf underlyingTypeFrom.IsReferenceType AndAlso underlyingTypeTo.IsIntrinsicValueType() Then
+                    result = RewriteFromObjectConversion(rewrittenConversion, Compilation.GetSpecialType(SpecialType.System_Object), underlyingTypeTo)
 
                 Else
                     Debug.Assert(underlyingTypeTo.IsValueType)
@@ -686,11 +765,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 If constr.ParameterCount = 0 Then
 
                     '  check 'constr' 
-                    If AccessCheck.IsSymbolAccessible(constr, Me.topMethod.ContainingType, typeTo, useSiteDiagnostics:=Nothing) Then
+                    If AccessCheck.IsSymbolAccessible(constr, Me._topMethod.ContainingType, typeTo, useSiteDiagnostics:=Nothing) Then
                         ' before we use constructor symbol we need to report use site error if any
                         Dim useSiteError = constr.GetUseSiteErrorInfo()
                         If useSiteError IsNot Nothing Then
-                            ReportDiagnostic(node, useSiteError, Me.diagnostics)
+                            ReportDiagnostic(node, useSiteError, Me._diagnostics)
                         End If
 
                         ' update bound node
@@ -712,12 +791,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             ' This point should not be reachable, because if there is no constructor in the 
             ' loaded value type, we should have generated a synthesized constructor.
-            Debug.Assert(False)
-            Return node
+            Throw ExceptionUtilities.Unreachable
         End Function
 
         Private Function RewriteReferenceTypeToCharArrayRankOneConversion(node As BoundConversion, typeFrom As TypeSymbol, typeTo As TypeSymbol) As BoundExpression
-            Debug.Assert(typeFrom.IsReferenceType AndAlso typeTo.IsCharArrayRankOne())
+            Debug.Assert(typeFrom.IsReferenceType AndAlso typeTo.IsCharSZArray())
 
             Dim result As BoundExpression = node
             Const member As WellKnownMember = WellKnownMember.Microsoft_VisualBasic_CompilerServices_Conversions__ToCharArrayRankOneObject
@@ -737,7 +815,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                   operand,
                                                   Conversions.ClassifyDirectCastConversion(operand.Type, objectType, useSiteDiagnostics),
                                                   objectType)
-                    diagnostics.Add(node, useSiteDiagnostics)
+                    _diagnostics.Add(node, useSiteDiagnostics)
                 End If
 
                 result = New BoundCall(node.Syntax, memberSymbol, Nothing, Nothing,
@@ -749,7 +827,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return result
         End Function
 
-        Private Function RewriteAsDirectCast(node As BoundConversion) As BoundExpression
+        Private Shared Function RewriteAsDirectCast(node As BoundConversion) As BoundExpression
 #If DEBUG Then
             Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
             Debug.Assert(node.Operand.IsNothingLiteral() OrElse
@@ -805,6 +883,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                     Dim operand = node.Operand
 
+                    If Not operand.Type.IsObjectType() Then
+                        Debug.Assert(typeFrom.IsObjectType())
+                        Debug.Assert(operand.Type.IsReferenceType)
+                        Debug.Assert(underlyingTypeTo.IsIntrinsicValueType())
+
+                        Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
+                        operand = New BoundDirectCast(operand.Syntax,
+                                                      operand,
+                                                      Conversions.ClassifyDirectCastConversion(operand.Type, typeFrom, useSiteDiagnostics),
+                                                      typeFrom)
+                        _diagnostics.Add(node, useSiteDiagnostics)
+                    End If
+
                     Debug.Assert(memberSymbol.ReturnType.IsSameTypeIgnoringCustomModifiers(underlyingTypeTo))
                     Debug.Assert(memberSymbol.Parameters(0).Type Is typeFrom)
 
@@ -838,7 +929,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim result As BoundExpression = node
             Dim memberSymbol As MethodSymbol = Nothing
 
-            If underlyingTypeFrom.IsCharArrayRankOne() Then
+            If underlyingTypeFrom.IsCharSZArray() Then
                 Const memberId As SpecialMember = SpecialMember.System_String__CtorSZArrayChar
                 memberSymbol = DirectCast(ContainingAssembly.GetSpecialTypeMember(memberId), MethodSymbol)
 
@@ -944,7 +1035,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Case SpecialType.System_DateTime : member = WellKnownMember.Microsoft_VisualBasic_CompilerServices_Conversions__ToDateString
                 Case SpecialType.System_Char : member = WellKnownMember.Microsoft_VisualBasic_CompilerServices_Conversions__ToCharString
                 Case Else
-                    If underlyingTypeTo.IsCharArrayRankOne() Then
+                    If underlyingTypeTo.IsCharSZArray() Then
                         member = WellKnownMember.Microsoft_VisualBasic_CompilerServices_Conversions__ToCharArrayRankOneString
                     End If
             End Select
@@ -1172,26 +1263,24 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 #Region "DirectCast"
 
         Public Overrides Function VisitDirectCast(node As BoundDirectCast) As BoundNode
-            If Not inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
+            If Not _inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
                 Return VisitExpressionNode(node.Operand)
             End If
 
             ' Set "inExpressionLambda" if we're converting lambda to expression tree.
             Dim returnValue As BoundNode
-            Dim wasInExpressionlambda As Boolean = inExpressionLambda
+            Dim wasInExpressionlambda As Boolean = _inExpressionLambda
             If (node.ConversionKind And (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree)) = (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree) Then
-                inExpressionLambda = True
+                _inExpressionLambda = True
             End If
 
             If node.RelaxationLambdaOpt Is Nothing Then
                 returnValue = MyBase.VisitDirectCast(node)
             Else
-                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
-                                   node.ConversionKind, node.SuppressVirtualCalls, node.ConstantValueOpt,
-                                   relaxationLambdaOpt:=Nothing, type:=node.Type)
+                returnValue = RewriteLambdaRelaxationConversion(node)
             End If
 
-            inExpressionLambda = wasInExpressionlambda
+            _inExpressionLambda = wasInExpressionlambda
             Return returnValue
         End Function
 
@@ -1200,15 +1289,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 #Region "TryCast"
 
         Public Overrides Function VisitTryCast(node As BoundTryCast) As BoundNode
-            If Not inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
+            If Not _inExpressionLambda AndAlso Conversions.IsIdentityConversion(node.ConversionKind) Then
                 Return Visit(node.Operand)
             End If
 
             ' Set "inExpressionLambda" if we're converting lambda to expression tree.
             Dim returnValue As BoundNode
-            Dim wasInExpressionlambda As Boolean = inExpressionLambda
+            Dim wasInExpressionlambda As Boolean = _inExpressionLambda
             If (node.ConversionKind And (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree)) = (ConversionKind.Lambda Or ConversionKind.ConvertedToExpressionTree) Then
-                inExpressionLambda = True
+                _inExpressionLambda = True
             End If
 
             If node.RelaxationLambdaOpt Is Nothing Then
@@ -1238,12 +1327,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 End If
 
             Else
-                returnValue = node.Update(VisitExpressionNode(node.RelaxationLambdaOpt),
-                                       node.ConversionKind, node.ConstantValueOpt,
-                                       relaxationLambdaOpt:=Nothing, type:=node.Type)
+                returnValue = RewriteLambdaRelaxationConversion(node)
             End If
 
-            inExpressionLambda = wasInExpressionlambda
+            _inExpressionLambda = wasInExpressionlambda
             Return returnValue
         End Function
 

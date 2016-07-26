@@ -142,11 +142,11 @@
     <comment>"C#" node help text in profile Import/Export.</comment>
   </data>
   <data name="306" xml:space="preserve">
-    <value>Enter outlining mode when files open;Underline errors in the editor;Turn live semantic errors on or off;Turn highlight references on or off;Change refactoring settings;Generate XML documentation comments;Surround generated code with #region;Change the settings for Organize Usings</value>
+    <value>Highlight references to symbol under cursor;Highlight related keywords under cursor;Enter outlining mode when files open;Show procedure line separators;Generate XML documentation comments;Show diagnostics for closed files;Show preview for rename tracking;Place 'System' directives first when sorting usings;Don't put ref or out on custom structs</value>
     <comment>C# Advanced options page keywords</comment>
   </data>
   <data name="307" xml:space="preserve">
-    <value>Automatically format completed statement on semicolon;Automatically format completed block on brace;Automatically format on paste</value>
+    <value>Automatically format statement on semicolon;Automatically format block on brace;Automatically format on paste</value>
     <comment>C# Formatting &gt; General options page keywords</comment>
   </data>
   <data name="308" xml:space="preserve">
@@ -171,11 +171,11 @@
   </data>
   <data name="107" xml:space="preserve">
     <value>Formatting</value>
-    <comment>"Formatting" node under Tools &gt; Options, Text Editor, C#.</comment>
+    <comment>"Formatting" category node under Tools &gt; Options, Text Editor, C#, Code Style (no corresponding keywords)</comment>
   </data>
   <data name="108" xml:space="preserve">
     <value>General</value>
-    <comment>"General" node under Tools &gt; Options, Text Editor, C#, Formatting.</comment>
+    <comment>"General" node under Tools &gt; Options, Text Editor, C# (used for Code Style and Formatting)</comment>
   </data>
   <data name="109" xml:space="preserve">
     <value>Indentation</value>
@@ -202,10 +202,17 @@
   </data>
   <data name="114" xml:space="preserve">
     <value>Code Style</value>
-    <comment>"Code Style" node under Tools &gt; Options, Text Editor, C#.</comment>
+    <comment>"Code Style" category node under Tools &gt; Options, Text Editor, C# (no corresponding keywords)</comment>
   </data>
   <data name="313" xml:space="preserve">
-    <value>Style;Qualify;This;Code Style</value>
+    <value>Style;Qualify;This;Code Style;var;member access;locals;parameters;var preferences;predefined type;framework type;built-in types;when variable type is apparent;elsewhere;qualify field access;qualify property access; qualify method access;qualify event access;</value>
     <comment>C# Code Style options page keywords</comment>
+  </data>
+  <data name="115" xml:space="preserve">
+    <value>Naming</value>
+  </data>
+  <data name="314" xml:space="preserve">
+    <value>Naming Style;Name Styles;Naming Rule;Naming Conventions</value>
+    <comment>C# Naming Style options page keywords</comment>
   </data>
 </root>

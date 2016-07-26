@@ -2,17 +2,15 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Editing;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.CodeGeneration
 {
     internal class CodeGenerationFieldSymbol : CodeGenerationSymbol, IFieldSymbol
     {
-        public ITypeSymbol Type { get; private set; }
-        public object ConstantValue { get; private set; }
-        public bool HasConstantValue { get; private set; }
+        public ITypeSymbol Type { get; }
+        public object ConstantValue { get; }
+        public bool HasConstantValue { get; }
 
         public CodeGenerationFieldSymbol(
             INamedTypeSymbol containingType,

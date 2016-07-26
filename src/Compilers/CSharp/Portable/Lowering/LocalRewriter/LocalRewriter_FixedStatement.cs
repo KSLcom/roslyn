@@ -170,7 +170,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 _lazyUnmatchedLabelCache = new Dictionary<BoundNode, HashSet<LabelSymbol>>();
             }
 
-            HashSet<LabelSymbol> unmatched = UnmatchedGotoFinder.Find(node, _lazyUnmatchedLabelCache);
+            HashSet<LabelSymbol> unmatched = UnmatchedGotoFinder.Find(node, _lazyUnmatchedLabelCache, RecursionDepth);
 
             _lazyUnmatchedLabelCache.Add(node, unmatched);
 
@@ -199,25 +199,26 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 if (fixedInitializer.Expression.Type.SpecialType == SpecialType.System_String)
                 {
-                    return InitializeFixedStatementStringLocal(localSymbol, fixedInitializer, factory, out temp, out localToClear);
+                    return InitializeFixedStatementStringLocal(localDecl, localSymbol, fixedInitializer, factory, out temp, out localToClear);
                 }
                 else
                 {
                     Debug.Assert(fixedInitializer.Expression.Type.IsArray());
 
                     localToClear = localSymbol;
-                    return InitializeFixedStatementArrayLocal(localSymbol, fixedInitializer, factory, out temp);
+                    return InitializeFixedStatementArrayLocal(localDecl, localSymbol, fixedInitializer, factory, out temp);
                 }
             }
             else
             {
                 temp = null;
                 localToClear = localSymbol;
-                return RewriteLocalDeclaration(localDecl.Syntax, localSymbol, VisitExpression(initializer));
+                return RewriteLocalDeclaration(localDecl, localDecl.Syntax, localSymbol, VisitExpression(initializer));
             }
         }
 
         private BoundStatement InitializeFixedStatementStringLocal(
+            BoundLocalDeclaration localDecl,
             LocalSymbol localSymbol,
             BoundFixedLocalCollectionInitializer fixedInitializer,
             SyntheticBoundNodeFactory factory,
@@ -245,7 +246,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 factory.Local(stringTemp),
                 fixedInitializer.ElementPointerTypeConversion);
 
-            BoundStatement localInit = AddLocalDeclarationSequencePointIfNecessary(declarator, localSymbol,
+            BoundStatement localInit = InstrumentLocalDeclarationIfNecessary(localDecl, localSymbol,
                 factory.Assignment(factory.Local(localSymbol), convertedStringTemp));
 
             BoundExpression notNullCheck = MakeNullCheck(factory.Syntax, factory.Local(localSymbol), BinaryOperatorKind.NotEqual);
@@ -269,6 +270,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         private BoundStatement InitializeFixedStatementArrayLocal(
+            BoundLocalDeclaration localDecl,
             LocalSymbol localSymbol,
             BoundFixedLocalCollectionInitializer fixedInitializer,
             SyntheticBoundNodeFactory factory,
@@ -289,7 +291,6 @@ namespace Microsoft.CodeAnalysis.CSharp
             arrayTemp = factory.SynthesizedLocal(initializerType);
             ArrayTypeSymbol arrayType = (ArrayTypeSymbol)arrayTemp.Type;
             TypeSymbol arrayElementType = arrayType.ElementType;
-            int arrayRank = arrayType.Rank;
 
             // NOTE: we pin the pointer, not the array.
             Debug.Assert(!arrayTemp.IsPinned);
@@ -303,7 +304,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             BoundExpression lengthCall;
 
-            if (arrayRank == 1)
+            if (arrayType.IsSZArray)
             {
                 lengthCall = factory.ArrayLength(factory.Local(arrayTemp));
             }
@@ -348,7 +349,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             BoundStatement localInit = factory.ExpressionStatement(
                 new BoundConditionalOperator(factory.Syntax, condition, consequenceAssignment, alternativeAssignment, ConstantValue.NotAvailable, localType));
 
-            return AddLocalDeclarationSequencePointIfNecessary(fixedInitializer.Syntax.Parent.Parent, localSymbol, localInit);
+            return InstrumentLocalDeclarationIfNecessary(localDecl, localSymbol, localInit);
         }
     }
 }

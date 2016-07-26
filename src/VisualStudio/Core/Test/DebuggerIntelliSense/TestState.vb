@@ -1,20 +1,20 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-Imports System.ComponentModel.Composition.Hosting
 Imports System.Threading
+Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Completion
-Imports Microsoft.CodeAnalysis.Completion.Providers
-Imports Microsoft.CodeAnalysis.Completion.Rules
 Imports Microsoft.CodeAnalysis.Editor
 Imports Microsoft.CodeAnalysis.Editor.CommandHandlers
 Imports Microsoft.CodeAnalysis.Editor.Commands
+Imports Microsoft.CodeAnalysis.Editor.Host
 Imports Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
 Imports Microsoft.CodeAnalysis.Editor.UnitTests
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.IntelliSense
 Imports Microsoft.CodeAnalysis.Host.Mef
 Imports Microsoft.CodeAnalysis.Shared.Extensions
 Imports Microsoft.CodeAnalysis.Shared.TestHooks
+Imports Microsoft.CodeAnalysis.SignatureHelp
 Imports Microsoft.CodeAnalysis.Text.Shared.Extensions
 Imports Microsoft.VisualStudio.LanguageServices.CSharp.LanguageService
 Imports Microsoft.VisualStudio.LanguageServices.Implementation.DebuggerIntelliSense
@@ -22,7 +22,6 @@ Imports Microsoft.VisualStudio.LanguageServices.Implementation.Extensions
 Imports Microsoft.VisualStudio.LanguageServices.VisualBasic
 Imports Microsoft.VisualStudio.Text
 Imports Microsoft.VisualStudio.Text.BraceCompletion
-Imports Microsoft.VisualStudio.Text.BraceCompletion.Implementation
 Imports Microsoft.VisualStudio.Text.Editor
 Imports Microsoft.VisualStudio.Text.Operations
 Imports Microsoft.VisualStudio.TextManager
@@ -38,13 +37,13 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
         Friend ReadOnly CompletionCommandHandler As CompletionCommandHandler
         Friend ReadOnly IntelliSenseCommandHandler As IntelliSenseCommandHandler
 
-        Private context As AbstractDebuggerIntelliSenseContext
+        Private _context As AbstractDebuggerIntelliSenseContext
 
         Friend Property CurrentSignatureHelpPresenterSession As TestSignatureHelpPresenterSession Implements IIntelliSenseTestState.CurrentSignatureHelpPresenterSession
         Friend Property CurrentCompletionPresenterSession As TestCompletionPresenterSession Implements IIntelliSenseTestState.CurrentCompletionPresenterSession
 
         Private Sub New(workspaceElement As XElement,
-                        extraCompletionProviders As IEnumerable(Of Lazy(Of ICompletionProvider, OrderableLanguageMetadata)),
+                        extraCompletionProviders As IEnumerable(Of Lazy(Of CompletionProvider, OrderableLanguageAndRoleMetadata)),
                         extraSignatureHelpProviders As IEnumerable(Of Lazy(Of ISignatureHelpProvider, OrderableLanguageMetadata)),
                         isImmediateWindow As Boolean)
 
@@ -58,20 +57,19 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
             Dim languageServices = Me.Workspace.CurrentSolution.Projects.First().LanguageServices
             Dim language = languageServices.Language
 
-            Dim completionProviders = GetExports(Of ICompletionProvider, OrderableLanguageMetadata)() _
-                .Where(Function(f) f.Metadata.Language = language) _
-                .Concat(extraCompletionProviders) _
-                .ToList()
+            If extraCompletionProviders IsNot Nothing Then
+                Dim completionService = DirectCast(languageServices.GetService(Of CompletionService), CommonCompletionService)
+                completionService.SetTestProviders(extraCompletionProviders.Select(Function(lz) lz.Value).ToList())
+            End If
 
             Me.AsyncCompletionService = New AsyncCompletionService(
                 GetService(Of IEditorOperationsFactoryService)(),
                 UndoHistoryRegistry,
                 GetService(Of IInlineRenameService)(),
+                GetService(Of IWaitIndicator)(),
                 New TestCompletionPresenter(Me),
                 GetExports(Of IAsynchronousOperationListener, FeatureMetadata)(),
-                GetExports(Of ICompletionRules, OrderableLanguageMetadata)(),
-                completionProviders,
-                GetExports(Of IBraceCompletionSessionProvider, IBraceCompletionMetadata)())
+                GetExports(Of IBraceCompletionSessionProvider, BraceCompletionMetadata)())
 
             Me.CompletionCommandHandler = New CompletionCommandHandler(Me.AsyncCompletionService)
 
@@ -83,8 +81,6 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
 
             Me.IntelliSenseCommandHandler = New IntelliSenseCommandHandler(CompletionCommandHandler, SignatureHelpCommandHandler, Nothing)
 
-            languageServices.GetService(Of ICompletionService).ClearMRUCache()
-
             Dim spanDocument = Workspace.Documents.First(Function(x) x.SelectedSpans.Any())
             Dim statementSpan = spanDocument.SelectedSpans.First()
             Dim span = New Interop.TextSpan() {statementSpan.ToSnapshotSpan(spanDocument.GetTextBuffer().CurrentSnapshot).ToVsTextSpan()}
@@ -92,7 +88,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
             Dim componentModel = New MockComponentModel(Workspace.ExportProvider)
 
             If language = LanguageNames.CSharp Then
-                context = New CSharpDebuggerIntelliSenseContext(
+                _context = New CSharpDebuggerIntelliSenseContext(
                     Workspace.Projects.First().Documents.First().GetTextView(),
                     Workspace.Projects.First().Documents.Last().GetTextBuffer(),
                     span,
@@ -100,7 +96,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
                     isImmediateWindow)
             Else
                 ' VB
-                context = New VisualBasicDebuggerIntelliSenseContext(
+                _context = New VisualBasicDebuggerIntelliSenseContext(
                     Workspace.Projects.First().Documents.First().GetTextView(),
                     Workspace.Projects.First().Documents.Last().GetTextBuffer(),
                     span,
@@ -108,22 +104,22 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
                     isImmediateWindow)
             End If
 
-            context.TryInitialize()
+            _context.TryInitialize()
         End Sub
 
         Public Overrides ReadOnly Property TextView As ITextView
             Get
-                Return context.DebuggerTextView
+                Return _context.DebuggerTextView
             End Get
         End Property
 
         Public Overrides ReadOnly Property SubjectBuffer As ITextBuffer
             Get
-                Return context.Buffer
+                Return _context.Buffer
             End Get
         End Property
 
-        ReadOnly Property IsImmediateWindow As Boolean
+        Public ReadOnly Property IsImmediateWindow As Boolean
             Get
                 Return False
             End Get
@@ -132,11 +128,11 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
         Public Shared Function CreateVisualBasicTestState(
                 documentElement As XElement,
                 isImmediateWindow As Boolean,
-                Optional extraCompletionProviders As ICompletionProvider() = Nothing,
+                Optional extraCompletionProviders As CompletionProvider() = Nothing,
                 Optional extraSignatureHelpProviders As ISignatureHelpProvider() = Nothing) As TestState
 
             Return New TestState(documentElement,
-                CreateLazyProviders(extraCompletionProviders, LanguageNames.VisualBasic),
+                CreateLazyProviders(extraCompletionProviders, LanguageNames.VisualBasic, roles:=Nothing),
                 CreateLazyProviders(extraSignatureHelpProviders, LanguageNames.VisualBasic),
                 isImmediateWindow)
         End Function
@@ -144,25 +140,14 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
         Public Shared Function CreateCSharpTestState(
                 workspaceElement As XElement,
                 isImmediateWindow As Boolean,
-                Optional extraCompletionProviders As ICompletionProvider() = Nothing,
+                Optional extraCompletionProviders As CompletionProvider() = Nothing,
                 Optional extraSignatureHelpProviders As ISignatureHelpProvider() = Nothing) As TestState
 
             Return New TestState(
                 workspaceElement,
-                CreateLazyProviders(extraCompletionProviders, LanguageNames.CSharp),
+                CreateLazyProviders(extraCompletionProviders, LanguageNames.CSharp, roles:=Nothing),
                 CreateLazyProviders(extraSignatureHelpProviders, LanguageNames.CSharp),
                 isImmediateWindow)
-        End Function
-
-        Private Shared Function CreateLazyProviders(Of TProvider)(
-                providers As TProvider(),
-                languageName As String) As IEnumerable(Of Lazy(Of TProvider, OrderableLanguageMetadata))
-            If providers Is Nothing Then
-                Return {}
-            End If
-
-            Return providers.Select(Function(p) New Lazy(Of TProvider, OrderableLanguageMetadata)(
-                                        Function() p, New TestOrderableLanguageMetadata(languageName), True))
         End Function
 
 #Region "IntelliSense Operations"
@@ -190,7 +175,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
         Public Overloads Sub SendReturn()
             Dim handler = DirectCast(CompletionCommandHandler, ICommandHandler(Of ReturnKeyCommandArgs))
             MyBase.SendReturn(Sub(a, n) handler.ExecuteCommand(a, n), Sub() EditorOperations.InsertNewLine())
-            Me.context.RebuildSpans()
+            Me._context.RebuildSpans()
         End Sub
 
         Public Overloads Sub SendPageUp()
@@ -208,60 +193,60 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
             MyBase.SendCommitUniqueCompletionListItem(Sub(a, n) handler.ExecuteCommand(a, n), Sub() Return)
         End Sub
 
-        Public Overloads Sub SendSelectCompletionItemThroughPresenterSession(item As CompletionItem)
-            WaitForAsynchronousOperations()
+        Public Overloads Sub SendSelectCompletionItemThroughPresenterSession(item As PresentationItem)
+            AssertNoAsynchronousOperationsRunning()
             CurrentCompletionPresenterSession.SetSelectedItem(item)
         End Sub
 
-        Public Sub AssertNoCompletionSession(Optional block As Boolean = True)
+        Public Async Function AssertNoCompletionSession(Optional block As Boolean = True) As Task
             If block Then
-                WaitForAsynchronousOperations()
+                Await WaitForAsynchronousOperationsAsync()
             End If
 
             Assert.Null(Me.CurrentCompletionPresenterSession)
-        End Sub
+        End Function
 
-        Public Sub AssertCompletionSession()
-            WaitForAsynchronousOperations()
+        Public Async Function AssertCompletionSession() As Task
+            Await WaitForAsynchronousOperationsAsync()
             Assert.NotNull(Me.CurrentCompletionPresenterSession)
-        End Sub
+        End Function
 
-        Public Sub AssertCompletionItemsContainAll(ParamArray displayTexts As String())
-            WaitForAsynchronousOperations()
+        Public Async Function AssertCompletionItemsContainAll(ParamArray displayTexts As String()) As Task
+            Await WaitForAsynchronousOperationsAsync()
 
             If Me.CurrentCompletionPresenterSession Is Nothing Then
                 Assert.False(True, "No completion session active")
             End If
 
             For Each displayText In displayTexts
-                If Not CurrentCompletionPresenterSession.CompletionItems.Any(Function(i) i.DisplayText = displayText) Then
+                If Not CurrentCompletionPresenterSession.PresentationItems.Any(Function(i) i.Item.DisplayText = displayText) Then
                     Assert.False(True, "Didn't find '" & displayText & "' in completion.")
                 End If
             Next
-        End Sub
+        End Function
 
-        Public Sub AssertCompletionItemsContainNone(ParamArray displayTexts As String())
-            WaitForAsynchronousOperations()
+        Public Async Function AssertCompletionItemsContainNone(ParamArray displayTexts As String()) As Task
+            Await WaitForAsynchronousOperationsAsync()
 
             If Me.CurrentCompletionPresenterSession Is Nothing Then
                 Assert.False(True, "No completion session active")
             End If
 
             For Each displayText In displayTexts
-                If CurrentCompletionPresenterSession.CompletionItems.Any(Function(i) i.DisplayText = displayText) Then
+                If CurrentCompletionPresenterSession.PresentationItems.Any(Function(i) i.Item.DisplayText = displayText) Then
                     Assert.False(True, "Found '" & displayText & "' in completion.")
                 End If
             Next
-        End Sub
+        End Function
 
-        Public Sub AssertSelectedCompletionItem(
+        Public Async Function AssertSelectedCompletionItem(
             Optional displayText As String = Nothing,
             Optional description As String = Nothing,
             Optional isSoftSelected As Boolean? = Nothing,
             Optional isHardSelected As Boolean? = Nothing
-        )
+        ) As Task
 
-            WaitForAsynchronousOperations()
+            Await WaitForAsynchronousOperationsAsync()
             If isSoftSelected.HasValue Then
                 Assert.Equal(isSoftSelected.Value, Me.CurrentCompletionPresenterSession.IsSoftSelected)
             End If
@@ -271,7 +256,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
             End If
 
             If displayText IsNot Nothing Then
-                Assert.Equal(displayText, Me.CurrentCompletionPresenterSession.SelectedItem.DisplayText)
+                Assert.Equal(displayText, Me.CurrentCompletionPresenterSession.SelectedItem.Item.DisplayText)
             End If
 
 #If False Then
@@ -281,9 +266,11 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
 #End If
 
             If description IsNot Nothing Then
-                Assert.Equal(description, Me.CurrentCompletionPresenterSession.SelectedItem.GetDescriptionAsync().Result.GetFullText())
+                Dim document = Me.Workspace.CurrentSolution.Projects.First().Documents.First()
+                Dim itemDescription = Await Me.CurrentCompletionPresenterSession.SelectedItem.GetDescriptionAsync(document, CancellationToken.None)
+                Assert.Equal(description, itemDescription.Text)
             End If
-        End Sub
+        End Function
 
 #End Region
 
@@ -309,22 +296,22 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
         End Sub
 
         Public Sub SendSelectSignatureHelpItemThroughPresenterSession(item As SignatureHelpItem)
-            WaitForAsynchronousOperations()
+            AssertNoAsynchronousOperationsRunning()
             CurrentSignatureHelpPresenterSession.SetSelectedItem(item)
         End Sub
 
-        Public Sub AssertNoSignatureHelpSession(Optional block As Boolean = True)
+        Public Async Function AssertNoSignatureHelpSession(Optional block As Boolean = True) As Task
             If block Then
-                WaitForAsynchronousOperations()
+                Await WaitForAsynchronousOperationsAsync()
             End If
 
             Assert.Null(Me.CurrentSignatureHelpPresenterSession)
-        End Sub
+        End Function
 
-        Public Sub AssertSignatureHelpSession()
-            WaitForAsynchronousOperations()
+        Public Async Function AssertSignatureHelpSession() As Task
+            Await WaitForAsynchronousOperationsAsync()
             Assert.NotNull(Me.CurrentSignatureHelpPresenterSession)
-        End Sub
+        End Function
 
         Private Function GetDisplayText(item As SignatureHelpItem, selectedParameter As Integer) As String
             Dim suffix = If(selectedParameter < item.Parameters.Count,
@@ -340,33 +327,33 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
                 suffix)
         End Function
 
-        Private Function GetDisplayText(parts As IEnumerable(Of SymbolDisplayPart)) As String
+        Private Function GetDisplayText(parts As IEnumerable(Of TaggedText)) As String
             Return String.Join(String.Empty, parts.Select(Function(p) p.ToString()))
         End Function
 
         Public Function SignatureHelpItemsContainsAll(displayText As String()) As Boolean
-            WaitForAsynchronousOperations()
+            AssertNoAsynchronousOperationsRunning()
             Return displayText.All(Function(v) CurrentSignatureHelpPresenterSession.SignatureHelpItems.Any(
                                        Function(i) GetDisplayText(i, CurrentSignatureHelpPresenterSession.SelectedParameter.Value) = v))
         End Function
 
         Public Function SignatureHelpItemsContainsAny(displayText As String()) As Boolean
-            WaitForAsynchronousOperations()
+            AssertNoAsynchronousOperationsRunning()
             Return displayText.Any(Function(v) CurrentSignatureHelpPresenterSession.SignatureHelpItems.Any(
                                        Function(i) GetDisplayText(i, CurrentSignatureHelpPresenterSession.SelectedParameter.Value) = v))
         End Function
 
-        Sub AssertSelectedSignatureHelpItem(Optional displayText As String = Nothing,
+        Public Async Function AssertSelectedSignatureHelpItem(Optional displayText As String = Nothing,
                                Optional documentation As String = Nothing,
-                               Optional selectedParameter As String = Nothing)
-            WaitForAsynchronousOperations()
+                               Optional selectedParameter As String = Nothing) As Task
+            Await WaitForAsynchronousOperationsAsync()
 
             If displayText IsNot Nothing Then
                 Assert.Equal(displayText, GetDisplayText(Me.CurrentSignatureHelpPresenterSession.SelectedItem, Me.CurrentSignatureHelpPresenterSession.SelectedParameter.Value))
             End If
 
             If documentation IsNot Nothing Then
-                Assert.Equal(documentation, Me.CurrentSignatureHelpPresenterSession.SelectedItem.DocumenationFactory(CancellationToken.None).GetFullText())
+                Assert.Equal(documentation, Me.CurrentSignatureHelpPresenterSession.SelectedItem.DocumentationFactory(CancellationToken.None).GetFullText())
             End If
 
             If selectedParameter IsNot Nothing Then
@@ -374,10 +361,10 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.DebuggerIntelliSense
                     Me.CurrentSignatureHelpPresenterSession.SelectedItem.Parameters(
                         Me.CurrentSignatureHelpPresenterSession.SelectedParameter.Value).DisplayParts))
             End If
-        End Sub
+        End Function
 #End Region
 
-        Function GetCurrentViewLineText() As Object
+        Public Function GetCurrentViewLineText() As String
             Return Me.TextView.TextViewLines.Last().Extent.GetText()
         End Function
 

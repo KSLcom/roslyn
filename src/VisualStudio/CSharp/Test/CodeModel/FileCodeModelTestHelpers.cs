@@ -1,19 +1,14 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.ExceptionServices;
-using System.Threading;
-using Microsoft.CodeAnalysis;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
-using Microsoft.CodeAnalysis.FindSymbols;
-using Microsoft.VisualStudio.ComponentModelHost;
-using Microsoft.VisualStudio.LanguageServices;
 using Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel;
-using Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectBrowser.Lists;
-using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
+using Microsoft.VisualStudio.LanguageServices.Implementation.Interop;
 using Microsoft.VisualStudio.LanguageServices.UnitTests;
+using static Microsoft.VisualStudio.LanguageServices.UnitTests.CodeModel.CodeModelTestHelpers;
 
 namespace Microsoft.VisualStudio.LanguageServices.CSharp.UnitTests.CodeModel
 {
@@ -25,9 +20,9 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.UnitTests.CodeModel
         // finalizer complaining we didn't clean it up. Catching AVs is of course not safe, but this is balancing
         // "probably not crash" as an improvement over "will crash when the finalizer throws."
         [HandleProcessCorruptedStateExceptions]
-        public static Tuple<TestWorkspace, EnvDTE.FileCodeModel> CreateWorkspaceAndFileCodeModel(string file)
+        public static async Task<Tuple<TestWorkspace, EnvDTE.FileCodeModel>> CreateWorkspaceAndFileCodeModelAsync(string file)
         {
-            var workspace = CSharpWorkspaceFactory.CreateWorkspaceFromFile(file, exportProvider: VisualStudioTestExportProvider.ExportProvider);
+            var workspace = await TestWorkspace.CreateCSharpAsync(file, exportProvider: VisualStudioTestExportProvider.ExportProvider);
 
             try
             {
@@ -36,6 +31,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.UnitTests.CodeModel
 
                 var componentModel = new MockComponentModel(workspace.ExportProvider);
                 var serviceProvider = new MockServiceProvider(componentModel);
+                WrapperPolicy.s_ComWrapperFactory = MockComWrapperFactory.Instance;
 
                 var visualStudioWorkspaceMock = new MockVisualStudioWorkspace(workspace);
 
@@ -50,26 +46,6 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.UnitTests.CodeModel
                 // We threw during creation of the FileCodeModel. Make sure we clean up our workspace or else we leak it
                 workspace.Dispose();
                 throw;
-            }
-        }
-
-        public class MockServiceProvider : IServiceProvider
-        {
-            private readonly MockComponentModel _componentModel;
-
-            public MockServiceProvider(MockComponentModel componentModel)
-            {
-                _componentModel = componentModel;
-            }
-
-            public object GetService(Type serviceType)
-            {
-                if (serviceType == typeof(SComponentModel))
-                {
-                    return _componentModel;
-                }
-
-                throw new NotImplementedException();
             }
         }
     }

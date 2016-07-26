@@ -58,7 +58,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Colle
             var parentElement = (AbstractCodeElement)this.Parent;
 
             var nodesBuilder = ImmutableArray.CreateBuilder<SyntaxNode>();
-            nodesBuilder.AddRange(CodeModelService.GetFlattenedMemberNodes(node));
+            nodesBuilder.AddRange(CodeModelService.GetLogicalSupportedMemberNodes(node));
 
             return new NodeSnapshot(this.State, _fileCodeModel, node, parentElement, nodesBuilder.ToImmutable());
         }
@@ -67,11 +67,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Colle
         {
             var node = LookupNode();
 
-            var memberNodes = CodeModelService.GetFlattenedMemberNodes(node);
+            var memberNodes = CodeModelService.GetLogicalSupportedMemberNodes(node);
             if (index >= 0 && index < memberNodes.Count())
             {
                 var child = memberNodes.ElementAt(index);
-                element = FileCodeModel.CreateCodeElement<EnvDTE.CodeElement>(child);
+                element = FileCodeModel.GetOrCreateCodeElement<EnvDTE.CodeElement>(child);
                 return true;
             }
 
@@ -83,12 +83,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Colle
         {
             var node = LookupNode();
 
-            foreach (var child in CodeModelService.GetFlattenedMemberNodes(node))
+            foreach (var child in CodeModelService.GetLogicalSupportedMemberNodes(node))
             {
                 var childName = CodeModelService.GetName(child);
                 if (childName == name)
                 {
-                    element = FileCodeModel.CreateCodeElement<EnvDTE.CodeElement>(child);
+                    element = FileCodeModel.GetOrCreateCodeElement<EnvDTE.CodeElement>(child);
                     return true;
                 }
             }
@@ -102,7 +102,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Colle
             get
             {
                 var node = LookupNode();
-                return CodeModelService.GetFlattenedMemberNodes(node).Count();
+                return CodeModelService.GetLogicalSupportedMemberNodes(node).Count();
             }
         }
     }

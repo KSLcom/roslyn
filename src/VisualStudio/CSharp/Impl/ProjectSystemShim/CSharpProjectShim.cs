@@ -1,20 +1,17 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
-using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Editor.Shared.Diagnostics;
+using Microsoft.CodeAnalysis.Host;
 using Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim.Interop;
 using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
+using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem.Legacy;
 using Microsoft.VisualStudio.LanguageServices.Implementation.TaskList;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.TextManager.Interop;
@@ -31,7 +28,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
     /// effectively methods that just QI from one interface to another), are implemented here.
     /// </remarks>
     [ExcludeFromCodeCoverage]
-    internal abstract partial class CSharpProjectShim : CSharpProject
+    internal abstract partial class CSharpProjectShim : AbstractLegacyProject
     {
         /// <summary>
         /// This member is used to store a raw array of warning numbers, which is needed to properly implement
@@ -53,28 +50,25 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
             string projectSystemName,
             IVsHierarchy hierarchy,
             IServiceProvider serviceProvider,
-            MiscellaneousFilesWorkspace miscellaneousFilesWorkspaceOpt,
             VisualStudioWorkspaceImpl visualStudioWorkspaceOpt,
             HostDiagnosticUpdateSource hostDiagnosticUpdateSourceOpt)
             : base(projectTracker,
                    reportExternalErrorCreatorOpt,
                    projectSystemName,
                    hierarchy,
+                   LanguageNames.CSharp,
                    serviceProvider,
-                   miscellaneousFilesWorkspaceOpt,
                    visualStudioWorkspaceOpt,
                    hostDiagnosticUpdateSourceOpt)
         {
             _projectRoot = projectRoot;
             _warningNumberArrayPointer = Marshal.AllocHGlobal(0);
-        }
 
-        protected override void InitializeOptions()
-        {
             // Ensure the default options are set up
             ResetAllOptions();
+            UpdateOptions();
 
-            base.InitializeOptions();
+            projectTracker.AddProject(this);
         }
 
         public override void Disconnect()
@@ -89,53 +83,28 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
             return "CS" + errorCode.ToString("0000");
         }
 
-        protected override CSharpCompilationOptions CreateCompilationOptions()
+        protected override CompilationOptions CreateCompilationOptions(CommandLineArguments commandLineArguments, ParseOptions newParseOptions)
         {
-            IDictionary<string, ReportDiagnostic> warningOptions = null;
+            // Get the base options from command line arguments + common workspace defaults.
+            var options = (CSharpCompilationOptions)base.CreateCompilationOptions(commandLineArguments, newParseOptions);
+
+            // Now override these with the options from our state.
+            IDictionary<string, ReportDiagnostic> ruleSetSpecificDiagnosticOptions = null;
 
             // Get options from the ruleset file, if any, first. That way project-specific
             // options can override them.
             ReportDiagnostic? ruleSetGeneralDiagnosticOption = null;
-            if (this.ruleSet != null)
+            if (this.RuleSetFile != null)
             {
-                ruleSetGeneralDiagnosticOption = this.ruleSet.GetGeneralDiagnosticOption();
-                warningOptions = new Dictionary<string, ReportDiagnostic>(this.ruleSet.GetSpecificDiagnosticOptions());
+                ruleSetGeneralDiagnosticOption = this.RuleSetFile.GetGeneralDiagnosticOption();
+                ruleSetSpecificDiagnosticOptions = new Dictionary<string, ReportDiagnostic>(this.RuleSetFile.GetSpecificDiagnosticOptions());
             }
             else
             {
-                warningOptions = new Dictionary<string, ReportDiagnostic>();
+                ruleSetSpecificDiagnosticOptions = new Dictionary<string, ReportDiagnostic>();
             }
 
-            UpdateRuleSetError(ruleSet);
-
-            UpdateWarning(warningOptions, CompilerOptions.OPTID_WARNASERRORLIST, ReportDiagnostic.Error);
-            UpdateWarning(warningOptions, CompilerOptions.OPTID_WARNNOTASERRORLIST, ReportDiagnostic.Warn);
-
-            // Add the warning suppressions second, since the if a warning appears in both lists the
-            // suppression takes priority
-            UpdateWarning(warningOptions, CompilerOptions.OPTID_NOWARNLIST, ReportDiagnostic.Suppress);
-
-            Platform platform;
-
-            if (!Enum.TryParse(GetStringOption(CompilerOptions.OPTID_PLATFORM, ""), ignoreCase: true, result: out platform))
-            {
-                platform = Platform.AnyCpu;
-            }
-
-            int warningLevel;
-
-            if (!int.TryParse(GetStringOption(CompilerOptions.OPTID_WARNINGLEVEL, defaultValue: ""), out warningLevel))
-            {
-                warningLevel = 4;
-            }
-
-            string projectDirectory = this.ContainingDirectoryPathOpt;
-
-            // TODO: #r support, should it include bin path?
-            var referenceSearchPaths = ImmutableArray<string>.Empty;
-
-            // TODO: #load support
-            var sourceSearchPaths = ImmutableArray<string>.Empty;
+            UpdateRuleSetError(this.RuleSetFile);
 
             ReportDiagnostic generalDiagnosticOption;
             var warningsAreErrors = GetNullableBooleanOption(CompilerOptions.OPTID_WARNINGSAREERRORS);
@@ -152,43 +121,82 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
                 generalDiagnosticOption = ReportDiagnostic.Default;
             }
 
-            MetadataReferenceResolver referenceResolver;
-            if (this.Workspace != null)
+            // Start with the rule set options
+            IDictionary<string, ReportDiagnostic> diagnosticOptions = new Dictionary<string, ReportDiagnostic>(ruleSetSpecificDiagnosticOptions);
+
+            // Update the specific options based on the general settings
+            if (warningsAreErrors.HasValue && warningsAreErrors.Value == true)
             {
-                referenceResolver = new AssemblyReferenceResolver(
-                    new MetadataFileReferenceResolver(referenceSearchPaths, projectDirectory),
-                    this.Workspace.CurrentSolution.Services.MetadataService.GetProvider());
+                foreach (var pair in ruleSetSpecificDiagnosticOptions)
+                {
+                    if (pair.Value == ReportDiagnostic.Warn)
+                    {
+                        diagnosticOptions[pair.Key] = ReportDiagnostic.Error;
+                    }
+                }
             }
-            else
+
+            // Update the specific options based on the specific settings
+            foreach (var diagnosticID in ParseWarningCodes(CompilerOptions.OPTID_WARNASERRORLIST))
             {
-                // can only happen in tests
-                referenceResolver = null;
+                diagnosticOptions[diagnosticID] = ReportDiagnostic.Error;
+            }
+
+            foreach (var diagnosticID in ParseWarningCodes(CompilerOptions.OPTID_WARNNOTASERRORLIST))
+            {
+                ReportDiagnostic ruleSetOption;
+                if (ruleSetSpecificDiagnosticOptions.TryGetValue(diagnosticID, out ruleSetOption))
+                {
+                    diagnosticOptions[diagnosticID] = ruleSetOption;
+                }
+                else
+                {
+                    diagnosticOptions[diagnosticID] = ReportDiagnostic.Default;
+                }
+            }
+
+            foreach (var diagnosticID in ParseWarningCodes(CompilerOptions.OPTID_NOWARNLIST))
+            {
+                diagnosticOptions[diagnosticID] = ReportDiagnostic.Suppress;
+            }
+
+            Platform platform;
+
+            if (!Enum.TryParse(GetStringOption(CompilerOptions.OPTID_PLATFORM, ""), ignoreCase: true, result: out platform))
+            {
+                platform = Platform.AnyCpu;
+            }
+
+            int warningLevel;
+
+            if (!int.TryParse(GetStringOption(CompilerOptions.OPTID_WARNINGLEVEL, defaultValue: ""), out warningLevel))
+            {
+                warningLevel = 4;
             }
 
             // TODO: appConfigPath: GetFilePathOption(CompilerOptions.OPTID_FUSIONCONFIG), bug #869604
-            return new CSharpCompilationOptions(
-                allowUnsafe: GetBooleanOption(CompilerOptions.OPTID_UNSAFE),
-                checkOverflow: GetBooleanOption(CompilerOptions.OPTID_CHECKED),
-                concurrentBuild: false,
-                cryptoKeyContainer: GetStringOption(CompilerOptions.OPTID_KEYNAME, defaultValue: null),
-                cryptoKeyFile: GetFilePathRelativeOption(CompilerOptions.OPTID_KEYFILE),
-                delaySign: GetNullableBooleanOption(CompilerOptions.OPTID_DELAYSIGN),
-                generalDiagnosticOption: generalDiagnosticOption,
-                mainTypeName: _mainTypeName,
-                moduleName: GetStringOption(CompilerOptions.OPTID_MODULEASSEMBLY, defaultValue: null),
-                optimizationLevel: GetBooleanOption(CompilerOptions.OPTID_OPTIMIZATIONS) ? OptimizationLevel.Release : OptimizationLevel.Debug,
-                outputKind: _outputKind,
-                platform: platform,
-                specificDiagnosticOptions: warningOptions,
-                warningLevel: warningLevel,
-                xmlReferenceResolver: new XmlFileResolver(projectDirectory),
-                sourceReferenceResolver: new SourceFileResolver(sourceSearchPaths, projectDirectory),
-                metadataReferenceResolver: referenceResolver,
-                assemblyIdentityComparer: DesktopAssemblyIdentityComparer.Default,
-                strongNameProvider: new DesktopStrongNameProvider(GetStrongNameKeyPaths()));
+
+            return options.WithAllowUnsafe(GetBooleanOption(CompilerOptions.OPTID_UNSAFE))
+                .WithOverflowChecks(GetBooleanOption(CompilerOptions.OPTID_CHECKED))
+                .WithCryptoKeyContainer(GetStringOption(CompilerOptions.OPTID_KEYNAME, defaultValue: null))
+                .WithCryptoKeyFile(GetFilePathRelativeOption(CompilerOptions.OPTID_KEYFILE))
+                .WithDelaySign(GetNullableBooleanOption(CompilerOptions.OPTID_DELAYSIGN))
+                .WithGeneralDiagnosticOption(generalDiagnosticOption)
+                .WithMainTypeName(_mainTypeName)
+                .WithModuleName(GetStringOption(CompilerOptions.OPTID_MODULEASSEMBLY, defaultValue: null))
+                .WithOptimizationLevel(GetBooleanOption(CompilerOptions.OPTID_OPTIMIZATIONS) ? OptimizationLevel.Release : OptimizationLevel.Debug)
+                .WithOutputKind(_outputKind)
+                .WithPlatform(platform)
+                .WithSpecificDiagnosticOptions(diagnosticOptions)
+                .WithWarningLevel(warningLevel);
         }
 
-        private void UpdateWarning(IDictionary<string, ReportDiagnostic> warningOptions, CompilerOptions compilerOptions, ReportDiagnostic reportDiagnostic)
+        protected override CommandLineArguments ParseCommandLineArguments(IEnumerable<string> arguments)
+        {
+            return CSharpCommandLineParser.Default.Parse(arguments, this.ContainingDirectoryPathOpt, sdkDirectory: null);
+        }
+
+        private IEnumerable<string> ParseWarningCodes(CompilerOptions compilerOptions)
         {
             Contract.ThrowIfFalse(compilerOptions == CompilerOptions.OPTID_NOWARNLIST || compilerOptions == CompilerOptions.OPTID_WARNASERRORLIST || compilerOptions == CompilerOptions.OPTID_WARNNOTASERRORLIST);
             foreach (var warning in GetStringOption(compilerOptions, defaultValue: "").Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
@@ -200,7 +208,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
                     warningStringID = GetIdForErrorCode(warningId);
                 }
 
-                warningOptions[warningStringID] = reportDiagnostic;
+                yield return warningStringID;
             }
         }
 
@@ -247,8 +255,10 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
             }
         }
 
-        protected override CSharpParseOptions CreateParseOptions()
+        protected override ParseOptions CreateParseOptions(CommandLineArguments commandLineArguments)
         {
+            // Get the base parse options and override the defaults with the options from state.
+            var options = (CSharpParseOptions)base.CreateParseOptions(commandLineArguments);
             var symbols = GetStringOption(CompilerOptions.OPTID_CCSYMBOLS, defaultValue: "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
 
             DocumentationMode documentationMode = DocumentationMode.Parse;
@@ -260,10 +270,10 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.ProjectSystemShim
             var languageVersion = CompilationOptionsConversion.GetLanguageVersion(GetStringOption(CompilerOptions.OPTID_COMPATIBILITY, defaultValue: ""))
                                   ?? CSharpParseOptions.Default.LanguageVersion;
 
-            return new CSharpParseOptions(
-                languageVersion: languageVersion,
-                preprocessorSymbols: symbols.AsImmutable(),
-                documentationMode: documentationMode);
+            return options.WithKind(SourceCodeKind.Regular)
+                .WithLanguageVersion(languageVersion)
+                .WithPreprocessorSymbols(symbols.AsImmutable())
+                .WithDocumentationMode(documentationMode);
         }
 
         ~CSharpProjectShim()

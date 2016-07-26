@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Immutable;
@@ -19,7 +19,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols
 {
     public class AnonymousTypesSymbolTests : CompilingTestBase
     {
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_InQuery()
         {
             var source = LINQ + @"
@@ -49,7 +49,7 @@ class Query
             TestAnonymousTypeFieldSymbols_InQuery(verifier.EmittedAssemblyData);
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_Mix()
         {
             var source = @"
@@ -89,7 +89,7 @@ namespace Test
             CompileAndVerify(source);
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeInConstructedMethod_NonEmpty()
         {
             var source = @"
@@ -114,7 +114,7 @@ class Program
             );
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeInConstructedMethod_NonEmpty2()
         {
             var source = @"
@@ -140,7 +140,7 @@ class Program
             );
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeInConstructedMethod_NonEmpty3()
         {
             var source = @"
@@ -170,7 +170,7 @@ class Program
             );
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeInConstructedMethod_NonEmpty4()
         {
             var source = @"
@@ -200,7 +200,7 @@ class Program
             );
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeInConstructedMethod_Empty()
         {
             var source = @"
@@ -257,7 +257,7 @@ class Program
 
         #endregion
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_Simple()
         {
             var source = @"
@@ -615,8 +615,7 @@ class Query
             }
         }
 
-
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_Empty()
         {
             var source = @"
@@ -700,8 +699,8 @@ class Query
             );
         }
 
-        [WorkItem(543022, "DevDiv")]
-        [Fact()]
+        [WorkItem(543022, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543022")]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_StandardNames()
         {
             var source = @"
@@ -723,8 +722,8 @@ class Query
                 expectedOutput: "<>f__AnonymousType0`1[<>f__AnonymousType1]-<>f__AnonymousType1");
         }
 
-        [WorkItem(543022, "DevDiv")]
-        [Fact()]
+        [WorkItem(543022, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543022")]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_StandardNames2()
         {
             var source = @"
@@ -746,7 +745,7 @@ class Query
                 expectedOutput: "{ ToString = Field }-Field");
         }
 
-        [Fact]
+        [ClrOnlyFact(ClrOnlyReason.Unknown)]
         public void AnonymousTypeSymbol_StandardNames3()
         {
             var source = @"
@@ -1196,7 +1195,7 @@ class Query
 
         #endregion
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_BaseAccess()
         {
             var source = @"
@@ -1225,7 +1224,7 @@ class Derived: Base
                 expectedOutput: "{ field = 123 }");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_PropertyAccess()
         {
             var source = @"
@@ -1249,7 +1248,7 @@ class Class1
                 expectedOutput: "{ PropertyA = pa-value }");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_Simple()
         {
             var source = @"
@@ -1270,7 +1269,7 @@ class Query
                 expectedOutput: "a=1; b=text");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_CustModifiersOnPropertyFields()
         {
             var source = @"
@@ -1290,11 +1289,10 @@ class Query
 ";
             CompileAndVerify(
                 source,
-                additionalRefs: new[] { TestReferences.SymbolsTests.CustomModifiers.Modifiers.dll },
-                emitOptions: TestEmitters.RefEmitUnsupported_646023);
+                additionalRefs: new[] { TestReferences.SymbolsTests.CustomModifiers.Modifiers.dll });
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_ToString()
         {
             // test AnonymousType.ToString()
@@ -1323,7 +1321,7 @@ class Query
             }
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_Equals()
         {
             var source = @"
@@ -1385,7 +1383,7 @@ class Query
 ");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_GetHashCode()
         {
             var source = @"
@@ -1440,12 +1438,12 @@ class Query
 ");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AnonymousType_MultiplyEmitDoesNotChangeTheOrdering()
         {
             //  this test checks whether or not anonymous types which came from speculative 
             //  semantic API have any effect on the anonymous types emitted and
-            //  wherer or not the order is still the same accross several emits
+            //  whether or not the order is still the same across several emits
 
             var source1 = @"
 using System;
@@ -1485,7 +1483,7 @@ class Class3
     }
 }
 ";
-            var compilation = GetCompilationForEmit(new string[] { source1, source2, source3 }, null, TestOptions.ReleaseDll.WithMetadataImportOptions(MetadataImportOptions.Internal));
+            var compilation = (CSharpCompilation)GetCompilationForEmit(new string[] { source1, source2, source3 }, null, TestOptions.ReleaseDll.WithMetadataImportOptions(MetadataImportOptions.Internal), TestOptions.Regular);
 
             for (int i = 0; i < 10; i++)
             {
@@ -1494,7 +1492,7 @@ class Class3
                     symbolValidator: module =>
                     {
                         var types = module.GlobalNamespace.GetTypeMembers()
-                                        .Where(t => t.Name.StartsWith("<>"))
+                                        .Where(t => t.Name.StartsWith("<>", StringComparison.Ordinal))
                                         .Select(t => t.ToDisplayString())
                                         .OrderBy(t => t)
                                         .ToArray();
@@ -1510,15 +1508,15 @@ class Class3
 
                 // do some speculative semantic query
                 var model = compilation.GetSemanticModel(compilation.SyntaxTrees[0]);
-                var position = source1.IndexOf("var d") - 1;
+                var position = source1.IndexOf("var d", StringComparison.Ordinal) - 1;
                 var expr1 = SyntaxFactory.ParseExpression("new { x = 1, y" + i.ToString() + " = \"---\" }");
                 var info1 = model.GetSpeculativeTypeInfo(position, expr1, SpeculativeBindingOption.BindAsExpression);
                 Assert.NotNull(info1.Type);
             }
         }
 
-        [WorkItem(543134)]
-        [Fact()]
+        [WorkItem(543134, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543134")]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_Simple_1()
         {
             var source = @"
@@ -1534,7 +1532,7 @@ class Test
             CompileAndVerify(source);
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void AnonymousTypeSymbol_NamesConflictInsideLambda()
         {
             var source = @"
@@ -1556,8 +1554,8 @@ class Test
             CompileAndVerify(source, expectedOutput: "1221");
         }
 
-        [WorkItem(543693, "DevDiv")]
-        [Fact()]
+        [WorkItem(543693, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543693")]
+        [ClrOnlyFact]
         public void Bug11593a()
         {
             var source = @"
@@ -1593,8 +1591,8 @@ class P
             CompileAndVerify(source, expectedOutput: "Success");
         }
 
-        [WorkItem(543693, "DevDiv")]
-        [Fact()]
+        [WorkItem(543693, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543693")]
+        [ClrOnlyFact]
         public void Bug11593b()
         {
             var source = @"
@@ -1632,8 +1630,8 @@ class P
             CompileAndVerify(source, expectedOutput: "Success");
         }
 
-        [WorkItem(543177, "DevDiv")]
-        [Fact()]
+        [WorkItem(543177, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543177")]
+        [ClrOnlyFact]
         public void AnonymousTypePropertyValueWithWarning()
         {
             var source = @"
@@ -1656,7 +1654,7 @@ class Program
             CompileAndVerify(source, expectedOutput: "True");
         }
 
-        [Fact(), WorkItem(544323, "DevDiv")]
+        [Fact(), WorkItem(544323, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544323")]
         public void AnonymousTypeAndMemberSymbolsLocations()
         {
             var source = @"
@@ -1739,7 +1737,7 @@ class Program
             Assert.True(statement2.Span.Contains(typeA4.Locations[0].SourceSpan));
         }
 
-        private static SyntaxTree s_equalityComparerSourceTree = Parse(@"
+        private static readonly SyntaxTree s_equalityComparerSourceTree = Parse(@"
 namespace System.Collections
 {
   public interface IEqualityComparer
@@ -1774,7 +1772,7 @@ namespace System.Collections.Generic
         /// <summary>
         /// Bug#15914: Breaking Changes
         /// </summary>
-        [Fact, WorkItem(530365, "DevDiv")]
+        [Fact, WorkItem(530365, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530365")]
         public void NoStdLibNoEmitToStringForAnonymousType()
         {
             var source = @"
@@ -1804,7 +1802,7 @@ class Program
                 Diagnostic(ErrorCode.ERR_MissingPredefinedMember).WithArguments("System.String", "Format"));
         }
 
-        [Fact, WorkItem(530365, "DevDiv")]
+        [Fact, WorkItem(530365, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530365")]
         public void NoDebuggerBrowsableStateType()
         {
             var stateSource = @"
@@ -1886,8 +1884,8 @@ class C
                 Diagnostic(ErrorCode.ERR_InvalidAnonymousTypeMemberDeclarator, "array?[0]").WithLocation(13, 24));
         }
 
-        [Fact]
-        [WorkItem(991505, "DevDiv")]
+        [ClrOnlyFact]
+        [WorkItem(991505, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/991505")]
         [WorkItem(199, "CodePlex")]
         public void Bug991505()
         {
@@ -1928,6 +1926,39 @@ class C
                         new TypeDescr() { FieldNames = new[] { "L" } },
                         new TypeDescr() { FieldNames = new[] { "M" } },
                         new TypeDescr() { FieldNames = new[] { "N" } }));
+        }
+
+        [ClrOnlyFact]
+        public void CallingCreateAnonymousTypeDoesNotChangeIL()
+        {
+            var source = @"
+class C
+{
+    public static void Main(string[] args)
+    {
+        var v = new { m1 = 1, m2 = true };
+    }
+}";
+
+            var expectedIL = @"{
+  // Code size        9 (0x9)
+  .maxstack  2
+  IL_0000:  ldc.i4.1
+  IL_0001:  ldc.i4.1
+  IL_0002:  newobj     ""<>f__AnonymousType0<int, bool>..ctor(int, bool)""
+  IL_0007:  pop
+  IL_0008:  ret
+}";
+
+
+            CompileAndVerify(source).VerifyIL("C.Main", expectedIL);
+
+            var compilation = GetCompilationForEmit(new[] { source }, additionalRefs: null, options: null, parseOptions: null);
+            compilation.CreateAnonymousTypeSymbol(
+                ImmutableArray.Create<ITypeSymbol>(compilation.GetSpecialType(SpecialType.System_Int32), compilation.GetSpecialType(SpecialType.System_Boolean)),
+                ImmutableArray.Create("m1", "m2"));
+
+            this.CompileAndVerify(compilation).VerifyIL("C.Main", expectedIL);
         }
     }
 }

@@ -3,9 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
-using Microsoft.CodeAnalysis.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -13,14 +10,14 @@ namespace Microsoft.CodeAnalysis
     /// An identifier that can be used to refer to the same <see cref="Project"/> across versions.
     /// </summary>
     [DebuggerDisplay("{GetDebuggerDisplay(),nq}")]
-    public class ProjectId : IEquatable<ProjectId>
+    public sealed class ProjectId : IEquatable<ProjectId>
     {
-        private string _debugName;
+        private readonly string _debugName;
 
         /// <summary>
         /// The system generated unique id.
         /// </summary>
-        public Guid Id { get; private set; }
+        public Guid Id { get; }
 
         private ProjectId(string debugName)
         {
@@ -41,6 +38,16 @@ namespace Microsoft.CodeAnalysis
         public static ProjectId CreateNewId(string debugName = null)
         {
             return new ProjectId(debugName);
+        }
+
+        public static ProjectId CreateFromSerialized(Guid id, string debugName = null)
+        {
+            if (id == Guid.Empty)
+            {
+                throw new ArgumentException(nameof(id));
+            }
+
+            return new ProjectId(id, debugName);
         }
 
         private string GetDebuggerDisplay()

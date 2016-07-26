@@ -1,7 +1,6 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 Imports System.Runtime.CompilerServices
-Imports Microsoft.CodeAnalysis
 Imports Microsoft.VisualStudio.Shell.Interop
 Imports Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectBrowser
 Imports Microsoft.VisualStudio.LanguageServices.UnitTests.ObjectBrowser.Mocks
@@ -57,18 +56,18 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.ObjectBrowser
             Dim count As UInteger
             IsOK(Function() list.GetItemCount(count))
 
-            Dim itemIndeces = New List(Of UInteger)
+            Dim itemIndices = New List(Of UInteger)
             For i = 0UI To CUInt(count - 1)
                 If itemPredicate(list, i) Then
-                    itemIndeces.Add(i)
+                    itemIndices.Add(i)
                 End If
             Next
 
-            Assert.Equal(verificationActions.Length, itemIndeces.Count)
+            Assert.Equal(verificationActions.Length, itemIndices.Count)
 
             For i = 0 To verificationActions.Length - 1
-                Dim index = itemIndeces(i)
-                verificationActions(i)(list, CUInt(index))
+                Dim index = itemIndices(i)
+                verificationActions(i)(list, index)
             Next
         End Sub
 
@@ -102,6 +101,22 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.ObjectBrowser
         <Extension>
         Friend Sub VerifyNames(list As IVsSimpleObjectList2, ParamArray names As String())
             VerifyNames(list, Function(x, y) True, names)
+        End Sub
+
+        <Extension>
+        Friend Sub VerifyHelpKeywords(list As IVsSimpleObjectList2, ParamArray helpKeywords As String())
+            Dim verificationActions = New Action(Of IVsSimpleObjectList2, UInteger)(helpKeywords.Length - 1) {}
+
+            For i = 0 To helpKeywords.Length - 1
+                Dim helpKeyword = helpKeywords(i)
+                verificationActions(i) = Sub(l, index)
+                                             Dim pvar As Object = Nothing
+                                             IsOK(Function() l.GetProperty(index, _VSOBJLISTELEMPROPID.VSOBJLISTELEMPROPID_HELPKEYWORD, pvar))
+                                             Assert.Equal(helpKeyword, pvar)
+                                         End Sub
+            Next
+
+            VerifyContents(list, AddressOf IsImmediateMember, verificationActions)
         End Sub
 
         <Extension>

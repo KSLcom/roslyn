@@ -1,12 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Host;
-using Microsoft.CodeAnalysis.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -18,12 +12,12 @@ namespace Microsoft.CodeAnalysis
         /// <summary>
         /// The syntax tree
         /// </summary>
-        public SyntaxTree Tree { get; private set; }
+        public SyntaxTree Tree { get; }
 
         /// <summary>
         /// The version of the top level signature of the tree
         /// </summary>
-        public VersionStamp Version { get; private set; }
+        public VersionStamp Version { get; }
 
         private TreeAndVersion(SyntaxTree tree, VersionStamp version)
         {
@@ -35,7 +29,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (tree == null)
             {
-                throw new ArgumentNullException("tree");
+                throw new ArgumentNullException(nameof(tree));
             }
 
             return new TreeAndVersion(tree, version);

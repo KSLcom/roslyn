@@ -62,11 +62,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
                 {
                     return _provider.GetMetadata(this.FilePath, _timestamp);
                 }
-                catch (Exception e) when(SaveMetadataReadingException(e))
+                catch (Exception e) when (SaveMetadataReadingException(e))
                 {
                     throw ExceptionUtilities.Unreachable;
                 }
-                }
+            }
 
             private bool SaveMetadataReadingException(Exception e)
             {
@@ -82,15 +82,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
 
             protected override DocumentationProvider CreateDocumentationProvider()
             {
-                string xmlDocumentPath;
-                if (ReferencePathUtilities.TryFindXmlDocumentationFile(FilePath, out xmlDocumentPath))
-                {
-                    return new VisualStudioDocumentationProvider(xmlDocumentPath, _provider.XmlMemberIndexService);
-                }
-                else
-                {
-                    return DocumentationProvider.Default;
-                }
+                return new VisualStudioDocumentationProvider(this.FilePath, _provider.XmlMemberIndexService);
             }
 
             protected override PortableExecutableReference WithPropertiesImpl(MetadataReferenceProperties properties)

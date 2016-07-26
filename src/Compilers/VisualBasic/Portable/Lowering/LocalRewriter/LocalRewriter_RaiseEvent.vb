@@ -55,7 +55,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 '     skipEventRaise:
                 ' End Block
                 '
-                Dim temp As LocalSymbol = New SynthesizedLocal(Me.currentMethodOrLambda, receiver.Type, SynthesizedLocalKind.LoweringTemp)
+                Dim temp As LocalSymbol = New SynthesizedLocal(Me._currentMethodOrLambda, receiver.Type, SynthesizedLocalKind.LoweringTemp)
                 Dim tempAccess As BoundLocal = New BoundLocal(syntax, temp, temp.Type).MakeCompilerGenerated
 
                 Dim tempInit = New BoundExpressionStatement(syntax,
@@ -102,7 +102,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 result = RegisterUnstructuredExceptionHandlingResumeTarget(node.Syntax, result, canThrow:=True)
             End If
 
-            Return MarkStatementWithSequencePoint(result)
+            If Instrument(node, result) Then
+                result = _instrumenter.InstrumentRaiseEventStatement(node, result)
+            End If
+
+            Return result
         End Function
 
         ' If the event is a WinRT event, then the backing field is actually an EventRegistrationTokenTable,
@@ -151,8 +155,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Dim memberDescriptor As MemberDescriptor = WellKnownMembers.GetDescriptor(WellKnownMember.System_Runtime_InteropServices_WindowsRuntime_EventRegistrationTokenTable_T__InvocationList)
                 ' isWinMd only matters for set accessors, we can safely say false here
                 Dim accessorName As String = Binder.GetAccessorName(invocationListProperty.Name, MethodKind.PropertyGet, isWinMd:=False)
-                Dim info = GetDiagnosticForMissingRuntimeHelper(memberDescriptor.DeclaringTypeMetadataName, accessorName, compilationState.Compilation.Options.EmbedVbCoreRuntime)
-                diagnostics.Add(info, syntax.GetLocation())
+                Dim info = GetDiagnosticForMissingRuntimeHelper(memberDescriptor.DeclaringTypeMetadataName, accessorName, _compilationState.Compilation.Options.EmbedVbCoreRuntime)
+                _diagnostics.Add(info, syntax.GetLocation())
             End If
 
             Return New BoundBadExpression(syntax, LookupResultKind.NotReferencable, ImmutableArray(Of Symbol).Empty, ImmutableArray.Create(Of BoundNode)(rewrittenReceiver), ErrorTypeSymbol.UnknownResultType, hasErrors:=True)

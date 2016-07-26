@@ -163,10 +163,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // the add method was found as an extension method.  Replace the implicit receiver (first argument) with the rewritten receiver.
                 Debug.Assert(addMethod.IsStatic && addMethod.IsExtensionMethod);
                 Debug.Assert(rewrittenArguments[0].Kind == BoundKind.ImplicitReceiver);
-                var newArgs = ArrayBuilder<BoundExpression>.GetInstance();
-                newArgs.AddRange(rewrittenArguments);
-                newArgs[0] = rewrittenReceiver;
-                rewrittenArguments = newArgs.ToImmutableAndFree();
+                Debug.Assert(!_inExpressionLambda, "Expression trees do not support extension Add");
+                rewrittenArguments = rewrittenArguments.SetItem(0, rewrittenReceiver);
                 rewrittenReceiver = null;
             }
 
@@ -281,7 +279,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             {
                                 // Rewrite simple assignment to field/property.
                                 var rewrittenRight = VisitExpression(assignment.Right);
-                                result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, assignment.Type, used: false));
+                                result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, RefKind.None, assignment.Type, used: false));
                                 return;
                             }
                         }
@@ -322,7 +320,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         {
                             // Rewrite simple assignment to field/property.
                             var rewrittenRight = VisitExpression(assignment.Right);
-                            result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, assignment.Type, used: false));
+                            result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, RefKind.None, assignment.Type, used: false));
                             return;
                         }
 
@@ -335,7 +333,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         var pointerAccess = (BoundPointerElementAccess)assignment.Left;
                         var rewrittenIndex = VisitExpression(pointerAccess.Index);
 
-                        if (IntroducingReadCanBeObservable(rewrittenIndex))
+                        if (CanChangeValueBetweenReads(rewrittenIndex))
                         {
                             BoundAssignmentOperator store;
                             var temp = _factory.StoreToTemp(rewrittenIndex, out store);
@@ -355,7 +353,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         {
                             // Rewrite as simple assignment.
                             var rewrittenRight = VisitExpression(assignment.Right);
-                            result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, assignment.Type, used: false));
+                            result.Add(MakeStaticAssignmentOperator(assignment.Syntax, rewrittenAccess, rewrittenRight, RefKind.None, assignment.Type, used: false));
                             return;
                         }
 
@@ -380,7 +378,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 var arg = args[i];
 
-                if (IntroducingReadCanBeObservable(arg))
+                if (CanChangeValueBetweenReads(arg))
                 {
                     if (newArgs == null)
                     {
@@ -417,7 +415,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             var memberSymbol = rewrittenLeft.MemberSymbol;
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
-            Debug.Assert(memberSymbol != null && _compilation.Conversions.ClassifyConversion(rewrittenReceiver.Type, memberSymbol.ContainingType, ref useSiteDiagnostics).IsImplicit);
+            Debug.Assert(memberSymbol != null && _compilation.Conversions.ClassifyConversionFromType(rewrittenReceiver.Type, memberSymbol.ContainingType, ref useSiteDiagnostics).IsImplicit);
             // It is possible there are use site diagnostics from the above, but none that we need report as we aren't generating code for the conversion
 
             switch (memberSymbol.Kind)

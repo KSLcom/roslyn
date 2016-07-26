@@ -1,17 +1,11 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Threading;
-using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
-using Microsoft.VisualStudio.Imaging;
-using Microsoft.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Text.Editor;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
@@ -70,7 +64,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
 
             this.Focus();
             textView.Caret.IsHidden = false;
-            ShouldReceiveKeyboardNavigation = true;
+            ShouldReceiveKeyboardNavigation = false;
         }
 
         private void ShowCaret()
@@ -89,7 +83,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
             {
                 var current = _tabNavigableChildren.IndexOf(_focusedElement);
                 current = selector(current);
-                _focusedElement = _tabNavigableChildren.ElementAt(current);
+                _focusedElement = _tabNavigableChildren[current];
             }
 
             _focusedElement.Focus();
@@ -110,7 +104,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
         {
             if (args.NewSource == null)
             {
-                this.DisonnectFromPresentationSource();
+                this.DisconnectFromPresentationSource();
             }
             else
             {
@@ -122,7 +116,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
         {
             if (presentationSource == null)
             {
-                throw new ArgumentNullException("presentationSource");
+                throw new ArgumentNullException(nameof(presentationSource));
             }
 
             _presentationSource = presentationSource;
@@ -166,30 +160,30 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
         {
             if (e != null)
             {
-                if (string.Compare(e.Key, RenameShortcutKey.RenameOverloads, StringComparison.OrdinalIgnoreCase) == 0)
+                if (string.Equals(e.Key, RenameShortcutKey.RenameOverloads, StringComparison.OrdinalIgnoreCase))
                 {
                     this.OverloadsCheckbox.IsChecked = !this.OverloadsCheckbox.IsChecked;
                 }
-                else if (string.Compare(e.Key, RenameShortcutKey.SearchInComments, StringComparison.OrdinalIgnoreCase) == 0)
+                else if (string.Equals(e.Key, RenameShortcutKey.SearchInComments, StringComparison.OrdinalIgnoreCase))
                 {
                     this.CommentsCheckbox.IsChecked = !this.CommentsCheckbox.IsChecked;
                 }
-                else if (string.Compare(e.Key, RenameShortcutKey.SearchInStrings, StringComparison.OrdinalIgnoreCase) == 0)
+                else if (string.Equals(e.Key, RenameShortcutKey.SearchInStrings, StringComparison.OrdinalIgnoreCase))
                 {
                     this.StringsCheckbox.IsChecked = !this.StringsCheckbox.IsChecked;
                 }
-                else if (string.Compare(e.Key, RenameShortcutKey.PreviewChanges) == 0)
+                else if (string.Equals(e.Key, RenameShortcutKey.PreviewChanges, StringComparison.OrdinalIgnoreCase))
                 {
                     this.PreviewChangesCheckbox.IsChecked = !this.PreviewChangesCheckbox.IsChecked;
                 }
-                else if (string.Compare(e.Key, RenameShortcutKey.Apply) == 0)
+                else if (string.Equals(e.Key, RenameShortcutKey.Apply, StringComparison.OrdinalIgnoreCase))
                 {
                     this.Commit();
                 }
             }
         }
 
-        private void DisonnectFromPresentationSource()
+        private void DisconnectFromPresentationSource()
         {
             if (_rootInputElement != null)
             {
@@ -211,14 +205,16 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
             PositionDashboard();
         }
 
-        public string RenameOverloads { get { return EditorFeaturesResources.RenameOverloads; } }
+        public string RenameOverloads { get { return EditorFeaturesResources.Include_overload_s; } }
         public Visibility RenameOverloadsVisibility { get { return _model.RenameOverloadsVisibility; } }
-        public string SearchInComments { get { return EditorFeaturesResources.SearchInComments; } }
-        public string SearchInStrings { get { return EditorFeaturesResources.SearchInStrings; } }
-        public string ApplyRename { get { return EditorFeaturesResources.ApplyRename; } }
-        public string PreviewChanges { get { return EditorFeaturesResources.RenamePreviewChanges; } }
-        public string ApplyToolTip { get { return EditorFeaturesResources.RenameApplyToolTip + " (Enter)"; } }
-        public string CancelToolTip { get { return EditorFeaturesResources.RenameCancelToolTip + " (Esc)"; } }
+        public bool IsRenameOverloadsEditable { get { return _model.IsRenameOverloadsEditable; } }
+        public string SearchInComments { get { return EditorFeaturesResources.Include_comments; } }
+        public string SearchInStrings { get { return EditorFeaturesResources.Include_strings; } }
+        public string ApplyRename { get { return EditorFeaturesResources.Apply1; } }
+        public string PreviewChanges { get { return EditorFeaturesResources.Preview_changes1; } }
+        public string RenameInstructions { get { return EditorFeaturesResources.Modify_any_highlighted_location_to_begin_renaming; } }
+        public string ApplyToolTip { get { return EditorFeaturesResources.Apply3 + " (Enter)"; } }
+        public string CancelToolTip { get { return EditorFeaturesResources.Cancel + " (Esc)"; } }
 
         private void OnElementSizeChanged(object sender, SizeChangedEventArgs e)
         {

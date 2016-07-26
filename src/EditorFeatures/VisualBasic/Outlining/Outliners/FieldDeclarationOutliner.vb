@@ -5,11 +5,11 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Microsoft.CodeAnalysis.Editor.Implementation.Outlining
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Outlining
-    Class FieldDeclarationOutliner
+    Friend Class FieldDeclarationOutliner
         Inherits AbstractSyntaxNodeOutliner(Of FieldDeclarationSyntax)
 
         Protected Overrides Sub CollectOutliningSpans(fieldDeclaration As FieldDeclarationSyntax, spans As List(Of OutliningSpan), cancellationToken As CancellationToken)
-            VisualBasicOutliningHelpers.CollectCommentsRegions(fieldDeclaration, spans)
+            CollectCommentsRegions(fieldDeclaration, spans)
         End Sub
     End Class
 End Namespace

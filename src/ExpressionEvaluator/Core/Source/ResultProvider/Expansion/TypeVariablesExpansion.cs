@@ -13,11 +13,15 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
     {
         private readonly Type[] _typeParameters;
         private readonly Type[] _typeArguments;
+        private readonly DynamicFlagsMap _dynamicFlagsMap;
 
-        internal TypeVariablesExpansion(Type declaredType)
+        internal TypeVariablesExpansion(TypeAndCustomInfo declaredTypeAndInfo)
         {
+            var declaredType = declaredTypeAndInfo.Type;
             Debug.Assert(declaredType.IsGenericType);
             Debug.Assert(!declaredType.IsGenericTypeDefinition);
+
+            _dynamicFlagsMap = DynamicFlagsMap.Create(declaredTypeAndInfo);
 
             var typeDef = declaredType.GetGenericTypeDefinition();
             _typeParameters = typeDef.GetGenericArguments();
@@ -30,7 +34,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         internal override void GetRows(
             ResultProvider resultProvider,
-            ArrayBuilder<EvalResultDataItem> rows,
+            ArrayBuilder<EvalResult> rows,
             DkmInspectionContext inspectionContext,
             EvalResultDataItem parent,
             DkmClrValue value,
@@ -46,25 +50,30 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             int offset = startIndex2 - index;
             for (int i = 0; i < count2; i++)
             {
-                rows.Add(GetRow(resultProvider, inspectionContext, value, i + offset, parent));
+                rows.Add(GetRow(inspectionContext, value, i + offset, parent));
             }
 
             index += _typeArguments.Length;
         }
 
-        private EvalResultDataItem GetRow(ResultProvider resultProvider, DkmInspectionContext inspectionContext, DkmClrValue value, int index, EvalResultDataItem parent)
+        private EvalResult GetRow(
+            DkmInspectionContext inspectionContext,
+            DkmClrValue value,
+            int index,
+            EvalResultDataItem parent)
         {
             var typeParameter = _typeParameters[index];
             var typeArgument = _typeArguments[index];
+            var typeArgumentInfo = _dynamicFlagsMap.SubstituteDynamicFlags(typeParameter, default(DynamicFlagsCustomTypeInfo)).GetCustomTypeInfo();
             var formatSpecifiers = Formatter.NoFormatSpecifiers;
-            return new EvalResultDataItem(
-                ExpansionKind.TypeVariables,
+            return new EvalResult(
+                ExpansionKind.TypeVariable,
                 typeParameter.Name,
-                typeDeclaringMember: null,
-                declaredType: typeArgument,
-                parent: parent,
+                typeDeclaringMemberAndInfo: default(TypeAndCustomInfo),
+                declaredTypeAndInfo: new TypeAndCustomInfo(DkmClrType.Create(value.Type.AppDomain, typeArgument), typeArgumentInfo),
+                useDebuggerDisplay: parent != null,
                 value: value,
-                displayValue: inspectionContext.GetTypeName(DkmClrType.Create(value.Type.AppDomain, typeArgument), formatSpecifiers),
+                displayValue: inspectionContext.GetTypeName(DkmClrType.Create(value.Type.AppDomain, typeArgument), typeArgumentInfo, formatSpecifiers),
                 expansion: null,
                 childShouldParenthesize: false,
                 fullName: null,

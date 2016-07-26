@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Formatting.Rules;
 using Microsoft.CodeAnalysis.Shared.Collections;
 using Microsoft.CodeAnalysis.Text;
@@ -22,7 +21,7 @@ namespace Microsoft.CodeAnalysis.Formatting
                 this.TextSpan = textSpan;
             }
 
-            public TextSpan TextSpan { get; private set; }
+            public TextSpan TextSpan { get; }
             public abstract int Indentation { get; }
         }
 
@@ -75,8 +74,8 @@ namespace Microsoft.CodeAnalysis.Formatting
                 this.InseparableRegionSpan = TextSpan.FromBounds(inseparableRegionSpanStart, textSpan.End);
             }
 
-            public TextSpan InseparableRegionSpan { get; private set; }
-            public IndentBlockOperation Operation { get; private set; }
+            public TextSpan InseparableRegionSpan { get; }
+            public IndentBlockOperation Operation { get; }
 
             public SyntaxToken EndToken
             {

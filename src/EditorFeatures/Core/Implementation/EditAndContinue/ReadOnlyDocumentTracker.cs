@@ -7,7 +7,6 @@ using Microsoft.CodeAnalysis.EditAndContinue;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
 {
@@ -86,19 +85,13 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
         {
             AssertIsForeground();
 
-            var document = _workspace.CurrentSolution.GetDocument(documentId);
-            Debug.Assert(document != null);
-
             SessionReadOnlyReason sessionReason;
             ProjectReadOnlyReason projectReason;
-            bool isReadOnly = _encService.IsProjectReadOnly(document.Project.Name, out sessionReason, out projectReason);
+            bool isReadOnly = _encService.IsProjectReadOnly(documentId.ProjectId, out sessionReason, out projectReason);
 
             if (isEdit && isReadOnly)
             {
-                if (_onReadOnlyDocumentEditAttempt != null)
-                {
-                    _onReadOnlyDocumentEditAttempt(documentId, sessionReason, projectReason);
-                }
+                _onReadOnlyDocumentEditAttempt?.Invoke(documentId, sessionReason, projectReason);
             }
 
             return isReadOnly;

@@ -18,12 +18,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Progression
         {
             if (symbol == null)
             {
-                throw new ArgumentNullException("symbol");
+                throw new ArgumentNullException(nameof(symbol));
             }
 
             if (solution == null)
             {
-                throw new ArgumentNullException("solution");
+                throw new ArgumentNullException(nameof(solution));
             }
 
             switch (symbol.Kind)
@@ -51,7 +51,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Progression
                     return await GraphNodeIdCreation.GetIdForLocalVariableAsync(symbol, solution, cancellationToken).ConfigureAwait(false);
 
                 default:
-                    throw new ArgumentException(string.Format(ServicesVSResources.CreateNodeIdFailed, symbol));
+                    throw new ArgumentException(string.Format(ServicesVSResources.Can_t_create_a_node_id_for_this_symbol_kind_colon_0, symbol));
             }
         }
 
@@ -59,17 +59,17 @@ namespace Microsoft.VisualStudio.LanguageServices.Progression
         {
             if (graph == null)
             {
-                throw new ArgumentNullException("graph");
+                throw new ArgumentNullException(nameof(graph));
             }
 
             if (symbol == null)
             {
-                throw new ArgumentNullException("symbol");
+                throw new ArgumentNullException(nameof(symbol));
             }
 
             if (solution == null)
             {
-                throw new ArgumentNullException("solution");
+                throw new ArgumentNullException(nameof(solution));
             }
 
             return await GraphBuilder.GetOrCreateNodeAsync(graph, symbol, solution, cancellationToken).ConfigureAwait(false);

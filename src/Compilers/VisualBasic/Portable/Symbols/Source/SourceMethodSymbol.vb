@@ -2,6 +2,7 @@
 
 Imports System.Collections.Immutable
 Imports System.Globalization
+Imports System.Reflection
 Imports System.Runtime.InteropServices
 Imports System.Threading
 Imports Microsoft.Cci
@@ -25,7 +26,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Protected ReadOnly m_containingType As NamedTypeSymbol
 
         ' Me parameter.
-        Private m_lazyMeParameter As ParameterSymbol
+        Private _lazyMeParameter As ParameterSymbol
 
         ' TODO (tomat): should be private
         ' Attributes on method. Set once after construction. IsNull means not set.  
@@ -35,21 +36,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         ' Return type attributes. IsNull means not set. 
         Protected m_lazyReturnTypeCustomAttributesBag As CustomAttributesBag(Of VisualBasicAttributeData)
 
-        Private m_lazyLexicalSortKey As LexicalSortKey = LexicalSortKey.NotInitialized
-
         ' The syntax references for the primary (non-partial) declarations.
         ' Nothing if there are only partial declarations.
         Protected ReadOnly m_syntaxReferenceOpt As SyntaxReference
 
         ' Location(s)
-        Private m_lazyLocations As ImmutableArray(Of Location)
+        Private _lazyLocations As ImmutableArray(Of Location)
 
-        Private m_lazyDocComment As String
+        Private _lazyDocComment As String
 
         'Nothing if diags have never been computed. Initial binding diagnostics
         'are stashed here to optimize API usage patterns
         'where method body diagnostics are requested multiple times.
-        Private m_cachedDiagnostics As ImmutableArray(Of Diagnostic)
+        Private _cachedDiagnostics As ImmutableArray(Of Diagnostic)
 
         Protected Sub New(containingType As NamedTypeSymbol,
                           flags As SourceMemberFlags,
@@ -64,7 +63,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             m_syntaxReferenceOpt = syntaxRef
 
             ' calculated lazily if not initialized
-            m_lazyLocations = locations
+            _lazyLocations = locations
         End Sub
 
 #Region "Factories"
@@ -271,7 +270,7 @@ lReportErrorOnTwoTokens:
                 End If
             Else
                 ' If alias syntax not specified use Nothing - the emitter will fill in the metadata method name and 
-                ' the users can determine wheter or not it was specified.
+                ' the users can determine whether or not it was specified.
                 entryPointName = Nothing
             End If
 
@@ -279,20 +278,20 @@ lReportErrorOnTwoTokens:
             Return New SourceDeclareMethodSymbol(container, name, flags, binder, syntax, importData)
         End Function
 
-        Private Shared Function GetPInvokeAttributes(syntax As DeclareStatementSyntax) As PInvokeAttributes
-            Dim result As PInvokeAttributes
+        Private Shared Function GetPInvokeAttributes(syntax As DeclareStatementSyntax) As MethodImportAttributes
+            Dim result As MethodImportAttributes
             Select Case syntax.CharsetKeyword.Kind
                 Case SyntaxKind.None, SyntaxKind.AnsiKeyword
-                    result = PInvokeAttributes.CharSetAnsi Or PInvokeAttributes.NoMangle
+                    result = MethodImportAttributes.CharSetAnsi Or MethodImportAttributes.ExactSpelling
 
                 Case SyntaxKind.UnicodeKeyword
-                    result = PInvokeAttributes.CharSetUnicode Or PInvokeAttributes.NoMangle
+                    result = MethodImportAttributes.CharSetUnicode Or MethodImportAttributes.ExactSpelling
 
                 Case SyntaxKind.AutoKeyword
-                    result = PInvokeAttributes.CharSetAuto
+                    result = MethodImportAttributes.CharSetAuto
             End Select
 
-            Return result Or PInvokeAttributes.CallConvWinapi Or PInvokeAttributes.SupportsLastError
+            Return result Or MethodImportAttributes.CallingConventionWinApi Or MethodImportAttributes.SetLastError
         End Function
 
         Friend Shared Function CreateOperator(
@@ -401,15 +400,8 @@ lReportErrorOnTwoTokens:
 
             If (flags And SourceMemberFlags.Shared) = 0 Then
                 If container.TypeKind = TypeKind.Structure AndAlso methodSym.ParameterCount = 0 Then
-                    If binder.Compilation.LanguageVersion < LanguageVersion.VisualBasic14 Then
-                        ' Instance constructor must have parameters.
-                        Binder.ReportDiagnostic(diagBag, syntax.NewKeyword, ERRID.ERR_NewInStruct)
-                    Else
-                        If methodSym.DeclaredAccessibility <> Accessibility.Public Then
-                            ' Instance constructor must be public.
-                            Binder.ReportDiagnostic(diagBag, syntax.NewKeyword, ERRID.ERR_StructParameterlessInstanceCtorMustBePublic)
-                        End If
-                    End If
+                    ' Instance constructor must have parameters.
+                    Binder.ReportDiagnostic(diagBag, syntax.NewKeyword, ERRID.ERR_NewInStruct)
                 End If
             End If
 
@@ -571,7 +563,7 @@ lReportErrorOnTwoTokens:
 
         Friend ReadOnly Property Diagnostics As ImmutableArray(Of Diagnostic)
             Get
-                Return m_cachedDiagnostics
+                Return _cachedDiagnostics
             End Get
         End Property
 
@@ -579,7 +571,7 @@ lReportErrorOnTwoTokens:
         ''' Returns true if our diagnostics were used in the event that there were two threads racing.
         ''' </summary>
         Friend Function SetDiagnostics(diags As ImmutableArray(Of Diagnostic)) As Boolean
-            Return ImmutableInterlocked.InterlockedInitialize(m_cachedDiagnostics, diags)
+            Return ImmutableInterlocked.InterlockedInitialize(_cachedDiagnostics, diags)
         End Function
 
         Public Overrides ReadOnly Property IsImplicitlyDeclared As Boolean
@@ -813,13 +805,13 @@ lReportErrorOnTwoTokens:
         End Function
 
         Public NotOverridable Overrides Function GetDocumentationCommentXml(Optional preferredCulture As CultureInfo = Nothing, Optional expandIncludes As Boolean = False, Optional cancellationToken As CancellationToken = Nothing) As String
-            If m_lazyDocComment Is Nothing Then
+            If _lazyDocComment Is Nothing Then
                 ' NOTE: replace Nothing with empty comment
                 Interlocked.CompareExchange(
-                    m_lazyDocComment, GetDocumentationCommentForSymbol(Me, preferredCulture, expandIncludes, cancellationToken), Nothing)
+                    _lazyDocComment, GetDocumentationCommentForSymbol(Me, preferredCulture, expandIncludes, cancellationToken), Nothing)
             End If
 
-            Return m_lazyDocComment
+            Return _lazyDocComment
         End Function
 
         ''' <summary>
@@ -833,29 +825,26 @@ lReportErrorOnTwoTokens:
 
         Friend Overrides Function GetLexicalSortKey() As LexicalSortKey
             ' WARNING: this should not allocate memory!
-            If Not m_lazyLexicalSortKey.IsInitialized Then
-                m_lazyLexicalSortKey.SetFrom(If(m_syntaxReferenceOpt IsNot Nothing,
-                                              New LexicalSortKey(m_syntaxReferenceOpt, Me.DeclaringCompilation),
-                                              LexicalSortKey.NotInSource))
-            End If
-            Return m_lazyLexicalSortKey
+            Return If(m_syntaxReferenceOpt IsNot Nothing,
+                    New LexicalSortKey(m_syntaxReferenceOpt, Me.DeclaringCompilation),
+                    LexicalSortKey.NotInSource)
         End Function
 
         Public Overrides ReadOnly Property Locations As ImmutableArray(Of Location)
             Get
                 ' NOTE: access to m_locations don't really need to be synchronized because 
                 '       it is never being modified after the method symbol is published
-                If m_lazyLocations.IsDefault Then
+                If _lazyLocations.IsDefault Then
 
                     ' This symbol location
                     Dim location As Location = Me.NonMergedLocation
-                    ImmutableInterlocked.InterlockedCompareExchange(Me.m_lazyLocations,
+                    ImmutableInterlocked.InterlockedCompareExchange(Me._lazyLocations,
                                                         If(location Is Nothing,
                                                            ImmutableArray(Of Location).Empty,
                                                            ImmutableArray.Create(location)),
                                                         Nothing)
                 End If
-                Return m_lazyLocations
+                Return _lazyLocations
             End Get
         End Property
 
@@ -914,7 +903,7 @@ lReportErrorOnTwoTokens:
 
             ' Wrap constraints binder in a location-specific binder to
             ' avoid checking constraints when binding type names.
-            binder = New LocationSpecificBinder(BindingLocation.GenericConstraintsClause, binder)
+            binder = New LocationSpecificBinder(BindingLocation.GenericConstraintsClause, Me, binder)
             Return binder.BindTypeParameterConstraintClause(Me, syntax.TypeParameterConstraintClause, diagnostics)
         End Function
 
@@ -1186,7 +1175,7 @@ lReportErrorOnTwoTokens:
             Return If(Locations.FirstOrDefault(), NoLocation.Singleton)
         End Function
 
-        Friend Overrides Function GetBoundMethodBody(diagnostics As DiagnosticBag, Optional ByRef methodBodyBinder As Binder = Nothing) As BoundBlock
+        Friend Overrides Function GetBoundMethodBody(compilationState As TypeCompilationState, diagnostics As DiagnosticBag, Optional ByRef methodBodyBinder As Binder = Nothing) As BoundBlock
 
             Dim syntaxTree As SyntaxTree = Me.SyntaxTree
 
@@ -1231,6 +1220,13 @@ lReportErrorOnTwoTokens:
                 End If
             End If
 
+            ' Calculates a syntax offset of a syntax position which must be either a property or field initializer.
+            Dim syntaxOffset As Integer
+            Dim containingType = DirectCast(Me.ContainingType, SourceNamedTypeSymbol)
+            If containingType.TryCalculateSyntaxOffsetOfPositionInInitializer(localPosition, localTree, Me.IsShared, syntaxOffset) Then
+                Return syntaxOffset
+            End If
+
             Throw ExceptionUtilities.Unreachable
         End Function
 #End Region
@@ -1262,6 +1258,13 @@ lReportErrorOnTwoTokens:
             End Get
         End Property
 
+        Public NotOverridable Overrides ReadOnly Property ReturnsByRef As Boolean
+            Get
+                ' It is not possible to define ref-returning methods in source.
+                Return False
+            End Get
+        End Property
+
         Public Overrides ReadOnly Property IsSub As Boolean
             Get
                 Debug.Assert(Me.MethodKind <> MethodKind.EventAdd,
@@ -1286,23 +1289,23 @@ lReportErrorOnTwoTokens:
             If IsShared Then
                 meParameter = Nothing
             Else
-                If m_lazyMeParameter Is Nothing Then
-                    Interlocked.CompareExchange(m_lazyMeParameter, New MeParameterSymbol(Me), Nothing)
+                If _lazyMeParameter Is Nothing Then
+                    Interlocked.CompareExchange(_lazyMeParameter, New MeParameterSymbol(Me), Nothing)
                 End If
 
-                meParameter = m_lazyMeParameter
+                meParameter = _lazyMeParameter
             End If
             Return True
         End Function
 
         Public Overrides ReadOnly Property ReturnTypeCustomModifiers As ImmutableArray(Of CustomModifier)
             Get
-                Dim overriden = Me.OverriddenMethod
+                Dim overridden = Me.OverriddenMethod
 
-                If overriden Is Nothing Then
+                If overridden Is Nothing Then
                     Return ImmutableArray(Of CustomModifier).Empty
                 Else
-                    Return overriden.ReturnTypeCustomModifiers
+                    Return overridden.ReturnTypeCustomModifiers
                 End If
             End Get
         End Property
@@ -1367,7 +1370,7 @@ lReportErrorOnTwoTokens:
             Return OneOrMany.Create(ReturnTypeAttributeDeclarationSyntaxList)
         End Function
 
-        ReadOnly Property DefaultAttributeLocation As AttributeLocation Implements IAttributeTargetSymbol.DefaultAttributeLocation
+        Public ReadOnly Property DefaultAttributeLocation As AttributeLocation Implements IAttributeTargetSymbol.DefaultAttributeLocation
             Get
                 Return AttributeLocation.Method
             End Get
@@ -1476,7 +1479,7 @@ lReportErrorOnTwoTokens:
                     Dim isExtensionMethod As Boolean = False
 
                     If Not (Me.MethodKind <> MethodKind.Ordinary AndAlso Me.MethodKind <> MethodKind.DeclareMethod) AndAlso
-                        m_containingType.TypeKind = TYPEKIND.Module AndAlso
+                        m_containingType.AllowsExtensionMethods() AndAlso
                         Me.ParameterCount <> 0 Then
 
                         Debug.Assert(Me.IsShared)
@@ -1574,7 +1577,7 @@ lReportErrorOnTwoTokens:
                 If Me.MethodKind <> MethodKind.Ordinary AndAlso Me.MethodKind <> MethodKind.DeclareMethod Then
                     arguments.Diagnostics.Add(ERRID.ERR_ExtensionOnlyAllowedOnModuleSubOrFunction, arguments.AttributeSyntaxOpt.GetLocation())
 
-                ElseIf m_containingType.TypeKind <> TYPEKIND.Module Then
+                ElseIf Not m_containingType.AllowsExtensionMethods() Then
                     arguments.Diagnostics.Add(ERRID.ERR_ExtensionMethodNotInModule, arguments.AttributeSyntaxOpt.GetLocation())
 
                 ElseIf Me.ParameterCount = 0 Then
@@ -1831,7 +1834,7 @@ lReportErrorOnTwoTokens:
         Public Overrides ReadOnly Property IsExternalMethod As Boolean
             Get
                 ' External methods are:
-                ' 1) Declare Subs and Declare Functions: IsExternalMethod overriden in SourceDeclareMethodSymbol
+                ' 1) Declare Subs and Declare Functions: IsExternalMethod overridden in SourceDeclareMethodSymbol
                 ' 2) methods marked by DllImportAttribute
                 ' 3) methods marked by MethodImplAttribute: Runtime and InternalCall methods should not have a body emitted
 
@@ -1987,13 +1990,13 @@ lReportErrorOnTwoTokens:
         Inherits SourceMethodSymbol
 
         ' Parameters.
-        Private m_lazyParameters As ImmutableArray(Of ParameterSymbol)
+        Private _lazyParameters As ImmutableArray(Of ParameterSymbol)
 
         ' Return type. Void for a Sub.
-        Private m_lazyReturnType As TypeSymbol
+        Private _lazyReturnType As TypeSymbol
 
         ' The overridden or hidden methods.
-        Private m_lazyOverriddenMethods As OverriddenMembersResult(Of MethodSymbol)
+        Private _lazyOverriddenMethods As OverriddenMembersResult(Of MethodSymbol)
 
         Protected Sub New(containingType As NamedTypeSymbol,
                           flags As SourceMemberFlags,
@@ -2004,8 +2007,8 @@ lReportErrorOnTwoTokens:
 
         Friend NotOverridable Overrides ReadOnly Property ParameterCount As Integer
             Get
-                If Not Me.m_lazyParameters.IsDefault Then
-                    Return Me.m_lazyParameters.Length
+                If Not Me._lazyParameters.IsDefault Then
+                    Return Me._lazyParameters.Length
                 End If
 
                 Dim decl = Me.DeclarationSyntax
@@ -2032,12 +2035,12 @@ lReportErrorOnTwoTokens:
         Public NotOverridable Overrides ReadOnly Property Parameters As ImmutableArray(Of ParameterSymbol)
             Get
                 EnsureSignature()
-                Return m_lazyParameters
+                Return _lazyParameters
             End Get
         End Property
 
         Private Sub EnsureSignature()
-            If m_lazyParameters.IsDefault Then
+            If _lazyParameters.IsDefault Then
 
                 Dim diagBag = DiagnosticBag.GetInstance()
                 Dim sourceModule = ContainingSourceModule
@@ -2071,7 +2074,7 @@ lReportErrorOnTwoTokens:
                     Dim fakeParamsBuilder = ArrayBuilder(Of ParameterSymbol).GetInstance(params.Length)
                     For Each param As ParameterSymbol In params
                         fakeParamsBuilder.Add(New SignatureOnlyParameterSymbol(
-                                                param.Type.InternalSubstituteTypeParameters(replaceMethodTypeParametersWithFakeTypeParameters),
+                                                param.Type.InternalSubstituteTypeParameters(replaceMethodTypeParametersWithFakeTypeParameters).AsTypeSymbolOnly(),
                                                 ImmutableArray(Of CustomModifier).Empty,
                                                 defaultConstantValue:=Nothing,
                                                 isParamArray:=False,
@@ -2085,12 +2088,14 @@ lReportErrorOnTwoTokens:
                                                                             Me.CallingConvention,
                                                                             fakeTypeParameters,
                                                                             fakeParamsBuilder.ToImmutableAndFree(),
-                                                                            retType.InternalSubstituteTypeParameters(replaceMethodTypeParametersWithFakeTypeParameters),
-                                                                            ImmutableArray(Of CustomModifier).Empty,
-                                                                            ImmutableArray(Of MethodSymbol).Empty,
+                                                                            returnsByRef:=False,
+                                                                            returnType:=retType.InternalSubstituteTypeParameters(replaceMethodTypeParametersWithFakeTypeParameters).AsTypeSymbolOnly(),
+                                                                            returnTypeCustomModifiers:=ImmutableArray(Of CustomModifier).Empty,
+                                                                            explicitInterfaceImplementations:=ImmutableArray(Of MethodSymbol).Empty,
                                                                             isOverrides:=True))
                 End If
 
+                Debug.Assert(IsDefinition)
                 Dim overridden = overriddenMembers.OverriddenMember
 
                 If overridden IsNot Nothing Then
@@ -2125,10 +2130,10 @@ lReportErrorOnTwoTokens:
 
                 ' Unlike MethodSymbol, in SourceMethodSymbol we cache the result of MakeOverriddenOfHiddenMembers, because we use
                 ' it heavily while validating methods and emitting.
-                Interlocked.CompareExchange(m_lazyOverriddenMethods, overriddenMembers, Nothing)
+                Interlocked.CompareExchange(_lazyOverriddenMethods, overriddenMembers, Nothing)
 
-                Interlocked.CompareExchange(m_lazyReturnType, retType, Nothing)
-                retType = m_lazyReturnType
+                Interlocked.CompareExchange(_lazyReturnType, retType, Nothing)
+                retType = _lazyReturnType
 
                 For Each param In params
                     ' TODO: The check for Locations is to rule out cases such as implicit parameters
@@ -2157,7 +2162,7 @@ lReportErrorOnTwoTokens:
                 End If
 
                 sourceModule.AtomicStoreArrayAndDiagnostics(
-                        m_lazyParameters,
+                        _lazyParameters,
                         params,
                         diagBag,
                         CompilationStage.Declare)
@@ -2204,7 +2209,7 @@ lReportErrorOnTwoTokens:
         Public NotOverridable Overrides ReadOnly Property ReturnType As TypeSymbol
             Get
                 EnsureSignature()
-                Return m_lazyReturnType
+                Return _lazyReturnType
             End Get
         End Property
 
@@ -2253,7 +2258,7 @@ lReportErrorOnTwoTokens:
                             SyntaxKind.DeclareSubStatement
 
                             Debug.Assert(Me.IsSub)
-                            binder.DisallowTypeCharacter(GetNameToken(methodStatement), diagBag, ERRID.ERR_TypeCharOnSub)
+                            Binder.DisallowTypeCharacter(GetNameToken(methodStatement), diagBag, ERRID.ERR_TypeCharOnSub)
                             retType = binder.GetSpecialType(SpecialType.System_Void, Syntax, diagBag)
                             errorLocation = methodStatement.DeclarationKeyword
 
@@ -2328,7 +2333,7 @@ lReportErrorOnTwoTokens:
         Friend NotOverridable Overrides ReadOnly Property OverriddenMembers As OverriddenMembersResult(Of MethodSymbol)
             Get
                 EnsureSignature()
-                Return Me.m_lazyOverriddenMethods
+                Return Me._lazyOverriddenMethods
             End Get
         End Property
 

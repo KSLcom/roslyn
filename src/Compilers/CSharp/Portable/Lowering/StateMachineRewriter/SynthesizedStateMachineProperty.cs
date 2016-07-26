@@ -15,26 +15,27 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         internal SynthesizedStateMachineProperty(
             MethodSymbol interfacePropertyGetter,
-            StateMachineTypeSymbol stateMachineType,
-            bool debuggerHidden,
-            bool hasMethodBodyDependency)
+            StateMachineTypeSymbol stateMachineType)
         {
             _name = ExplicitInterfaceHelpers.GetMemberName(interfacePropertyGetter.AssociatedSymbol.Name, interfacePropertyGetter.ContainingType, aliasQualifierOpt: null);
             var getterName = ExplicitInterfaceHelpers.GetMemberName(interfacePropertyGetter.Name, interfacePropertyGetter.ContainingType, aliasQualifierOpt: null);
 
-            _getter = new SynthesizedStateMachineMethod(
+            _getter = new SynthesizedStateMachineDebuggerHiddenMethod(
                 getterName,
                 interfacePropertyGetter,
                 stateMachineType,
                 associatedProperty: this,
-                debuggerHidden: debuggerHidden,
-                generateDebugInfo: !debuggerHidden,
-                hasMethodBodyDependency: hasMethodBodyDependency);
+                hasMethodBodyDependency: false);
         }
 
         public override string Name
         {
             get { return _name; }
+        }
+
+        internal override RefKind RefKind
+        {
+            get { return RefKind.None; }
         }
 
         public override TypeSymbol Type

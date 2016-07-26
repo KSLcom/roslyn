@@ -1,9 +1,11 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
+
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
     Partial Public Class FindReferencesTests
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLabel1()
+        Public Async Function TestLabel1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -20,11 +22,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLabel2()
+        Public Async Function TestLabel2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -41,45 +43,45 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(529060)>
+        <WorkItem(529060, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529060")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestNumericLabel1()
+        Public Async Function TestNumericLabel1() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
         <Document>
 Module M
     Sub Main()
-lable1: GoTo $$[|200|]
-{|Definition:200|}:    GoTo lable1
+label1: GoTo $$[|200|]
+{|Definition:200|}:    GoTo label1
     End Sub
 End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(529060)>
+        <WorkItem(529060, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529060")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestNumericLabel2()
+        Public Async Function TestNumericLabel2() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
         <Document>
 Module M
     Sub Main()
-lable1: GoTo [|200|]
-{|Definition:$$200|}:    GoTo lable1
+label1: GoTo [|200|]
+{|Definition:$$200|}:    GoTo label1
     End Sub
 End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
     End Class
 End Namespace

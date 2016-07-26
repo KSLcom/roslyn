@@ -2,6 +2,7 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -10,6 +11,7 @@ namespace Microsoft.CodeAnalysis
         /// <summary>
         /// Information about an assembly, used as an input for the Binder class.
         /// </summary>
+        [DebuggerDisplay("{GetDebuggerDisplay(), nq}")]
         internal abstract class AssemblyData
         {
             /// <summary>
@@ -58,7 +60,13 @@ namespace Microsoft.CodeAnalysis
 
             public abstract bool DeclaresTheObjectClass { get; }
 
-            public abstract bool GetWinMdVersion(out int majorVersion, out int minorVersion);
+            /// <summary>
+            /// Get the source compilation backing this assembly, if one exists.
+            /// Returns null otherwise.
+            /// </summary>
+            public abstract Compilation SourceCompilation { get; }
+
+            private string GetDebuggerDisplay() => $"{GetType().Name}: [{Identity.GetDisplayName()}]";
         }
     }
 }

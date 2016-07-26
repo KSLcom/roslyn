@@ -9,6 +9,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
+using Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Test.Utilities;
@@ -127,7 +128,7 @@ class C
             };
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: attributeValidator, symbolValidator: null);
+            CompileAndVerify(source, sourceSymbolValidator: attributeValidator, symbolValidator: null);
         }
 
         [Fact]
@@ -252,7 +253,7 @@ class C
             };
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: attributeValidator, symbolValidator: null);
+            CompileAndVerify(source, sourceSymbolValidator: attributeValidator, symbolValidator: null);
         }
 
         [Fact]
@@ -413,7 +414,282 @@ class C
             #endregion
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(text, additionalRefs: new[] { SystemRef }, emitOptions: TestEmitters.CCI, sourceSymbolValidator: attributeValidator);
+            CompileAndVerify(text, additionalRefs: new[] { SystemRef }, sourceSymbolValidator: attributeValidator);
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttribute()
+        {
+            #region "Source"
+            var source = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class Bar
+{
+    public void Method([DateTimeConstant(-1)]DateTime p1) { }
+}
+";
+            #endregion
+
+            // The native C# compiler emits this:
+            // .param[1]
+            // .custom instance void[mscorlib] System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = (
+            //         01 00 ff ff ff ff ff ff ff ff 00 00
+            // )
+            Action<IModuleSymbol> verifier = (module) =>
+                {
+                    var bar = (NamedTypeSymbol)((ModuleSymbol)module).GlobalNamespace.GetMember("Bar");
+                    var method = (MethodSymbol)bar.GetMember("Method");
+                    var parameters = method.GetParameters();
+                    var theParameter = (PEParameterSymbol)parameters[0];
+                    var peModule = (PEModuleSymbol)module;
+
+                    Assert.Equal(ParameterAttributes.HasDefault, theParameter.Flags); // native compiler has None instead
+
+                    // let's find the attribute in the PE metadata
+                    var attributeInfo = PEModule.FindTargetAttribute(peModule.Module.MetadataReader, theParameter.Handle, AttributeDescription.DateTimeConstantAttribute);
+                    Assert.True(attributeInfo.HasValue);
+
+                    long attributeValue;
+                    Assert.True(peModule.Module.TryExtractLongValueFromAttribute(attributeInfo.Handle, out attributeValue));
+                    Assert.Equal(-1L, attributeValue); // check the attribute is constructed with a -1
+
+                    // check .param has no value
+                    var constantValue = peModule.Module.GetParamDefaultValue(theParameter.Handle);
+                    Assert.Equal(ConstantValue.Null, constantValue);
+                };
+
+            var comp = CompileAndVerify(source, symbolValidator: verifier);
+            comp.VerifyDiagnostics();
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttributeReferencedViaRef()
+        {
+            #region "Source"
+            var source1 = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class Bar
+{
+    public void Method([DateTimeConstant(-1)]DateTime p1) { }
+}
+";
+
+            var source2 = @"
+public class Consumer
+{
+    public static void M()
+    {
+        new Bar().Method();
+    }
+}
+";
+            #endregion
+
+            var libComp = CreateCompilationWithMscorlib(source1);
+            var libCompRef = new CSharpCompilationReference(libComp);
+
+            var comp2 = CreateCompilationWithMscorlib(source2, new[] { libCompRef });
+            comp2.VerifyDiagnostics(
+                // (6,19): error CS7036: There is no argument given that corresponds to the required formal parameter 'p1' of 'Bar.Method(DateTime)'
+                //         new Bar().Method();
+                Diagnostic(ErrorCode.ERR_NoCorrespondingArgument, "Method").WithArguments("p1", "Bar.Method(System.DateTime)").WithLocation(6, 19)
+                );
+
+            // The native compiler also gives an error: error CS1501: No overload for method 'Method' takes 0 arguments
+            var libAssemblyRef = libComp.EmitToImageReference();
+            var comp3 = CreateCompilationWithMscorlib(source2, new[] { libAssemblyRef });
+            comp3.VerifyDiagnostics(
+                // (6,19): error CS7036: There is no argument given that corresponds to the required formal parameter 'p1' of 'Bar.Method(DateTime)'
+                //         new Bar().Method();
+                Diagnostic(ErrorCode.ERR_NoCorrespondingArgument, "Method").WithArguments("p1", "Bar.Method(System.DateTime)").WithLocation(6, 19)
+                );
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttributeWithBadDefaultValue()
+        {
+            #region "Source"
+            var source = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class Bar
+{
+    public DateTime M1([DateTimeConstant(-1)] DateTime x = default(DateTime)) { return x; }
+    public static void Main()
+    {
+        Console.WriteLine(new Bar().M1().Ticks);
+    }
+}
+";
+            #endregion
+
+            // The native C# compiler would succeed and emit this:
+            // .method public hidebysig instance void M1([opt] valuetype[mscorlib] System.DateTime x) cil managed
+            // {
+            // .param [1] = nullref
+            // .custom instance void[mscorlib] System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = ( 01 00 FF FF FF FF FF FF FF FF 00 00 )
+
+            var comp = CreateCompilationWithMscorlib(source);
+            comp.VerifyDiagnostics(
+                // (7,60): error CS8017: The parameter has multiple distinct default values.
+                //     public DateTime M1([DateTimeConstant(-1)] DateTime x = default(DateTime)) { return x; }
+                Diagnostic(ErrorCode.ERR_ParamDefaultValueDiffersFromAttribute, "default(DateTime)").WithLocation(7, 60)
+                );
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttributeWithValidDefaultValue()
+        {
+            #region "Source"
+            var source = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class Bar
+{
+    public DateTime M1([DateTimeConstant(42)] DateTime x = default(DateTime)) { return x; }
+    public static void Main()
+    {
+        Console.WriteLine(new Bar().M1().Ticks);
+    }
+}
+";
+            #endregion
+
+            // The native C# compiler emits this:
+            // .param [1] = nullref
+            // .custom instance void[mscorlib] System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = (01 00 2A 00 00 00 00 00 00 00 00 00 )
+
+            var comp = CreateCompilationWithMscorlib(source);
+            comp.VerifyDiagnostics(
+                // (7,60): error CS8017: The parameter has multiple distinct default values.
+                //     public DateTime M1([DateTimeConstant(42)] DateTime x = default(DateTime)) { return x; }
+                Diagnostic(ErrorCode.ERR_ParamDefaultValueDiffersFromAttribute, "default(DateTime)").WithLocation(7, 60)
+                );
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttributeWithBadDefaultValueOnField()
+        {
+            #region "Source"
+            var source = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class C
+{
+   [DateTimeConstant(-1)]
+   public DateTime F = default(DateTime);
+
+   public static void Main()
+   {
+     System.Console.WriteLine(new C().F.Ticks);
+   }
+}
+";
+            #endregion
+
+            // The native C# compiler emits this:
+            // .field public valuetype[mscorlib] System.DateTime F
+            // .custom instance void[mscorlib] System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = ( 01 00 FF FF FF FF FF FF FF FF 00 00 )
+
+            // using the native compiler, this code outputs 0
+            var comp = CompileAndVerify(source, expectedOutput: "0");
+            comp.VerifyDiagnostics();
+        }
+
+        [Fact]
+        [WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void DateTimeConstantAttributeWithValidDefaultValueOnField()
+        {
+            #region "Source"
+            var source = @"
+using System;
+using System.Runtime.CompilerServices;
+
+public class C
+{
+   [DateTimeConstant(42)]
+   public DateTime F = default(DateTime);
+
+   public static void Main()
+   {
+      System.Console.WriteLine(new C().F.Ticks);
+   }
+}
+";
+            #endregion
+
+            // The native C# compiler emits this:
+            // .field public valuetype[mscorlib] System.DateTime F
+            // .custom instance void[mscorlib] System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = ( 01 00 2A 00 00 00 00 00 00 00 00 00 )
+
+            // Using the native compiler, the code executes to output 0
+            var comp = CompileAndVerify(source, expectedOutput: "0");
+            comp.VerifyDiagnostics();
+        }
+
+        [Fact, WorkItem(217740, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?id=217740")]
+        public void LoadingDateTimeConstantWithBadValue()
+        {
+            var ilsource = @"
+.class public auto ansi beforefieldinit C
+       extends [mscorlib]System.Object
+{
+  .method public hidebysig instance valuetype [mscorlib]System.DateTime
+          Method([opt] valuetype [mscorlib]System.DateTime p) cil managed
+  {
+    .param [1]
+    .custom instance void [mscorlib]System.Runtime.CompilerServices.DateTimeConstantAttribute::.ctor(int64) = ( 01 00 FF FF FF FF FF FF FF FF 00 00 )
+    // Code size       7 (0x7)
+    .maxstack  1
+    .locals init (valuetype [mscorlib]System.DateTime V_0)
+    IL_0000:  nop
+    IL_0001:  ldarg.1
+    IL_0002:  stloc.0
+    IL_0003:  br.s       IL_0005
+
+    IL_0005:  ldloc.0
+    IL_0006:  ret
+  } // end of method C::Method
+
+  .method public hidebysig specialname rtspecialname
+          instance void  .ctor() cil managed
+  {
+    // Code size       7 (0x7)
+    .maxstack  8
+    IL_0000:  ldarg.0
+    IL_0001:  call       instance void [mscorlib]System.Object::.ctor()
+    IL_0006:  ret
+  } // end of method C::.ctor
+
+} // end of class C
+
+";
+
+            var cssource = @"
+public class D
+{
+    public static void Main()
+    {
+        System.Console.WriteLine(new C().Method().Ticks);
+    }
+}
+";
+
+            var ilReference = CompileIL(ilsource);
+            CompileAndVerify(cssource, expectedOutput: "0", additionalRefs: new[] { ilReference });
+            // The native compiler would produce a working exe, but that exe would fail at runtime
         }
 
         [Fact]
@@ -464,7 +740,6 @@ public class CCC
             CompileAndVerify(
                 text,
                 additionalRefs: new[] { SystemRef },
-                emitOptions: TestEmitters.CCI,
                 expectedOutput: @"
 (Byte)0, (Byte)128, (UInt32)4294967295, (UInt32)4294967295, (UInt32)4294967295, True
 (Byte)0, (Byte)0, (UInt32)4294967295, (UInt32)4294967295, (UInt32)4294967295, True
@@ -508,9 +783,8 @@ public class C
     }
 }";
 
-            Action<IModuleSymbol, TestEmitters> verifier = (module, options) =>
+            Action<IModuleSymbol> verifier = (module) =>
             {
-                var isRefEmit = options == TestEmitters.RefEmit;
                 var c = (NamedTypeSymbol)((ModuleSymbol)module).GlobalNamespace.GetMember("C");
                 var m = (MethodSymbol)c.GetMember("M");
                 var ps = m.GetParameters();
@@ -523,17 +797,8 @@ public class C
                 var theParameter = (PEParameterSymbol)ps[0];
                 object value = theParameter.ImportConstantValue().Value;
 
-                // Ref.Emit doesn't allow to emit short value for int parameter:
-                if (isRefEmit)
-                {
-                    Assert.True(value is int, "Expected value to be Int32");
-                    Assert.Equal(1, value);
-                }
-                else
-                {
-                    Assert.True(value is short, "Expected value to be Int16");
-                    Assert.Equal((short)1, value);
-                }
+                Assert.True(value is short, "Expected value to be Int16");
+                Assert.Equal((short)1, value);
 
                 Assert.False(ps[0].IsOptional);
                 Assert.Equal(0, ps[0].GetAttributes().Length);
@@ -749,7 +1014,7 @@ public class C
         set {  }
 }
 }";
-            CompileAndVerify(source, new[] { SystemRef }, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, new[] { SystemRef }, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -804,7 +1069,7 @@ public delegate void D([Optional, DefaultParameterValue(1)]ref int a, int b = 2,
 ";
             // Dev11: doesn't allow DPV(null) on int[], we do.
 
-            CompileAndVerify(source, new[] { SystemRef }, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, new[] { SystemRef }, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -918,7 +1183,7 @@ public interface ISomeInterface
             CompileAndVerify(text, additionalRefs: new[] { SystemRef });
         }
 
-        [Fact, WorkItem(544934, "DevDiv")]
+        [Fact, WorkItem(544934, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544934")]
         public void Bug13129()
         {
             string source = @"
@@ -935,7 +1200,7 @@ class C
         Foo();
     }
 }";
-            CompileAndVerify(source, additionalRefs: new[] { SystemRef }, emitOptions: TestEmitters.RefEmitBug, expectedOutput: @"5");
+            CompileAndVerify(source, additionalRefs: new[] { SystemRef }, expectedOutput: @"5");
         }
 
         [Fact]
@@ -1002,10 +1267,10 @@ public class C
 	}
 }
 ");
-            CompileAndVerify(compilation, emitOptions: TestEmitters.RefEmitUnsupported_640494);
+            CompileAndVerify(compilation);
         }
 
-        [Fact, WorkItem(546785, "DevDiv")]
+        [Fact, WorkItem(546785, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546785")]
         public void OptionalAttributeOnPartialMethodParameters()
         {
             var source = @"
@@ -1057,10 +1322,10 @@ partial class C
                 partialValidator(sourceMethod);
             };
 
-            CompileAndVerify(source, emitOptions: TestEmitters.RefEmitBug, additionalRefs: new[] { SystemRef }, sourceSymbolValidator: sourceValidator);
+            CompileAndVerify(source, additionalRefs: new[] { SystemRef }, sourceSymbolValidator: sourceValidator);
         }
 
-        [WorkItem(544303, "DevDiv")]
+        [WorkItem(544303, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544303")]
         [Fact]
         public void OptionalAttributeBindingCycle()
         {
@@ -1173,7 +1438,7 @@ public class Foo: Attribute
                 Diagnostic(ErrorCode.ERR_NoCorrespondingArgument, "Foo").WithArguments("y", "Foo.Foo(int)").WithLocation(16, 38));
         }
 
-        [Fact, WorkItem(546624, "DevDiv")]
+        [Fact, WorkItem(546624, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546624")]
         public void DPV_Optional_Valid()
         {
             string source = @"
@@ -1275,10 +1540,10 @@ class C
     }
 }
 ";
-            CompileAndVerify(source, emitOptions: TestEmitters.RefEmitBug, additionalRefs: new[] { MscorlibRef, SystemRef }, options: TestOptions.ReleaseExe, expectedOutput: "");
+            CompileAndVerify(source, additionalRefs: new[] { MscorlibRef, SystemRef }, options: TestOptions.ReleaseExe, expectedOutput: "");
         }
 
-        [Fact, WorkItem(546624, "DevDiv")]
+        [Fact, WorkItem(546624, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546624")]
         public void CS7067ERR_BadAttributeParamDefaultArgument()
         {
             string source = @"
@@ -1496,7 +1761,7 @@ class C
         }
 
         [Fact]
-        [WorkItem(1036356, "DevDiv")]
+        [WorkItem(1036356, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1036356")]
         public void EnumAsDefaultParameterValue()
         {
             const string source = @"
@@ -1525,10 +1790,10 @@ class Program
 
         #region DecimalConstantAttribute
 
-        [Fact, WorkItem(544438, "DevDiv"), WorkItem(538206, "DevDiv")]
+        [Fact, WorkItem(544438, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544438"), WorkItem(538206, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538206")]
         public void DefaultParameterValueIntToObj()
         {
-            // The native compiler's behaviour:
+            // The native compiler's behavior:
             // It does honour int default values in attributes whether the parameter 
             // is int or object, and whether the attributes appear in source or metadata.
             // The native compiler does NOT honor decimal and datetime attributes in source
@@ -1580,7 +1845,7 @@ class Test
             CompileAndVerify(source, additionalRefs: new[] { SystemRef }, expectedOutput: @"100200300400");
         }
 
-        [WorkItem(544516, "DevDiv")]
+        [WorkItem(544516, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544516")]
         [Fact]
         public void DecimalConstantAttributesAsMetadata()
         {
@@ -1611,7 +1876,7 @@ public class MyClass
     }
 }";
 
-            CompileAndVerify(source, emitOptions: TestEmitters.RefEmitBug, expectedOutput: @"Has DecimalConstantAttribute
+            CompileAndVerify(source, expectedOutput: @"Has DecimalConstantAttribute
 No DecimalConstantAttribute");
         }
 
@@ -1702,7 +1967,7 @@ class C
     public static void M5(int m, out int n, ref int o) { throw null; }
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -1795,7 +2060,7 @@ using System.Runtime.InteropServices;
 
 public delegate int F([Out]int a, [In]int b, [In, Out]ref int c, [In]ref int d, ref int e, [Out]out int f, out int g);
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -1850,7 +2115,7 @@ public class C
     public int this[[Out]int a, [In]int b, [In, Out]int c, int d] {  get { return 0; }  set { } }
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -1907,7 +2172,7 @@ class C
     }
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -1982,7 +2247,7 @@ class C
         }
 
         [Fact]
-        [WorkItem(544180, "DevDiv"), WorkItem(545030, "DevDiv")]
+        [WorkItem(544180, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544180"), WorkItem(545030, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545030")]
         public void DllImport_AttributeRedefinition()
         {
             var source = @"
@@ -2116,7 +2381,7 @@ class Program
     static extern void SurrogatePairMax();
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -2150,7 +2415,7 @@ class Program
         }
 
         [Fact]
-        [WorkItem(544176, "DevDiv")]
+        [WorkItem(544176, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544176")]
         public void TestPseudoAttributes_DllImport_AllTrue()
         {
             var source = @"
@@ -2171,7 +2436,7 @@ public class C
     public static extern void M();
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -2218,17 +2483,17 @@ public class C
                 Assert.Equal(true, info.ThrowOnUnmappableCharacter);
 
                 Assert.Equal(
-                    Cci.PInvokeAttributes.NoMangle |
-                    Cci.PInvokeAttributes.CharSetUnicode |
-                    Cci.PInvokeAttributes.SupportsLastError |
-                    Cci.PInvokeAttributes.CallConvCdecl |
-                    Cci.PInvokeAttributes.BestFitEnabled |
-                    Cci.PInvokeAttributes.ThrowOnUnmappableCharEnabled, ((Cci.IPlatformInvokeInformation)info).Flags);
+                    MethodImportAttributes.ExactSpelling |
+                    MethodImportAttributes.CharSetUnicode |
+                    MethodImportAttributes.SetLastError |
+                    MethodImportAttributes.CallingConventionCDecl |
+                    MethodImportAttributes.BestFitMappingEnable |
+                    MethodImportAttributes.ThrowOnUnmappableCharEnable, ((Cci.IPlatformInvokeInformation)info).Flags);
             });
         }
 
         [Fact]
-        [WorkItem(544601, "DevDiv")]
+        [WorkItem(544601, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544601")]
         public void GetDllImportData_UnspecifiedProperties()
         {
             var source = @"
@@ -2287,7 +2552,7 @@ public class C
     public extern static event System.Action G;
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -2326,7 +2591,7 @@ public class C
                     }
 
                     // This throws if we visit one entry point name twice.
-                    // We used to incorrectly share entyr point name among event accessors.
+                    // We used to incorrectly share entry point name among event accessors.
                     visitedEntryPoints.Add(entryPointName, true);
                 }
 
@@ -2407,7 +2672,7 @@ public class C
             sb.AppendLine("}");
             var code = sb.ToString();
 
-            CompileAndVerify(code, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(code, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
                 Assert.Equal(cases.Length, metadataReader.GetTableRowCount(TableIndex.ImplMap));
@@ -2477,8 +2742,8 @@ public class C
             return sb.ToString();
         }
 
-        [WorkItem(544238, "DevDiv")]
-        [WorkItem(544163, "DevDiv")]
+        [WorkItem(544238, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544238")]
+        [WorkItem(544163, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544163")]
         [Fact]
         public void DllImport_InvalidCharsetValue_Null()
         {
@@ -2552,7 +2817,7 @@ abstract class C
     public abstract void InternalCallAbstract();
 }
 ";
-            Action<PEAssembly, bool> validator = (assembly, isRefEmit) =>
+            Action<PEAssembly> validator = (assembly) =>
             {
                 var peReader = assembly.GetMetadataReader();
                 foreach (var methodHandle in peReader.MethodDefinitions)
@@ -2571,13 +2836,11 @@ abstract class C
                         case "InternalCallStatic":
                         case "InternalCallInstance":
                         case "InternalCallAbstract":
-                            // workaround for a bug in ref.emit:
-                            expectedFlags = isRefEmit ? MethodImplAttributes.Runtime | MethodImplAttributes.InternalCall : MethodImplAttributes.InternalCall;
+                            expectedFlags = MethodImplAttributes.InternalCall;
                             break;
 
                         case "ForwardRef":
-                            // workaround for a bug in ref.emit:
-                            expectedFlags = isRefEmit ? default(MethodImplAttributes) : MethodImplAttributes.ForwardRef;
+                            expectedFlags = MethodImplAttributes.ForwardRef;
                             break;
 
                         case ".ctor": expectedFlags = MethodImplAttributes.IL; break;
@@ -2588,7 +2851,7 @@ abstract class C
                 }
             };
 
-            CompileAndVerify(source, assemblyValidator: (assembly, emitOptions) => validator(assembly, emitOptions == TestEmitters.RefEmit));
+            CompileAndVerify(source, assemblyValidator: validator);
         }
 
         [Fact]
@@ -2763,7 +3026,7 @@ abstract class C
     public extern static void f21();
 }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var peReader = assembly.GetMetadataReader();
                 foreach (var methodHandle in peReader.MethodDefinitions)
@@ -2838,7 +3101,7 @@ class C
     [MethodImpl(MethodImplOptions.PreserveSig)]
     public static void f1() { }
 }";
-            CompileAndVerify(source, emitOptions: TestEmitters.RefEmitUnsupported_646021);
+            CompileAndVerify(source);
         }
 
         [Fact]
@@ -2893,7 +3156,7 @@ class Program1
                 Diagnostic(ErrorCode.ERR_InvalidNamedArgument, "MethodCodeType = (MethodCodeType)9").WithArguments("MethodCodeType"));
         }
 
-        [Fact, WorkItem(544518, "DevDiv")]
+        [Fact, WorkItem(544518, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544518")]
         public void DllImport_DefaultCharSet1()
         {
             var source = @"
@@ -2909,7 +3172,7 @@ abstract class C
 }
 ";
             // Ref.Emit doesn't implement custom attributes yet
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -2917,7 +3180,7 @@ abstract class C
                 Assert.Equal(1, metadataReader.GetTableRowCount(TableIndex.ImplMap));
 
                 // the attribute is emitted:
-                Assert.False(FindCustomAttribute(metadataReader, "DefaultCharSetAttribute").IsNil);
+                Assert.False(MetadataValidation.FindCustomAttribute(metadataReader, "DefaultCharSetAttribute").IsNil);
 
                 var import = metadataReader.GetImportedMethods().Single().GetImport();
                 Assert.Equal(MethodImportAttributes.CharSetAnsi, import.Attributes & MethodImportAttributes.CharSetMask);
@@ -2941,7 +3204,7 @@ abstract class C
 }
 ";
             // Ref.Emit doesn't implement custom attributes yet
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -2949,7 +3212,7 @@ abstract class C
                 Assert.Equal(1, metadataReader.GetTableRowCount(TableIndex.ImplMap));
 
                 // the attribute is emitted:
-                Assert.False(FindCustomAttribute(metadataReader, "DefaultCharSetAttribute").IsNil);
+                Assert.False(MetadataValidation.FindCustomAttribute(metadataReader, "DefaultCharSetAttribute").IsNil);
 
                 var import = metadataReader.GetImportedMethods().Single().GetImport();
                 Assert.Equal(MethodImportAttributes.None, import.Attributes & MethodImportAttributes.CharSetMask);
@@ -3033,7 +3296,7 @@ interface I { }
 delegate void D();
 ";
             // Ref.Emit doesn't implement custom attributes yet
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
@@ -3181,25 +3444,18 @@ public class MainClass
                 Assert.Equal(1, typeA.GetAttributes().Length);
 
                 var ctorA = typeA.InstanceConstructors.First();
-                Assert.True(ctorA.IsExtern);
+                Assert.False(ctorA.IsExtern);
 
                 var methodFoo = (MethodSymbol)typeA.GetMember("Foo");
-                Assert.True(methodFoo.IsExtern);
+                Assert.False(methodFoo.IsExtern);
             };
 
-            // Verify that PEVerify will fail despite the fact that compiler produces no errors
+            // the resulting code does not need to verify
             // This is consistent with Dev10 behavior
-            //
-            // Dev10 PEVerify failure:
-            // [token  0x02000002] Type load failed.
-            //
-            // Dev10 Runtime Exception:
-            // Unhandled Exception: System.TypeLoadException: Could not load type 'A' from assembly 'XXX' because the method 'Foo' has no implementation (no RVA).
-
-            Assert.Throws(typeof(PeVerifyException), () => CompileAndVerify(source, options: TestOptions.ReleaseDll, emitOptions: TestEmitters.CCI, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator));
+            CompileAndVerify(source, options: TestOptions.ReleaseDll, verify: false, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator);
         }
 
-        [Fact, WorkItem(544507, "DevDiv")]
+        [Fact, WorkItem(544507, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544507")]
         public void TestCoClassAttribute_NewOnInterface_FromSource()
         {
             string source = @"
@@ -3282,7 +3538,7 @@ public class MainClass
 0";
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: attributeValidator(true), symbolValidator: attributeValidator(false), expectedOutput: expectedOutput);
+            CompileAndVerify(source, sourceSymbolValidator: attributeValidator(true), symbolValidator: attributeValidator(false), expectedOutput: expectedOutput);
         }
 
         [Fact]
@@ -3342,9 +3598,9 @@ public class MainClass
             // Verify attributes from source and then load metadata to see attributes are written correctly.
 
             // Using metadata reference to test RetargetingNamedTypeSymbol CoClass type
-            CompileAndVerify(source2, additionalRefs: new[] { compDll.ToMetadataReference() }, emitOptions: TestEmitters.CCI, expectedOutput: expectedOutput);
+            CompileAndVerify(source2, additionalRefs: new[] { compDll.ToMetadataReference() }, expectedOutput: expectedOutput);
             // Using assembly file reference to test PENamedTypeSymbol symbol CoClass type
-            CompileAndVerify(source2, additionalRefs: new[] { compDll.EmitToImageReference() }, emitOptions: TestEmitters.CCI, expectedOutput: expectedOutput);
+            CompileAndVerify(source2, additionalRefs: new[] { compDll.EmitToImageReference() }, expectedOutput: expectedOutput);
         }
 
         [Fact]
@@ -3411,7 +3667,7 @@ public class MainClass
             string expectedOutput = @"string";
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: attributeValidator(true), symbolValidator: attributeValidator(false), expectedOutput: expectedOutput);
+            CompileAndVerify(source, sourceSymbolValidator: attributeValidator(true), symbolValidator: attributeValidator(false), expectedOutput: expectedOutput);
         }
 
         [Fact]
@@ -3450,13 +3706,13 @@ public class MainClass
             // Verify attributes from source and then load metadata to see attributes are written correctly.
 
             // Using metadata reference to test RetargetingNamedTypeSymbol CoClass type
-            CompileAndVerify(source2, additionalRefs: new[] { compDll.ToMetadataReference() }, emitOptions: TestEmitters.CCI, expectedOutput: expectedOutput);
+            CompileAndVerify(source2, additionalRefs: new[] { compDll.ToMetadataReference() }, expectedOutput: expectedOutput);
             // Using assembly file reference to test PENamedTypeSymbol symbol CoClass type
-            CompileAndVerify(source2, additionalRefs: new[] { compDll.EmitToImageReference() }, emitOptions: TestEmitters.CCI, expectedOutput: expectedOutput);
+            CompileAndVerify(source2, additionalRefs: new[] { compDll.EmitToImageReference() }, expectedOutput: expectedOutput);
         }
 
         [Fact]
-        public void TestCoClassAttribute_NewOnInterface_FromSource_InaccesibleInterface()
+        public void TestCoClassAttribute_NewOnInterface_FromSource_InaccessibleInterface()
         {
             string source = @"
 using System;
@@ -3490,7 +3746,7 @@ public class MainClass
         }
 
         [Fact]
-        public void TestCoClassAttribute_NewOnInterface_FromMetadata_InaccesibleInterface()
+        public void TestCoClassAttribute_NewOnInterface_FromMetadata_InaccessibleInterface()
         {
             var source = @"
 using System;
@@ -3509,7 +3765,7 @@ public class Wrapper
     }
 }
 ";
-            var compDll = CreateCompilationWithMscorlibAndSystemCore(source, assemblyName: "NewOnInterface_InaccesibleInterface");
+            var compDll = CreateCompilationWithMscorlibAndSystemCore(source, assemblyName: "NewOnInterface_InaccessibleInterface");
 
             var source2 = @"
 public class MainClass
@@ -3534,7 +3790,7 @@ public class MainClass
         }
 
         [Fact]
-        public void TestCoClassAttribute_NewOnInterface_FromSource_InaccesibleCoClass()
+        public void TestCoClassAttribute_NewOnInterface_FromSource_InaccessibleCoClass()
         {
             string source = @"
 using System;
@@ -3568,7 +3824,7 @@ public class MainClass
         }
 
         [Fact]
-        public void TestCoClassAttribute_NewOnInterface_FromMetadata_InaccesibleCoClass()
+        public void TestCoClassAttribute_NewOnInterface_FromMetadata_InaccessibleCoClass()
         {
             var source = @"
 using System;
@@ -3587,7 +3843,7 @@ public class Wrapper
     }
 }
 ";
-            var compDll = CreateCompilationWithMscorlibAndSystemCore(source, assemblyName: "NewOnInterface_InaccesibleCoClass");
+            var compDll = CreateCompilationWithMscorlibAndSystemCore(source, assemblyName: "NewOnInterface_InaccessibleCoClass");
 
             var source2 = @"
 public class MainClass
@@ -3776,7 +4032,7 @@ public class MainClass
         }
 
         [Fact]
-        public void TestCoClassAttribute_NewOnInterface_InaccesibleTypeInCoClassAttribute()
+        public void TestCoClassAttribute_NewOnInterface_InaccessibleTypeInCoClassAttribute()
         {
             string source = @"
 using System;
@@ -3837,7 +4093,7 @@ public class MainClass
         return 0;
     }
 }";
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI);
+            CompileAndVerify(source);
         }
 
         [Fact]
@@ -4027,7 +4283,7 @@ public class MainClass
                 Diagnostic(ErrorCode.ERR_NoNewAbstract, "new InterfaceType()").WithArguments("InterfaceType").WithLocation(16, 13));
         }
 
-        [Fact, WorkItem(544237, "DevDiv")]
+        [Fact, WorkItem(544237, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544237")]
         public void TestCoClassAttribute_NewOnInterface_NoConversion()
         {
             string source = @"
@@ -4095,7 +4351,7 @@ class E {}
                 Diagnostic(ErrorCode.ERR_InvalidAttributeArgument, "null").WithArguments("Guid").WithLocation(18, 7));
         }
 
-        [WorkItem(545490, "DevDiv")]
+        [WorkItem(545490, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545490")]
         [Fact]
         public void TestInvalidGuidAttribute_02()
         {
@@ -4151,7 +4407,7 @@ using System.Runtime.InteropServices;
 
         #region SpecialNameAttribute
 
-        [Fact, WorkItem(544392, "DevDiv")]
+        [Fact, WorkItem(544392, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544392")]
         public void SpecialName()
         {
             string source = @"
@@ -4198,13 +4454,13 @@ enum En
 [SpecialName]
 struct S { }
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
                 foreach (var ca in metadataReader.CustomAttributes)
                 {
-                    var name = GetAttributeName(metadataReader, ca);
+                    var name = MetadataValidation.GetAttributeName(metadataReader, ca);
                     Assert.NotEqual("SpecialNameAttribute", name);
                 }
 
@@ -4276,7 +4532,7 @@ struct S { }
 
         #region SerializableAttribute
 
-        [Fact, WorkItem(544392, "DevDiv")]
+        [Fact, WorkItem(544392, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544392")]
         public void Serializable()
         {
             string source = @"
@@ -4307,13 +4563,13 @@ enum E
 [Serializable]
 delegate void D();
 ";
-            CompileAndVerify(source, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(source, assemblyValidator: (assembly) =>
             {
                 var metadataReader = assembly.GetMetadataReader();
 
                 foreach (var ca in metadataReader.CustomAttributes)
                 {
-                    var name = GetAttributeName(metadataReader, ca);
+                    var name = MetadataValidation.GetAttributeName(metadataReader, ca);
                     Assert.NotEqual("SpecialNameAttribute", name);
                 }
 
@@ -4416,7 +4672,6 @@ namespace AttributeTest
             // Verify attributes from source and then load metadata to see attributes are written correctly.
             var comp = CompileAndVerify(
                 compilation,
-                emitOptions: TestEmitters.CCI,
                 sourceSymbolValidator: attributeValidator,
                 symbolValidator: null,
                 expectedSignatures: new[]
@@ -4430,7 +4685,7 @@ namespace AttributeTest
 
         #region AttributeUsageAttribute
 
-        [WorkItem(541733, "DevDiv")]
+        [WorkItem(541733, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541733")]
         [Fact]
         public void TestSourceOverrideWellKnownAttribute_01()
         {
@@ -4461,8 +4716,8 @@ namespace System
                 Diagnostic(ErrorCode.ERR_DuplicateAttribute, "AttributeUsage").WithArguments("AttributeUsage"));
         }
 
-        [WorkItem(541733, "DevDiv")]
-        [WorkItem(546102, "DevDiv")]
+        [WorkItem(541733, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541733")]
+        [WorkItem(546102, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546102")]
         [Fact]
         public void TestSourceOverrideWellKnownAttribute_02()
         {
@@ -4516,10 +4771,10 @@ namespace System
             };
 
             // Verify attributes from source and then load metadata to see attributes are written correctly.
-            CompileAndVerify(source, sourceSymbolValidator: attributeValidator, symbolValidator: attributeValidator, emitOptions: TestEmitters.CCI);
+            CompileAndVerify(source, sourceSymbolValidator: attributeValidator, symbolValidator: attributeValidator);
         }
 
-        [WorkItem(546102, "DevDiv")]
+        [WorkItem(546102, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546102")]
         [Fact]
         public void TestAttributeUsageAllowMultiple()
         {
@@ -4549,7 +4804,7 @@ class A: Attribute {}
             CompileAndVerify(source);
         }
 
-        [WorkItem(546056, "DevDiv")]
+        [WorkItem(546056, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546056")]
         [Fact]
         public void TestBadAttributeUsageArgument()
         {
@@ -4575,7 +4830,7 @@ public class MyAttribute : Attribute
 
         #region InternalsVisibleToAttribute
 
-        [WorkItem(542173, "DevDiv")]
+        [WorkItem(542173, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542173")]
         [Fact]
         public void MergeMemberImplWithImportedInternals()
         {
@@ -4629,7 +4884,7 @@ public class Child2: Child
 
         #region CustomConstantAttribute
 
-        [Fact, WorkItem(544440, "DevDiv"), WorkItem(538206, "DevDiv")]
+        [Fact, WorkItem(544440, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544440"), WorkItem(538206, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538206")]
         public void CustomConstantAttributeIntToObj()
         {
             #region "Source"
@@ -4999,8 +5254,7 @@ class A
             // Dev10 Runtime Exception:
             // Unhandled Exception: System.TypeLoadException: Windows Runtime types can only be declared in Windows Runtime assemblies.
 
-            var verifier = CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator, verify: false);
-            verifier.EmitAndVerify("Type load failed.");
+            var verifier = CompileAndVerify(source, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator, verify: false);
         }
 
         #endregion
@@ -5057,14 +5311,14 @@ class A
                 Assert.True(method.RequiresSecurityObject, "Metadata flag RequiresSecurityObject is not set");
             };
 
-            CompileAndVerify(source, emitOptions: TestEmitters.CCI, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator, expectedOutput: "");
+            CompileAndVerify(source, sourceSymbolValidator: sourceValidator, symbolValidator: metadataValidator, expectedOutput: "");
         }
 
         #endregion
 
         #region ObsoleteAttribute
 
-        [Fact, WorkItem(546062, "DevDiv")]
+        [Fact, WorkItem(546062, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546062")]
         public void TestObsoleteAttributeOnTypes()
         {
             var source = @"
@@ -5457,7 +5711,7 @@ public class Test
                 Diagnostic(ErrorCode.WRN_DeprecatedSymbol, "c1 += c").WithArguments("Test.operator +(Test, Test)"));
         }
 
-        [Fact, WorkItem(546062, "DevDiv")]
+        [Fact, WorkItem(546062, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546062")]
         public void TestObsoleteAttributeInMetadata()
         {
             var peSource = @"
@@ -5733,7 +5987,7 @@ public class SomeAttr1: Attribute
                 Diagnostic(ErrorCode.ERR_DeprecatedSymbolStr, "F7").WithArguments("Test.F7", "F7 is obsolete"));
         }
 
-        [WorkItem(546064, "DevDiv")]
+        [WorkItem(546064, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546064")]
         [Fact]
         public void TestObsoleteAttributeCycles_02()
         {
@@ -5887,7 +6141,7 @@ public class A
         }
 
         [Fact]
-        [WorkItem(546455, "DevDiv"), WorkItem(546456, "DevDiv"), WorkItem(546457, "DevDiv")]
+        [WorkItem(546455, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546455"), WorkItem(546456, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546456"), WorkItem(546457, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546457")]
         public void TestObsoleteAttributeOnCollectionInitializer()
         {
             var source = @"
@@ -5942,7 +6196,7 @@ public class B : IEnumerable
         }
 
         [Fact]
-        [WorkItem(546636, "DevDiv")]
+        [WorkItem(546636, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546636")]
         public void TestObsoleteAttributeOnAttributes()
         {
             var source = @"
@@ -6096,7 +6350,7 @@ class Program
         }
 
         [Fact]
-        [WorkItem(546766, "DevDiv")]
+        [WorkItem(546766, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546766")]
         public void TestObsoleteAttributeOnMembers3()
         {
             var source = @"
@@ -6164,7 +6418,7 @@ class Event1
         }
 
         [Fact]
-        [WorkItem(547024, "DevDiv")]
+        [WorkItem(547024, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/547024")]
         public void TestObsoleteForeachMembers()
         {
             var source =
@@ -6252,7 +6506,7 @@ internal sealed class C1 : I1
         }
 
         [Fact]
-        [WorkItem(531071, "DevDiv")]
+        [WorkItem(531071, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531071")]
         public void TestObsoleteTypeParameterInAlias()
         {
             var source =
@@ -6305,7 +6559,7 @@ namespace N
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnBase()
         {
             var source = @"
@@ -6404,7 +6658,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnDerived()
         {
             var source = @"
@@ -6466,7 +6720,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_GenericType()
         {
             var source = @"
@@ -6518,7 +6772,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_GenericMethod()
         {
             var source = @"
@@ -6554,7 +6808,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnBase_BaseCall()
         {
             var source = @"
@@ -6640,7 +6894,7 @@ public class C : B
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnBaseAndDerived_BaseCall()
         {
             var source = @"
@@ -6721,7 +6975,7 @@ public class C : B
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnDerived_BaseCall()
         {
             var source = @"
@@ -6788,7 +7042,7 @@ public class C : B
         }
 
         [Fact]
-        [WorkItem(580832, "DevDiv")]
+        [WorkItem(580832, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/580832")]
         public void ObsoleteOnVirtual_OnDerived_BaseCall2()
         {
             var source = @"
@@ -6837,7 +7091,7 @@ public class C : B
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion1()
         {
             var source = @"
@@ -6894,7 +7148,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion2()
         {
             var source = @"
@@ -6942,7 +7196,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion3()
         {
             var source = @"
@@ -6999,7 +7253,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion4()
         {
             var source = @"
@@ -7032,7 +7286,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion5()
         {
             var source = @"
@@ -7086,7 +7340,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(531148, "DevDiv")]
+        [WorkItem(531148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531148")]
         public void ObsoleteUserDefinedConversion6()
         {
             var source = @"
@@ -7118,7 +7372,7 @@ class Test
         }
 
         [Fact]
-        [WorkItem(656345, "DevDiv")]
+        [WorkItem(656345, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/656345")]
         public void ConditionalLazyObsoleteDiagnostic()
         {
             var source = @"
@@ -7154,7 +7408,7 @@ public class C : B
         }
 
         [Fact]
-        [WorkItem(656345, "DevDiv")]
+        [WorkItem(656345, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/656345")]
         public void ConditionalLazyObsoleteDiagnosticInAttribute()
         {
             var source = @"
@@ -7206,7 +7460,7 @@ public class NumAttribute : Attribute
         }
 
         [Fact]
-        [WorkItem(665595, "DevDiv")]
+        [WorkItem(665595, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/665595")]
         public void ConditionalLazyObsoleteDiagnosticInLazyObsoleteContext()
         {
             var source1 = @"
@@ -7265,7 +7519,7 @@ class C : ReadWriteControlDesigner
         }
 
         [Fact]
-        [WorkItem(668365, "DevDiv")]
+        [WorkItem(668365, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/668365")]
         public void ObsoleteOverrideChain()
         {
             var source = @"
@@ -7448,7 +7702,7 @@ class Class6
         }
 
         [Fact]
-        public void TestDeprecatedAttribute1()
+        public void TestDeprecatedAttributeTH1()
         {
             var source1 = @"
 using System;
@@ -7463,6 +7717,8 @@ namespace Windows.Foundation.Metadata
         {
         }
 
+        // this signature is only used in TH1 metadata
+        // see: https://github.com/dotnet/roslyn/issues/10630
         public DeprecatedAttribute(System.String message, DeprecationType type, System.UInt32 version, Type contract)
         {
         }
@@ -7532,8 +7788,95 @@ namespace ConsoleApplication74
 );
         }
 
+        [Fact]
+        public void TestDeprecatedAttributeTH2()
+        {
+            var source1 = @"
+using System;
+using Windows.Foundation.Metadata;
 
-        [Fact, WorkItem(858839, "DevDiv")]
+namespace Windows.Foundation.Metadata
+{
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Enum | AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Event | AttributeTargets.Interface | AttributeTargets.Delegate, AllowMultiple = true)]
+    public sealed class DeprecatedAttribute : Attribute
+    {
+        public DeprecatedAttribute(System.String message, DeprecationType type, System.UInt32 version)
+        {
+        }
+
+        // this signature is only used in TH2 metadata and onwards
+        // see: https://github.com/dotnet/roslyn/issues/10630
+        public DeprecatedAttribute(System.String message, DeprecationType type, System.UInt32 version, String contract)
+        {
+        }
+    }
+
+    public enum DeprecationType
+    {
+        Deprecate = 0,
+        Remove = 1
+    }
+}
+
+public class Test
+{
+        [Deprecated(""hello"", DeprecationType.Deprecate, 1, ""hello"")]
+        public static void Foo()
+        {
+
+        }
+
+        [Deprecated(""hi"", DeprecationType.Deprecate, 1)]
+        public static void Bar()
+        {
+
+        }
+}
+";
+            var compilation1 = CreateCompilationWithMscorlibAndSystemCore(source1);
+
+            var source2 = @"
+namespace ConsoleApplication74
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Test.Foo();
+            Test.Bar();
+        }
+    }
+}
+
+
+";
+            var compilation2 = CreateCompilationWithMscorlibAndSystemCore(source2, new[] { compilation1.EmitToImageReference() });
+
+
+            compilation2.VerifyDiagnostics(
+    // (8,13): warning CS0618: 'Test.Foo()' is obsolete: 'hello'
+    //             Test.Foo();
+    Diagnostic(ErrorCode.WRN_DeprecatedSymbolStr, "Test.Foo()").WithArguments("Test.Foo()", "hello").WithLocation(8, 13),
+    // (9,13): warning CS0618: 'Test.Bar()' is obsolete: 'hi'
+    //             Test.Bar();
+    Diagnostic(ErrorCode.WRN_DeprecatedSymbolStr, "Test.Bar()").WithArguments("Test.Bar()", "hi").WithLocation(9, 13)
+);
+
+            var compilation3 = CreateCompilationWithMscorlibAndSystemCore(source2, new[] { new CSharpCompilationReference(compilation1) });
+
+
+            compilation3.VerifyDiagnostics(
+    // (8,13): warning CS0618: 'Test.Foo()' is obsolete: 'hello'
+    //             Test.Foo();
+    Diagnostic(ErrorCode.WRN_DeprecatedSymbolStr, "Test.Foo()").WithArguments("Test.Foo()", "hello").WithLocation(8, 13),
+    // (9,13): warning CS0618: 'Test.Bar()' is obsolete: 'hi'
+    //             Test.Bar();
+    Diagnostic(ErrorCode.WRN_DeprecatedSymbolStr, "Test.Bar()").WithArguments("Test.Bar()", "hi").WithLocation(9, 13)
+);
+        }
+
+
+        [Fact, WorkItem(858839, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/858839")]
         public void Bug858839_1()
         {
             var source1 = @"
@@ -7639,7 +7982,7 @@ public sealed class ConcreteFoo5 : IFoo1
             compilation1.VerifyDiagnostics(expected);
         }
 
-        [Fact, WorkItem(858839, "DevDiv")]
+        [Fact, WorkItem(858839, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/858839")]
         public void Bug858839_2()
         {
             var source1 = @"
@@ -7686,7 +8029,7 @@ class Test
             compilation2.VerifyDiagnostics(expected);
         }
 
-        [Fact, WorkItem(530801, "DevDiv")]
+        [Fact, WorkItem(530801, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530801")]
         public void Bug530801DisallowRequiredAttributeCS0648()
         {
             var ilsource = @"
@@ -7748,7 +8091,7 @@ public class C
             cscomp.VerifyDiagnostics(expected);
         }
 
-        [Fact, WorkItem(530801, "DevDiv")]
+        [Fact, WorkItem(530801, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530801")]
         public void Bug530801DisallowRequiredAttributeCS0570()
         {
             var ilsource = @"
@@ -7857,5 +8200,211 @@ public class C
         }
 
         #endregion
+
+        [Fact, WorkItem(807, "https://github.com/dotnet/roslyn/issues/807")]
+        public void TestAttributePropagationForAsyncAndIterators_01()
+        {
+            var source = CreateCompilationWithMscorlib45(@"
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+    }
+
+    [MyAttribute]
+    [System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [System.Diagnostics.DebuggerHiddenAttribute]
+    [System.Diagnostics.DebuggerStepperBoundaryAttribute]
+    [System.Diagnostics.DebuggerStepThroughAttribute]
+    public async Task<int> test1()
+    {
+        return await DoNothing();
+    }
+
+    public async Task<int> test2()
+    {
+        return await DoNothing();
+    }
+
+    async Task<int> DoNothing()
+    {
+        return 1;
+    }
+
+    [MyAttribute]
+    [System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [System.Diagnostics.DebuggerHiddenAttribute]
+    [System.Diagnostics.DebuggerStepperBoundaryAttribute]
+    [System.Diagnostics.DebuggerStepThroughAttribute]
+    public IEnumerable<int> Test3()
+    {
+        yield return 1;
+        yield return 2;
+    }
+
+    public IEnumerable<int> Test4()
+    {
+        yield return 1;
+        yield return 2;
+    }
+}
+
+class MyAttribute : System.Attribute
+{ }
+");
+
+            Action<ModuleSymbol> attributeValidator = (ModuleSymbol m) =>
+            {
+                var program = m.GlobalNamespace.GetTypeMember("Program");
+
+                Assert.Equal("", CheckAttributePropagation(((NamedTypeSymbol)program.GetMember<MethodSymbol>("test1").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "AsyncStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value).
+                                                                             GetMember<MethodSymbol>("MoveNext")));
+
+                Assert.Equal(0, ((NamedTypeSymbol)program.GetMember<MethodSymbol>("test2").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "AsyncStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value).
+                                                                             GetMember<MethodSymbol>("MoveNext").GetAttributes().Length);
+
+                Assert.Equal("", CheckAttributePropagation(((NamedTypeSymbol)program.GetMember<MethodSymbol>("Test3").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "IteratorStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value).
+                                                                             GetMember<MethodSymbol>("MoveNext")));
+
+                Assert.Equal(0, ((NamedTypeSymbol)program.GetMember<MethodSymbol>("Test4").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "IteratorStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value).
+                                                                             GetMember<MethodSymbol>("MoveNext").GetAttributes().Length);
+            };
+
+            CompileAndVerify(source, symbolValidator: attributeValidator);
+        }
+
+        private static string CheckAttributePropagation(Symbol symbol)
+        {
+            string result = "";
+
+            if (symbol.GetAttributes("", "MyAttribute").Any())
+            {
+                result += "MyAttribute is present\n";
+            }
+
+            if (!symbol.GetAttributes("System.Diagnostics", "DebuggerNonUserCodeAttribute").Any())
+            {
+                result += "DebuggerNonUserCodeAttribute is missing\n";
+            }
+
+            if (!symbol.GetAttributes("System.Diagnostics", "DebuggerHiddenAttribute").Any())
+            {
+                result += "DebuggerHiddenAttribute is missing\n";
+            }
+
+            if (!symbol.GetAttributes("System.Diagnostics", "DebuggerStepperBoundaryAttribute").Any())
+            {
+                result += "DebuggerStepperBoundaryAttribute is missing\n";
+            }
+
+            if (!symbol.GetAttributes("System.Diagnostics", "DebuggerStepThroughAttribute").Any())
+            {
+                result += "DebuggerStepThroughAttribute is missing\n";
+            }
+
+            return result;
+        }
+
+        [Fact, WorkItem(4521, "https://github.com/dotnet/roslyn/issues/4521")]
+        public void TestAttributePropagationForAsyncAndIterators_02()
+        {
+            var source = CreateCompilationWithMscorlib45(@"
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+[MyAttribute]
+[System.Diagnostics.DebuggerNonUserCodeAttribute]
+[System.Diagnostics.DebuggerStepThroughAttribute]
+class Program1
+{
+    static void Main(string[] args)
+    {
+    }
+
+    public async Task<int> test1()
+    {
+        return await DoNothing();
+    }
+
+    async Task<int> DoNothing()
+    {
+        return 1;
+    }
+
+    public IEnumerable<int> Test3()
+    {
+        yield return 1;
+        yield return 2;
+    }
+}
+
+class Program2
+{
+    static void Main(string[] args)
+    {
+    }
+
+    public async Task<int> test2()
+    {
+        return await DoNothing();
+    }
+
+    async Task<int> DoNothing()
+    {
+        return 1;
+    }
+
+    public IEnumerable<int> Test4()
+    {
+        yield return 1;
+        yield return 2;
+    }
+}
+
+class MyAttribute : System.Attribute
+{ }
+");
+
+            Action<ModuleSymbol> attributeValidator = (ModuleSymbol m) =>
+            {
+                var program1 = m.GlobalNamespace.GetTypeMember("Program1");
+                var program2 = m.GlobalNamespace.GetTypeMember("Program2");
+
+                Assert.Equal("DebuggerHiddenAttribute is missing\nDebuggerStepperBoundaryAttribute is missing\n",
+                                                   CheckAttributePropagation(((NamedTypeSymbol)program1.GetMember<MethodSymbol>("test1").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "AsyncStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value)));
+
+                Assert.Equal("DebuggerNonUserCodeAttribute is missing\nDebuggerHiddenAttribute is missing\nDebuggerStepperBoundaryAttribute is missing\nDebuggerStepThroughAttribute is missing\n",
+                                                   CheckAttributePropagation(((NamedTypeSymbol)program2.GetMember<MethodSymbol>("test2").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "AsyncStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value)));
+
+                Assert.Equal("DebuggerHiddenAttribute is missing\nDebuggerStepperBoundaryAttribute is missing\n",
+                                                   CheckAttributePropagation(((NamedTypeSymbol)program1.GetMember<MethodSymbol>("Test3").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "IteratorStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value)));
+
+                Assert.Equal("DebuggerNonUserCodeAttribute is missing\nDebuggerHiddenAttribute is missing\nDebuggerStepperBoundaryAttribute is missing\nDebuggerStepThroughAttribute is missing\n",
+                                                   CheckAttributePropagation(((NamedTypeSymbol)program2.GetMember<MethodSymbol>("Test4").
+                                                                             GetAttribute("System.Runtime.CompilerServices", "IteratorStateMachineAttribute").
+                                                                             ConstructorArguments.Single().Value)));
+            };
+
+            CompileAndVerify(source, symbolValidator: attributeValidator);
+        }
     }
 }

@@ -4,12 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
-using Microsoft.CodeAnalysis.Completion.Providers;
-using Microsoft.CodeAnalysis.Editor.CSharp.Completion.CompletionProviders;
-using Microsoft.CodeAnalysis.Shared.Extensions;
+using Microsoft.CodeAnalysis.Editor.Completion.FileSystem;
 using Microsoft.CodeAnalysis.Text;
-using Microsoft.VisualStudio.Language.Intellisense;
-using Moq;
 using Roslyn.Test.Utilities;
 using Xunit;
 
@@ -41,7 +37,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.IntelliSense.Completion
                               select completion;
 
             Assert.True(systemsColl.Any(
-                completion => completion.GetDescriptionAsync().Result.GetFullText() == typeof(System.Diagnostics.Process).Assembly.FullName));
+                completion => CommonCompletionItem.GetDescription(completion).Text == typeof(System.Diagnostics.Process).Assembly.FullName));
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.Completion)]

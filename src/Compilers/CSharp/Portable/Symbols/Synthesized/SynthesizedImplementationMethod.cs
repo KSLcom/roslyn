@@ -3,17 +3,15 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using Microsoft.CodeAnalysis.CSharp.Emit;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Symbols
 {
-    internal class SynthesizedImplementationMethod : SynthesizedInstanceMethodSymbol
+    internal abstract class SynthesizedImplementationMethod : SynthesizedInstanceMethodSymbol
     {
         //inputs
         private readonly MethodSymbol _interfaceMethod;
         private readonly NamedTypeSymbol _implementingType;
-        private readonly bool _debuggerHidden;
         private readonly bool _generateDebugInfo;
         private readonly PropertySymbol _associatedProperty;
 
@@ -28,7 +26,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             MethodSymbol interfaceMethod,
             NamedTypeSymbol implementingType,
             string name = null,
-            bool debuggerHidden = false,
             bool generateDebugInfo = true,
             PropertySymbol associatedProperty = null)
         {
@@ -38,7 +35,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             _name = name ?? ExplicitInterfaceHelpers.GetMemberName(interfaceMethod.Name, interfaceMethod.ContainingType, aliasQualifierOpt: null);
             _interfaceMethod = interfaceMethod;
             _implementingType = implementingType;
-            _debuggerHidden = debuggerHidden;
             _generateDebugInfo = generateDebugInfo;
             _associatedProperty = associatedProperty;
             _explicitInterfaceImplementations = ImmutableArray.Create<MethodSymbol>(interfaceMethod);
@@ -81,20 +77,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         #endregion
 
-        internal sealed override void AddSynthesizedAttributes(ModuleCompilationState compilationState, ref ArrayBuilder<SynthesizedAttributeData> attributes)
+        internal override void AddSynthesizedAttributes(ModuleCompilationState compilationState, ref ArrayBuilder<SynthesizedAttributeData> attributes)
         {
             base.AddSynthesizedAttributes(compilationState, ref attributes);
 
-            if (_debuggerHidden)
+            var compilation = this.DeclaringCompilation;
+            if (this.ReturnType.ContainsDynamic() && compilation.HasDynamicEmitAttributes() && compilation.CanEmitBoolean())
             {
-                var compilation = this.DeclaringCompilation;
-                AddSynthesizedAttribute(ref attributes, compilation.TrySynthesizeAttribute(WellKnownMember.System_Diagnostics_DebuggerHiddenAttribute__ctor));
+                AddSynthesizedAttribute(ref attributes, compilation.SynthesizeDynamicAttribute(this.ReturnType, this.ReturnTypeCustomModifiers.Length));
             }
 
-            if (this.ReturnType.ContainsDynamic())
+            if (ReturnType.ContainsTuple() &&
+                compilation.HasTupleNamesAttributes &&
+                compilation.CanEmitSpecialType(SpecialType.System_String))
             {
-                var compilation = this.DeclaringCompilation;
-                AddSynthesizedAttribute(ref attributes, compilation.SynthesizeDynamicAttribute(this.ReturnType, this.ReturnTypeCustomModifiers.Length));
+                AddSynthesizedAttribute(ref attributes,
+                    compilation.SynthesizeTupleNamesAttributeOpt(ReturnType));
             }
         }
 
@@ -111,6 +109,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         public sealed override ImmutableArray<TypeSymbol> TypeArguments
         {
             get { return _typeParameters.Cast<TypeParameterSymbol, TypeSymbol>(); }
+        }
+
+        internal override RefKind RefKind
+        {
+            get { return _interfaceMethod.RefKind; }
         }
 
         public sealed override TypeSymbol ReturnType
@@ -167,11 +170,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         public override bool HidesBaseMethodsByName
         {
             get { return false; }
-        }
-
-        internal override LexicalSortKey GetLexicalSortKey()
-        {
-            return LexicalSortKey.NotInSource;
         }
 
         public override ImmutableArray<Location> Locations

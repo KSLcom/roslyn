@@ -132,12 +132,17 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         {
             //For the sake of matching the metadata output of the native compiler, make synthesized constructors appear last in the metadata.
             //This is not critical, but it makes it easier on tools that are comparing metadata.
-            return LexicalSortKey.SynthesisedCtor;
+            return LexicalSortKey.SynthesizedCtor;
         }
 
         public sealed override ImmutableArray<Location> Locations
         {
             get { return ContainingType.Locations; }
+        }
+
+        internal override RefKind RefKind
+        {
+            get { return RefKind.None; }
         }
 
         public sealed override TypeSymbol ReturnType

@@ -216,7 +216,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 if (ReferenceEquals(Interlocked.CompareExchange(ref _lazyBounds, bounds, TypeParameterBounds.Unset), TypeParameterBounds.Unset))
                 {
                     this.CheckConstraintTypeConstraints(diagnostics);
-                    this.AddSemanticDiagnostics(diagnostics);
+                    this.AddDeclarationDiagnostics(diagnostics);
                     _state.NotePartComplete(CompletionPart.TypeParameterConstraints);
                 }
 
@@ -377,6 +377,73 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         private readonly SourceMemberMethodSymbol _owner;
 
         public SourceMethodTypeParameterSymbol(SourceMemberMethodSymbol owner, string name, int ordinal, ImmutableArray<Location> locations, ImmutableArray<SyntaxReference> syntaxRefs)
+            : base(name, ordinal, locations, syntaxRefs)
+        {
+            _owner = owner;
+        }
+
+        public override TypeParameterKind TypeParameterKind
+        {
+            get
+            {
+                return TypeParameterKind.Method;
+            }
+        }
+
+        public override Symbol ContainingSymbol
+        {
+            get { return _owner; }
+        }
+
+        public override bool HasConstructorConstraint
+        {
+            get
+            {
+                var constraints = this.GetDeclaredConstraints();
+                return (constraints & TypeParameterConstraintKind.Constructor) != 0;
+            }
+        }
+
+        public override bool HasValueTypeConstraint
+        {
+            get
+            {
+                var constraints = this.GetDeclaredConstraints();
+                return (constraints & TypeParameterConstraintKind.ValueType) != 0;
+            }
+        }
+
+        public override bool HasReferenceTypeConstraint
+        {
+            get
+            {
+                var constraints = this.GetDeclaredConstraints();
+                return (constraints & TypeParameterConstraintKind.ReferenceType) != 0;
+            }
+        }
+
+        protected override ImmutableArray<TypeParameterSymbol> ContainerTypeParameters
+        {
+            get { return _owner.TypeParameters; }
+        }
+
+        protected override TypeParameterBounds ResolveBounds(ConsList<TypeParameterSymbol> inProgress, DiagnosticBag diagnostics)
+        {
+            var constraintTypes = _owner.GetTypeParameterConstraintTypes(this.Ordinal);
+            return this.ResolveBounds(this.ContainingAssembly.CorLibrary, inProgress.Prepend(this), constraintTypes, false, this.DeclaringCompilation, diagnostics);
+        }
+
+        private TypeParameterConstraintKind GetDeclaredConstraints()
+        {
+            return _owner.GetTypeParameterConstraints(this.Ordinal);
+        }
+    }
+
+    internal sealed class LocalFunctionTypeParameterSymbol : SourceTypeParameterSymbolBase
+    {
+        private readonly LocalFunctionSymbol _owner;
+
+        public LocalFunctionTypeParameterSymbol(LocalFunctionSymbol owner, string name, int ordinal, ImmutableArray<Location> locations, ImmutableArray<SyntaxReference> syntaxRefs)
             : base(name, ordinal, locations, syntaxRefs)
         {
             _owner = owner;
@@ -626,7 +693,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             var map = _map.TypeMap;
             Debug.Assert(map != null);
 
-            var constraintTypes = map.SubstituteTypes(typeParameter.ConstraintTypesNoUseSiteDiagnostics);
+            var constraintTypes = map.SubstituteTypesWithoutModifiers(typeParameter.ConstraintTypesNoUseSiteDiagnostics);
             return this.ResolveBounds(this.ContainingAssembly.CorLibrary, inProgress.Prepend(this), constraintTypes, true, this.DeclaringCompilation, diagnostics);
         }
 

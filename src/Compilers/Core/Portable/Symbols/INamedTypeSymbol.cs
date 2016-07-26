@@ -8,6 +8,10 @@ namespace Microsoft.CodeAnalysis
     /// <summary>
     /// Represents a type other than an array, a pointer, a type parameter.
     /// </summary>
+    /// <remarks>
+    /// This interface is reserved for implementation by its associated APIs. We reserve the right to
+    /// change it in the future.
+    /// </remarks>
     public interface INamedTypeSymbol : ITypeSymbol
     {
         /// <summary>
@@ -69,7 +73,7 @@ namespace Microsoft.CodeAnalysis
 
         /// <summary>
         /// For delegate types, gets the delegate's invoke method.  Returns null on
-        /// all other kinds of types.  Note that is is possible to have an ill-formed
+        /// all other kinds of types.  Note that it is possible to have an ill-formed
         /// delegate type imported from metadata which does not have an Invoke method.
         /// Such a type will be classified as a delegate but its DelegateInvokeMethod
         /// would be null.
@@ -130,5 +134,29 @@ namespace Microsoft.CodeAnalysis
         /// If false, the symbol does not contain extension methods. 
         /// </summary>
         bool MightContainExtensionMethods { get; }
+
+        /// <summary>
+        /// Returns the types of the elements for types that are tuples.
+        ///
+        /// If this type is not a tuple, then returns default.
+        /// </summary>
+        ImmutableArray<ITypeSymbol> TupleElementTypes { get; }
+
+        /// <summary>
+        /// Returns the friendly-names of the elements for types that are tuples and that have friendly-names.
+        ///
+        /// If this type is not a tuple, then returns default.
+        /// If this type has no friendly-names, then returns default.
+        /// </summary>
+        ImmutableArray<string> TupleElementNames { get; }
+
+        /// <summary>
+        /// If this is a tuple type symbol, returns the symbol for its underlying type.
+        /// Otherwise, returns null.
+        /// The type argument corresponding to the type of the extension field (VT[8].Rest),
+        /// which is at the 8th (one based) position is always a symbol for another tuple, 
+        /// rather than its underlying type.
+        /// </summary>
+        INamedTypeSymbol TupleUnderlyingType { get; }
     }
 }

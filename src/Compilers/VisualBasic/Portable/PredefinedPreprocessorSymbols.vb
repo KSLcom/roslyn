@@ -8,7 +8,7 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Namespace Microsoft.CodeAnalysis.VisualBasic
     Public Module PredefinedPreprocessorSymbols
 
-        Friend Const CurrentVersionNumber = 14.0
+        Friend Const CurrentVersionNumber = 15.0
 
         ''' <summary>
         ''' Adds predefined preprocessor symbols VBC_VER and TARGET to given list of preprocessor symbols if not included yet.
@@ -38,7 +38,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ''' <returns>Array of symbols that include VBC_VER and TARGET.</returns>
         Public Function AddPredefinedPreprocessorSymbols(kind As OutputKind, symbols As ImmutableArray(Of KeyValuePair(Of String, Object))) As ImmutableArray(Of KeyValuePair(Of String, Object))
             If Not kind.IsValid Then
-                Throw New ArgumentOutOfRangeException("kind")
+                Throw New ArgumentOutOfRangeException(NameOf(kind))
             End If
 
             Const CompilerVersionSymbol = "VBC_VER"

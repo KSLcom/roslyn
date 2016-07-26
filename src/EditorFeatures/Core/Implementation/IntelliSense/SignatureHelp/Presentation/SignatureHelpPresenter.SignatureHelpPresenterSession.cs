@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
+using Microsoft.CodeAnalysis.SignatureHelp;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
@@ -31,6 +32,8 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.SignatureHel
             private ISignatureHelpSession _editorSessionOpt;
             private bool _ignoreSelectionStatusChangedEvent;
 
+            public bool EditorSessionIsActive => _editorSessionOpt?.IsDismissed == false;
+
             public SignatureHelpPresenterSession(
                 ISignatureHelpBroker sigHelpBroker,
                 ITextView textView,
@@ -50,7 +53,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.SignatureHel
                 _signatureHelpItems = signatureHelpItems;
                 _selectedItem = selectedItem;
 
-                // Create all the editor sigantures for the sig help items we have.
+                // Create all the editor signatures for the sig help items we have.
                 this.CreateSignatures(triggerSpan, selectedParameter);
 
                 // It's a new list of items.  Either create the editor session if this is the
@@ -74,7 +77,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.SignatureHel
                 }
 
                 // So here's the deal.  We cannot create the editor session and give it the right
-                // signatures (even though we know what they are).  Instead, the sessino with
+                // signatures (even though we know what they are).  Instead, the session with
                 // call back into the ISignatureHelpSourceProvider (which is us) to get those
                 // values. It will pass itself along with the calls back into
                 // ISignatureHelpSourceProvider. So, in order to make that connection work, we
@@ -145,12 +148,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.SignatureHel
             private void OnEditorSessionDismissed()
             {
                 AssertIsForeground();
-
-                var dismissed = this.Dismissed;
-                if (dismissed != null)
-                {
-                    dismissed(this, new EventArgs());
-                }
+                this.Dismissed?.Invoke(this, new EventArgs());
             }
 
             private void OnSelectedSignatureChanged(object sender, SelectedSignatureChangedEventArgs eventArgs)

@@ -25,12 +25,13 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
         {
             get
             {
-                return EditorFeaturesResources.PreviewChangesSummaryText;
+                return EditorFeaturesResources.Preview_changes2;
             }
         }
 
         protected override async Task<IEnumerable<CodeActionOperation>> ComputeOperationsAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var previewDialogService = _workspace.Services.GetService<IPreviewDialogService>();
             if (previewDialogService == null)
             {
@@ -38,11 +39,11 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
             }
 
             var changedSolution = previewDialogService.PreviewChanges(
-                EditorFeaturesResources.PreviewChanges,
+                EditorFeaturesResources.Preview_Changes,
                 "vs.codefix.previewchanges",
                 _originalCodeAction.Title,
-                EditorFeaturesResources.PreviewChangesRootNodeText,
-                Glyph.OpenFolder,
+                EditorFeaturesResources.Changes,
+                CodeAnalysis.Glyph.OpenFolder,
                 _changeSummary.NewSolution,
                 _changeSummary.OldSolution,
                 showCheckBoxes: false);
@@ -53,6 +54,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
                 return null;
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return await _originalCodeAction.GetOperationsAsync(cancellationToken).ConfigureAwait(false);
         }
     }

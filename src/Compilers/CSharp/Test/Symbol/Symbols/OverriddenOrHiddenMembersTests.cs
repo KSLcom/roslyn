@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Immutable;
 using System.Linq;
@@ -512,8 +512,12 @@ class DerivedClass : BaseClass<int>
             var text = @"
 class BaseClass
 {
+    public int field;
     public virtual void Method() { }
     public virtual int Property { get; set; }
+    public virtual ref int Method1() { return ref field; }
+    public virtual ref int Property1 { get { return ref field; } }
+    public virtual ref int this[int i] { get { return ref field; } }
 }
 
 class DerivedClass : BaseClass
@@ -521,9 +525,12 @@ class DerivedClass : BaseClass
     public override void Method() { }
     public override void Method(int x) { } //this is incorrect, but doesn't break the test
     public override int Property { get; set; }
+    public override ref int Method1() { return ref field; }
+    public override ref int Property1 { get { return ref field; } }
+    public override ref int this[int i] { get { return ref field; } }
 }
 ";
-            var comp = CreateCompilationWithMscorlib(text);
+            var comp = CreateCompilationWithMscorlib45(text);
             var global = comp.GlobalNamespace;
 
             var baseClass = (NamedTypeSymbol)global.GetMembers("BaseClass").Single();
@@ -531,10 +538,16 @@ class DerivedClass : BaseClass
 
             var baseClassMethod = (MethodSymbol)baseClass.GetMembers("Method").Single();
             var baseClassProperty = (PropertySymbol)baseClass.GetMembers("Property").Single();
+            var baseClassRefMethod = (MethodSymbol)baseClass.GetMembers("Method1").Single();
+            var baseClassRefProperty = (PropertySymbol)baseClass.GetMembers("Property1").Single();
+            var baseClassRefIndexer = (PropertySymbol)baseClass.GetMembers("this[]").Single();
 
             var derivedClassMethod = (MethodSymbol)derivedClass.GetMembers("Method").First();
             var derivedClassMethodInt = (MethodSymbol)derivedClass.GetMembers("Method").Last();
             var derivedClassProperty = (PropertySymbol)derivedClass.GetMembers("Property").Single();
+            var derivedClassRefMethod = (MethodSymbol)derivedClass.GetMembers("Method1").Single();
+            var derivedClassRefProperty = (PropertySymbol)derivedClass.GetMembers("Property1").Single();
+            var derivedClassRefIndexer = (PropertySymbol)derivedClass.GetMembers("this[]").Single();
 
             Assert.Same(OverriddenOrHiddenMembersResult.Empty, baseClassMethod.OverriddenOrHiddenMembers);
             Assert.Same(OverriddenOrHiddenMembersResult.Empty, baseClassProperty.OverriddenOrHiddenMembers);
@@ -551,12 +564,33 @@ class DerivedClass : BaseClass
             Assert.Same(baseClassProperty, derivedClassPropertyOverriddenOrHidden.OverriddenMembers.Single());
             Assert.Same(baseClassProperty, derivedClassPropertyOverriddenOrHidden.RuntimeOverriddenMembers.Single());
 
+            var derivedClassRefMethodOverriddenOrHidden = derivedClassRefMethod.OverriddenOrHiddenMembers;
+            Assert.False(derivedClassRefMethodOverriddenOrHidden.HiddenMembers.Any());
+            Assert.Same(baseClassRefMethod, derivedClassRefMethodOverriddenOrHidden.OverriddenMembers.Single());
+            Assert.Same(baseClassRefMethod, derivedClassRefMethodOverriddenOrHidden.RuntimeOverriddenMembers.Single());
+
+            var derivedClassRefPropertyOverriddenOrHidden = derivedClassRefProperty.OverriddenOrHiddenMembers;
+            Assert.False(derivedClassRefPropertyOverriddenOrHidden.HiddenMembers.Any());
+            Assert.Same(baseClassRefProperty, derivedClassRefPropertyOverriddenOrHidden.OverriddenMembers.Single());
+            Assert.Same(baseClassRefProperty, derivedClassRefPropertyOverriddenOrHidden.RuntimeOverriddenMembers.Single());
+
+            var derivedClassRefIndexerOverriddenOrHidden = derivedClassRefIndexer.OverriddenOrHiddenMembers;
+            Assert.False(derivedClassRefIndexerOverriddenOrHidden.HiddenMembers.Any());
+            Assert.Same(baseClassRefIndexer, derivedClassRefIndexerOverriddenOrHidden.OverriddenMembers.Single());
+            Assert.Same(baseClassRefIndexer, derivedClassRefIndexerOverriddenOrHidden.RuntimeOverriddenMembers.Single());
+
             Assert.Null(baseClassMethod.OverriddenMethod);
             Assert.Null(baseClassProperty.OverriddenProperty);
+            Assert.Null(baseClassRefMethod.OverriddenMethod);
+            Assert.Null(baseClassRefProperty.OverriddenProperty);
+            Assert.Null(baseClassRefIndexer.OverriddenProperty);
             Assert.Null(derivedClassMethodInt.OverriddenMethod);
 
             Assert.Same(baseClassMethod, derivedClassMethod.OverriddenMethod);
             Assert.Same(baseClassProperty, derivedClassProperty.OverriddenProperty);
+            Assert.Same(baseClassRefMethod, derivedClassRefMethod.OverriddenMethod);
+            Assert.Same(baseClassRefProperty, derivedClassRefProperty.OverriddenProperty);
+            Assert.Same(baseClassRefIndexer, derivedClassRefIndexer.OverriddenProperty);
         }
 
         [Fact]
@@ -784,11 +818,14 @@ abstract class Base<T, U>
 {
     public abstract T Property { get; set; }
     public virtual void Method(T x, U y) { }
+    public abstract ref T RefProperty { get; }
 }
 
 class Base2<A, B> : Base<A, B>
 {
+    A field = default(A);
     public override A Property { set { } }
+    public override ref A RefProperty { get { return ref field; } }
 }
 
 abstract class Base3<T, U> : Base2<T, U>
@@ -801,7 +838,7 @@ class Base4<U, V> : Base3<U, V>
 {
     public override U Property { set { } }
 }";
-            CreateCompilationWithMscorlib(text).VerifyDiagnostics(
+            CreateCompilationWithMscorlib45(text).VerifyDiagnostics(
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Base2").WithArguments("Base2<A, B>", "Base<A, B>.Property.get"),
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Base4").WithArguments("Base4<U, V>", "Base3<U, V>.Method(U, V)"));
         }
@@ -1232,7 +1269,7 @@ class CSHide : VBIMeth02Impl, IMeth02, IMeth03
                 Diagnostic(ErrorCode.WRN_UnreferencedField, "n").WithArguments("CSHide.n"));
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedPropertyAccessorModifiers_EmptyAbstract()
         {
@@ -1246,7 +1283,7 @@ abstract class Derived : AccessorModifierMismatch
             CreateCompilationWithMscorlib(text1, references: refs, options: TestOptions.ReleaseDll).VerifyDiagnostics();
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedPropertyAccessorModifiers_EmptyConcrete()
         {
@@ -1266,7 +1303,7 @@ class Derived : AccessorModifierMismatch
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Derived").WithArguments("Derived", "AccessorModifierMismatch.AbstractNone.get"));
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedPropertyAccessorModifiers_OverrideGetters()
         {
@@ -1365,7 +1402,7 @@ class Derived : AccessorModifierMismatch // CS0534 (didn't implement AbstractAbs
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Derived").WithArguments("Derived", "AccessorModifierMismatch.NoneAbstract.set"));
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedPropertyAccessorModifiers_OverrideSetters()
         {
@@ -1464,7 +1501,7 @@ class Derived : AccessorModifierMismatch // CS0534 (didn't implement AbstractAbs
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Derived").WithArguments("Derived", "AccessorModifierMismatch.AbstractNone.get"));
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedPropertyAccessorModifiers_AbstractSealed()
         {
@@ -1528,7 +1565,7 @@ class Derived : AccessorModifierMismatch
             CreateCompilationWithCustomILSource(csharp, il).VerifyDiagnostics();
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedEventAccessorModifiers_EmptyAbstract()
         {
@@ -1542,7 +1579,7 @@ abstract class Derived : AccessorModifierMismatch
             CreateCompilationWithMscorlib(text1, references: refs, options: TestOptions.ReleaseDll).VerifyDiagnostics();
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedEventAccessorModifiers_EmptyConcrete()
         {
@@ -1563,7 +1600,7 @@ class Derived : AccessorModifierMismatch
         }
 
         // NOTE: The behavior is quite different from the analogous property tests.
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedEventAccessorModifiers_OverrideAccessors()
         {
@@ -1658,7 +1695,7 @@ class Derived : AccessorModifierMismatch
                 Diagnostic(ErrorCode.ERR_CantOverrideSealed, "SealedSealed").WithArguments("Derived.SealedSealed", "AccessorModifierMismatch.SealedSealed"));
         }
 
-        [WorkItem(543263, "DevDiv")]
+        [WorkItem(543263, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543263")]
         [Fact]
         public void TestMixedEventAccessorModifiers_AbstractSealed()
         {
@@ -1761,15 +1798,15 @@ class Derived : AccessorModifierMismatch
 
         #region "Regressions"
 
-        [WorkItem(546834, "DevDiv")]
+        [WorkItem(546834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546834")]
         [Fact]
         public void PropertyHidingAccessor()
         {
             var text = @"
 class Derived : Base
 {
-    public delegate void BogusDelegetate();
-    public event BogusDelegetate set_Instance;
+    public delegate void BogusDelegate();
+    public event BogusDelegate set_Instance;
 
     public int get_Instance
     {
@@ -1811,7 +1848,7 @@ public class MainClass
         }
 
 
-        [WorkItem(539623, "DevDiv")]
+        [WorkItem(539623, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539623")]
         [Fact]
         public void GenericTypeWithDiffTypeParamNotHideBase()
         {
@@ -1883,7 +1920,7 @@ public class TestClass3 : TestClass2
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "TestClass3").WithArguments("TestClass3", "TestClass1.P2.get"));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideBaseImplementationWithPrivateProperty()
         {
@@ -1911,7 +1948,7 @@ class B2 : B1, I1
                     global.GetMember<NamedTypeSymbol>("I1").GetMember<PropertySymbol>("Foo")));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideBaseImplementationWithStaticProperty()
         {
@@ -1939,7 +1976,7 @@ class B2 : B1, I1
                     global.GetMember<NamedTypeSymbol>("I1").GetMember<PropertySymbol>("Foo")));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideBaseImplementationWithWrongTypeProperty()
         {
@@ -1967,7 +2004,7 @@ class B2 : B1, I1
                     global.GetMember<NamedTypeSymbol>("I1").GetMember<PropertySymbol>("Foo")));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideInvalidBaseImplementationWithPrivateProperty()
         {
@@ -1996,7 +2033,7 @@ class B2 : B1, I1
                     global.GetMember<NamedTypeSymbol>("I1").GetMember<PropertySymbol>("Foo")));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideInvalidBaseImplementationWithStaticProperty()
         {
@@ -2063,7 +2100,7 @@ class B3 : I
                 Diagnostic(ErrorCode.ERR_CloseUnimplementedInterfaceMemberStatic, "I").WithArguments("B3", "I.M<T>()", "B3.M<T>()").WithLocation(8, 12));
         }
 
-        [WorkItem(540383, "DevDiv")]
+        [WorkItem(540383, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540383")]
         [Fact]
         public void HideInvalidBaseImplementationWithWrongTypeProperty()
         {
@@ -2092,7 +2129,7 @@ class B2 : B1, I1
                     global.GetMember<NamedTypeSymbol>("I1").GetMember<PropertySymbol>("Foo")));
         }
 
-        [WorkItem(540420, "DevDiv")]
+        [WorkItem(540420, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540420")]
         [Fact]
         public void HidingInEnum()
         {
@@ -2105,7 +2142,7 @@ enum E
             CreateCompilationWithMscorlib(text).VerifyDiagnostics();
         }
 
-        [Fact, WorkItem(543448, "DevDiv")]
+        [Fact, WorkItem(543448, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543448")]
         public void GenericMethodsHidingFieldsAndEvents()
         {
             CreateCompilationWithMscorlib(@"
@@ -2130,7 +2167,7 @@ class Derived : Base
                 Diagnostic(ErrorCode.WRN_UnreferencedEvent, "C").WithArguments("Base.C"));
         }
 
-        [WorkItem(543448, "DevDiv")]
+        [WorkItem(543448, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543448")]
         [Fact]
         public void GenericMethodHidesArityZero()
         {
@@ -2161,7 +2198,7 @@ class Sub : Base
                 Diagnostic(ErrorCode.WRN_UnreferencedEvent, "C").WithArguments("Base.C"));
         }
 
-        [WorkItem(543908, "DevDiv")]
+        [WorkItem(543908, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543908")]
         [Fact]
         public void OverrideMemberOfConstructedProtectedInnerClass()
         {
@@ -2190,7 +2227,7 @@ internal class Outer2 : Outer1<Outer2>
             c2.GetDiagnostics().Verify();
         }
 
-        [WorkItem(543908, "DevDiv")]
+        [WorkItem(543908, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543908")]
         [Fact]
         public void Repro11967()
         {
@@ -2390,16 +2427,10 @@ class Test
         c.GAB(ref c); // modopts A, B (inside and outside ref, respectively)
     }
 }";
-            // NOTE: dev11 accepts all of these signatures, even though they are not valid
-            // according to the CLI spec.  Roslyn has special handling to accept GA, but
-            // still rejects GAB.
-            CreateCompilationWithCustomILSource(csharp, il).VerifyDiagnostics(
-                // (16,9): error CS0570: 'C.GAB(ref ?)' is not supported by the language
-                //         c.GAB(ref c);
-                Diagnostic(ErrorCode.ERR_BindToBogus, "GAB").WithArguments("C.GAB(ref ?)"));
+            CompileAndVerify(CreateCompilationWithCustomILSource(csharp, il));
         }
 
-        [WorkItem(545653, "DevDiv")]
+        [WorkItem(545653, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545653")]
         [Fact]
         public void Repro14242_Property()
         {
@@ -2461,7 +2492,7 @@ class D : C
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "D").WithArguments("D", "A.X.get"));
         }
 
-        [WorkItem(545653, "DevDiv")]
+        [WorkItem(545653, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545653")]
         [Fact]
         public void Repro14242_Event()
         {
@@ -2520,7 +2551,7 @@ class D : C
                 Diagnostic(ErrorCode.WRN_UnreferencedEvent, "E").WithArguments("D.E"));
         }
 
-        [WorkItem(545653, "DevDiv")]
+        [WorkItem(545653, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545653")]
         [Fact]
         public void Repro14242_Method()
         {
@@ -2576,7 +2607,7 @@ class D : C
                 Diagnostic(ErrorCode.ERR_CantChangeReturnTypeOnOverride, "M").WithArguments("D.M()", "C.M()", "string"));
         }
 
-        [WorkItem(545653, "DevDiv")]
+        [WorkItem(545653, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545653")]
         [Fact]
         public void Repro14242_Indexer()
         {
@@ -2638,8 +2669,8 @@ class D : C
                 Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "D").WithArguments("D", "A.this[int].get"));
         }
 
-        [WorkItem(545658, "DevDiv")]
-        [Fact]
+        [WorkItem(545658, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545658")]
+        [ClrOnlyFact]
         public void MethodConstructedFromOverrideWithCustomModifiers()
         {
             var il = @"
@@ -2817,7 +2848,7 @@ class Test
             var ref1 = CompileIL(il);
 
             var comp = CreateCompilationWithMscorlib(csharp, new[] { ref1 }, options: TestOptions.ReleaseExe);
-            CompileAndVerify(comp, emitOptions: TestEmitters.RefEmitBug, expectedOutput: @"
+            CompileAndVerify(comp, expectedOutput: @"
 SubSubT[System.Int32].vMeth(System.Int32)
 Base[System.Int32].vMeth(System.Int32)
 SubSubGT[System.Int32].vMeth(G`1[System.Int32])
@@ -2841,7 +2872,8 @@ Base[G`1[System.Int32]].Meth(G`1[System.Int32],System.Int32)
 Base[C].Meth(C,System.Int32)");
         }
 
-        [Fact, WorkItem(546816, "DevDiv")]
+        [ClrOnlyFact]
+        [WorkItem(546816, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546816")]
         public void Bug16887()
         {
             var text = @"
@@ -2863,7 +2895,7 @@ class Test
             CompileAndVerify(compilation);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility1()
         {
             var source1 = @"
@@ -2911,7 +2943,7 @@ public class C : B
                 p.DeclaredAccessibility == (p.ContainingType.Name == "A" ? Accessibility.ProtectedOrInternal : Accessibility.Protected));
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility2()
         {
             var source1 = @"
@@ -2959,7 +2991,7 @@ public class C : B
                 p.DeclaredAccessibility == (p.ContainingType.Name == "A" ? Accessibility.ProtectedOrInternal : Accessibility.Protected));
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility3()
         {
             var source1 = @"
@@ -3006,7 +3038,7 @@ public class C : B
             AssertEx.All(properties, p => p.DeclaredAccessibility == Accessibility.Public);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility4()
         {
             var source1 = @"
@@ -3053,7 +3085,7 @@ public class C : B
             AssertEx.All(properties, p => p.DeclaredAccessibility == Accessibility.Public);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility5()
         {
             var source1 = @"
@@ -3100,7 +3132,7 @@ public class C : B
             AssertEx.All(properties, p => p.DeclaredAccessibility == Accessibility.Public);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility6()
         {
             var source1 = @"
@@ -3147,7 +3179,7 @@ public class C : B
             AssertEx.All(properties, p => p.DeclaredAccessibility == Accessibility.Public);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenPropertyAccessibility7()
         {
             var source1 = @"
@@ -3221,7 +3253,7 @@ public class B : A
             AssertEx.All(properties, p => p.DeclaredAccessibility == Accessibility.ProtectedOrInternal);
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void OverriddenEventAccessibility()
         {
             var source1 = @"
@@ -3275,7 +3307,7 @@ public class C : B
                 e.DeclaredAccessibility == (e.ContainingType.Name == "A" ? Accessibility.ProtectedOrInternal : Accessibility.Protected));
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void HideDestructorOperatorConversion1()
         {
             var source = @"
@@ -3391,7 +3423,7 @@ public class D8 : B
                 Diagnostic(ErrorCode.WRN_FinalizeMethod, "Finalize"));
         }
 
-        [Fact, WorkItem(546836, "DevDiv")]
+        [Fact, WorkItem(546836, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546836")]
         public void HideDestructorOperatorConversion2()
         {
             var source = @"
@@ -3544,7 +3576,7 @@ public class D8 : B
         }
 
         [Fact]
-        [WorkItem(661370, "DevDiv")]
+        [WorkItem(661370, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/661370")]
         public void HideAndOverride1()
         {
             var source = @"
@@ -3614,6 +3646,334 @@ class Derived : Base
 
             // Dev11 spuriously reports WRN_EqualsWithoutGetHashCode.
             CreateCompilationWithMscorlib(source).VerifyDiagnostics();
+        }
+
+        [Fact]
+        [WorkItem(6148, "https://github.com/dotnet/roslyn/issues/6148")]
+        public void AbstractGenericBase_01()
+        {
+            var text = @"
+class C
+{
+    public static void Main()
+    {
+        var t = new Required();
+        t.Test1(null);
+        t.Test2(null);
+    }
+}
+
+public abstract class Validator
+{
+    public abstract void DoValidate(object objectToValidate);
+
+    public void Test1(object objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class Validator<T> : Validator
+{
+    public override void DoValidate(object objectToValidate)
+    {
+        System.Console.WriteLine(""void Validator<T>.DoValidate(object objectToValidate)"");
+    }
+
+    protected abstract void DoValidate(T objectToValidate);
+
+    public void Test2(T objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class ValidatorBase<T> : Validator<T>
+{
+    protected override void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void ValidatorBase<T>.DoValidate(T objectToValidate)"");
+    }
+}
+
+public class Required : ValidatorBase<object>
+{
+}
+";
+            var compilation = CreateCompilationWithMscorlib(text, options: TestOptions.ReleaseExe);
+
+            var validatorBaseT = compilation.GetTypeByMetadataName("ValidatorBase`1");
+            var doVaidateT = validatorBaseT.GetMember<MethodSymbol>("DoValidate");
+
+            Assert.Equal(1, doVaidateT.OverriddenOrHiddenMembers.OverriddenMembers.Length);
+            Assert.Equal("void Validator<T>.DoValidate(T objectToValidate)", doVaidateT.OverriddenMethod.ToTestDisplayString());
+            Assert.False(validatorBaseT.AbstractMembers.Any());
+
+            var validatorBaseObject = validatorBaseT.Construct(compilation.ObjectType);
+            var doVaidateObject = validatorBaseObject.GetMember<MethodSymbol>("DoValidate");
+
+            Assert.Equal(2, doVaidateObject.OverriddenOrHiddenMembers.OverriddenMembers.Length);
+            Assert.Equal("void Validator<T>.DoValidate(T objectToValidate)", doVaidateObject.OverriddenMethod.OriginalDefinition.ToTestDisplayString());
+            Assert.False(validatorBaseObject.AbstractMembers.Any());
+
+            CompileAndVerify(compilation, expectedOutput: @"void Validator<T>.DoValidate(object objectToValidate)
+void ValidatorBase<T>.DoValidate(T objectToValidate)");
+        }
+
+        [Fact]
+        [WorkItem(6148, "https://github.com/dotnet/roslyn/issues/6148")]
+        public void AbstractGenericBase_02()
+        {
+            var text = @"
+class C
+{
+    public static void Main()
+    {
+        var t = new Required();
+        t.Test1(null);
+        t.Test2(null);
+    }
+}
+
+public abstract class Validator
+{
+    public abstract void DoValidate(object objectToValidate);
+
+    public void Test1(object objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class Validator<T> : Validator
+{
+    public abstract override void DoValidate(object objectToValidate);
+
+    public virtual void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void Validator<T>.DoValidate(T objectToValidate)"");
+    }
+
+    public void Test2(T objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+
+public abstract class ValidatorBase<T> : Validator<T>
+{
+    public override void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void ValidatorBase<T>.DoValidate(T objectToValidate)"");
+    }
+}
+
+public class Required : ValidatorBase<object>
+{
+}";
+            var compilation = CreateCompilationWithMscorlib(text, options: TestOptions.ReleaseExe);
+
+            compilation.VerifyDiagnostics(
+        // (46,14): error CS0534: 'Required' does not implement inherited abstract member 'Validator<object>.DoValidate(object)'
+        // public class Required : ValidatorBase<object>
+        Diagnostic(ErrorCode.ERR_UnimplementedAbstractMethod, "Required").WithArguments("Required", "Validator<object>.DoValidate(object)").WithLocation(46, 14)
+                );
+        }
+
+        [Fact]
+        [WorkItem(6148, "https://github.com/dotnet/roslyn/issues/6148")]
+        public void AbstractGenericBase_03()
+        {
+            var text = @"
+class C
+{
+    public static void Main()
+    {
+        var t = new Required();
+        t.Test1(null);
+        t.Test2(null);
+    }
+}
+
+public abstract class Validator0<T>
+{
+    public abstract void DoValidate(T objectToValidate);
+
+    public void Test2(T objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class Validator<T> : Validator0<T>
+{
+    public virtual void DoValidate(object objectToValidate)
+    {
+        System.Console.WriteLine(""void Validator<T>.DoValidate(object objectToValidate)"");
+    }
+
+    public void Test1(object objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+
+public abstract class ValidatorBase<T> : Validator<T>
+{
+    public override void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void ValidatorBase<T>.DoValidate(T objectToValidate)"");
+    }
+}
+
+public class Required : ValidatorBase<object>
+{
+}
+";
+            var compilation = CreateCompilationWithMscorlib(text, options: TestOptions.ReleaseExe);
+
+            CompileAndVerify(compilation, expectedOutput: @"void Validator<T>.DoValidate(object objectToValidate)
+void ValidatorBase<T>.DoValidate(T objectToValidate)");
+        }
+
+        [Fact]
+        [WorkItem(6148, "https://github.com/dotnet/roslyn/issues/6148")]
+        public void AbstractGenericBase_04()
+        {
+            var text = @"
+class C
+{
+    public static void Main()
+    {
+        var t = new Required();
+        Test1(t);
+        Test2(t, null);
+    }
+
+    static void Test1(Validator v)
+    {
+        v.Test1(null);
+    }
+
+    static void Test2<T>(Validator<T> v, T o)
+    {
+        v.Test2(o);
+    }
+}
+
+public abstract class Validator
+{
+    public abstract void DoValidate(object objectToValidate);
+
+    public void Test1(object objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class Validator<T> : Validator
+{
+    public virtual void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void Validator<T>.DoValidate(T objectToValidate)"");
+    }
+
+    public void Test2(T objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class ValidatorBase<T> : Validator<T>
+{
+    public override void DoValidate(object objectToValidate)
+    {
+        System.Console.WriteLine(""void ValidatorBase<T>.DoValidate(object objectToValidate)"");
+    }
+}
+
+public class Required : ValidatorBase<object>
+{
+}
+";
+            var compilation = CreateCompilationWithMscorlib(text, options: TestOptions.ReleaseExe);
+
+            CompileAndVerify(compilation, expectedOutput: @"void ValidatorBase<T>.DoValidate(object objectToValidate)
+void Validator<T>.DoValidate(T objectToValidate)");
+        }
+
+        [Fact]
+        [WorkItem(6148, "https://github.com/dotnet/roslyn/issues/6148")]
+        public void AbstractGenericBase_05()
+        {
+            var text = @"
+class C
+{
+    public static void Main()
+    {
+        var t = new Required();
+        t.Test1(null);
+        t.Test2(null);
+    }
+}
+
+public abstract class Validator0<T>
+{
+    public abstract void DoValidate(object objectToValidate);
+
+    public void Test1(object objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class Validator<T> : Validator0<int>
+{
+    public override void DoValidate(object objectToValidate)
+    {
+        System.Console.WriteLine(""void Validator<T>.DoValidate(object objectToValidate)"");
+    }
+
+    protected abstract void DoValidate(T objectToValidate);
+
+    public void Test2(T objectToValidate)
+    {
+         DoValidate(objectToValidate);
+    }
+}
+
+public abstract class ValidatorBase<T> : Validator<T>
+{
+    protected override void DoValidate(T objectToValidate)
+    {
+        System.Console.WriteLine(""void ValidatorBase<T>.DoValidate(T objectToValidate)"");
+    }
+}
+
+public class Required : ValidatorBase<object>
+{
+}
+";
+            var compilation = CreateCompilationWithMscorlib(text, options: TestOptions.ReleaseExe);
+
+            var validatorBaseT = compilation.GetTypeByMetadataName("ValidatorBase`1");
+            var doVaidateT = validatorBaseT.GetMember<MethodSymbol>("DoValidate");
+
+            Assert.Equal(1, doVaidateT.OverriddenOrHiddenMembers.OverriddenMembers.Length);
+            Assert.Equal("void Validator<T>.DoValidate(T objectToValidate)", doVaidateT.OverriddenMethod.ToTestDisplayString());
+            Assert.False(validatorBaseT.AbstractMembers.Any());
+
+            var validatorBaseObject = validatorBaseT.Construct(compilation.ObjectType);
+            var doVaidateObject = validatorBaseObject.GetMember<MethodSymbol>("DoValidate");
+
+            Assert.Equal(2, doVaidateObject.OverriddenOrHiddenMembers.OverriddenMembers.Length);
+            Assert.Equal("void Validator<T>.DoValidate(T objectToValidate)", doVaidateObject.OverriddenMethod.OriginalDefinition.ToTestDisplayString());
+            Assert.False(validatorBaseObject.AbstractMembers.Any());
+
+            CompileAndVerify(compilation, expectedOutput: @"void Validator<T>.DoValidate(object objectToValidate)
+void ValidatorBase<T>.DoValidate(T objectToValidate)");
         }
 
         #endregion

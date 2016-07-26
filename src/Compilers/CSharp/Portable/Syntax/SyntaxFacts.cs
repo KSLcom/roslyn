@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Roslyn.Utilities;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxKind;
 
 namespace Microsoft.CodeAnalysis.CSharp
@@ -164,6 +165,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                     case EventDeclaration:
                         return ((EventDeclarationSyntax)parent).Type == node;
 
+                    case LocalFunctionStatement:
+                        return ((LocalFunctionStatementSyntax)parent).ReturnType == node;
+
                     case SimpleBaseType:
                         return true;
 
@@ -179,6 +183,12 @@ namespace Microsoft.CodeAnalysis.CSharp
                         // A ExplicitInterfaceSpecifier represents the left part (QN) of the member name, so it
                         // should be treated like a QualifiedName.
                         return ((ExplicitInterfaceSpecifierSyntax)parent).Name == node;
+
+                    case DeclarationPattern:
+                        return ((DeclarationPatternSyntax)parent).Type == node;
+
+                    case TupleElement:
+                        return ((TupleElementSyntax)parent).Type == node;
                 }
             }
 
@@ -301,8 +311,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case Accessibility.Public:
                     return SyntaxFacts.GetText(PublicKeyword);
                 default:
-                    System.Diagnostics.Debug.Assert(false, $"Unknown accessibility '{accessibility}'");
-                    return null;
+                    throw ExceptionUtilities.UnexpectedValue(accessibility);
             }
         }
 
@@ -365,65 +374,70 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        /// <summary>
-        /// Returns true if the specified <paramref name="node"/> is a body of an anonymous method, lambda, 
-        /// or a part of a query clause that is syntactically translated to a lambda body.
-        /// </summary>
+        [System.Obsolete("IsLambdaBody API is obsolete", true)]
         public static bool IsLambdaBody(SyntaxNode node)
         {
-            var parent = node?.Parent;
-            if (parent == null)
+            return LambdaUtilities.IsLambdaBody(node);
+        }
+
+        internal static bool IsVar(this Syntax.InternalSyntax.SyntaxToken node)
+        {
+            return node.Kind == SyntaxKind.IdentifierToken && node.ValueText == "var";
+        }
+
+        /// <summary>
+        /// Figures out if this expression is a type in a deconstruction-declaration.
+        /// Outputs the VariableDeclarationSyntax directly containing it, if that is the case.
+        /// </summary>
+        internal static bool IsDeconstructionType(ExpressionSyntax expression, out SyntaxNode parent)
+        {
+            if ((parent = expression.Parent)?.Kind() != SyntaxKind.VariableDeclaration)
             {
                 return false;
             }
 
-            switch (parent.Kind())
-            {
-                case ParenthesizedLambdaExpression:
-                case SimpleLambdaExpression:
-                case AnonymousMethodExpression:
-                    return true;
-
-                case FromClause:
-                    var fromClause = (FromClauseSyntax)parent;
-                    return fromClause.Expression == node && fromClause.Parent is QueryBodySyntax;
-
-                case JoinClause:
-                    var joinClause = (JoinClauseSyntax)parent;
-                    return joinClause.LeftExpression == node || joinClause.RightExpression == node;
-
-                case LetClause:
-                    var letClause = (LetClauseSyntax)parent;
-                    return letClause.Expression == node;
-
-                case WhereClause:
-                    var whereClause = (WhereClauseSyntax)parent;
-                    return whereClause.Condition == node;
-
-                case AscendingOrdering:
-                case DescendingOrdering:
-                    var ordering = (OrderingSyntax)parent;
-                    return ordering.Expression == node;
-
-                case SelectClause:
-                    var selectClause = (SelectClauseSyntax)parent;
-                    return selectClause.Expression == node;
-
-                case GroupClause:
-                    var groupClause = (GroupClauseSyntax)parent;
-                    return groupClause.GroupExpression == node || groupClause.ByExpression == node;
-            }
-
-            return false;
+            SyntaxNode ignored;
+            return IsDeconstruction((VariableDeclarationSyntax)parent, out ignored);
         }
 
         /// <summary>
-        /// "Pair lambda" is a synthesized lambda that creates an instance of an anonymous type representing a pair of values. 
-        /// TODO: Avoid generating lambdas. Instead generate a method on the anonymous type, or use KeyValuePair instead.
+        /// Figures out if this token is an identifier in a deconstruction-declaration.
+        /// Outputs the top-level VariableDeclarationSyntax if that is the case.
         /// </summary>
-        internal static bool IsQueryPairLambda(SyntaxNode syntax)
+        internal static bool IsDeconstructionIdentifier(SyntaxToken identifier, out SyntaxNode parent)
         {
-            return syntax.IsKind(GroupClause) || syntax.IsKind(JoinClause) || syntax.IsKind(FromClause);
+            if ((parent = identifier.Parent)?.Kind() != SyntaxKind.VariableDeclarator)
+            {
+                return false;
+            }
+
+            if ((parent = parent.Parent)?.Kind() != SyntaxKind.VariableDeclaration)
+            {
+                return false;
+            }
+
+            return IsDeconstruction((VariableDeclarationSyntax)parent, out parent);
+        }
+
+        private static bool IsDeconstruction(VariableDeclarationSyntax declaration, out SyntaxNode parent)
+        {
+            parent = declaration;
+
+            while (true)
+            {
+                SyntaxNode skipParent = parent.Parent;
+                if (skipParent?.Kind() != SyntaxKind.VariableDeconstructionDeclarator)
+                {
+                    break;
+                }
+
+                if ((parent = skipParent.Parent)?.Kind() != SyntaxKind.VariableDeclaration)
+                {
+                    break;
+                }
+            }
+
+            return ((VariableDeclarationSyntax)parent).IsDeconstructionDeclaration;
         }
     }
 }

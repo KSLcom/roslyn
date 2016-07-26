@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using Microsoft.CodeAnalysis.EditAndContinue;
 using Microsoft.CodeAnalysis.EditAndContinue.UnitTests;
@@ -162,7 +162,7 @@ class C
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(846588)]
+        [WorkItem(846588, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/846588")]
         [Fact]
         public void Update_Leaf_Block()
         {
@@ -191,7 +191,7 @@ class C : System.IDisposable
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "using (C x)", "using statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "using (C x)", CSharpFeaturesResources.using_statement));
         }
 
         #endregion
@@ -234,7 +234,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"));
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"));
         }
 
         // TODO (tomat): considering a change
@@ -359,20 +359,20 @@ class C : IDisposable
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "case 2:"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "default:"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "while (true)"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "do"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "for (int i = 0; i < 10;        i++        )"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "foreach         (var i in new[] { 1, 2 })"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "using (       var z = new C()        )"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "fixed (       char* p = \"s\"        )"),
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "label"));
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "case 2:"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "default:"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "while (true)"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "do"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "for (int i = 0; i < 10;        i++        )"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "foreach         (var i in new[] { 1, 2 })"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "using (       var z = new C()        )"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "fixed (       char* p = \"s\"        )"),
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "label"));
         }
 
         [Fact]
@@ -582,10 +582,10 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "{"));
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"));
         }
 
-        [WorkItem(755959)]
+        [WorkItem(755959, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755959")]
         [Fact]
         public void Delete_Leaf_CommentActiveStatement()
         {
@@ -622,11 +622,34 @@ class C
             edits.VerifyRudeDiagnostics(active);
         }
 
+        [Fact]
+        public void Delete_EntireNamespace()
+        {
+            string src1 = @"
+namespace N
+{
+    class C
+    {
+        static void Main(String[] args)
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}";
+            string src2 = @"<AS:0></AS:0>";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.Delete, null, "namespace"));
+        }
+
         #endregion
 
         #region Constructors
 
-        [WorkItem(740949)]
+        [WorkItem(740949, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/740949")]
         [Fact]
         public void Updated_Inner_Constructor()
         {
@@ -675,7 +698,7 @@ class Foo
                 Diagnostic(RudeEditKind.ActiveStatementUpdate, "Foo f = new Foo(5*2);"));
         }
 
-        [WorkItem(741249)]
+        [WorkItem(741249, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/741249")]
         [Fact]
         public void Updated_Leaf_Constructor()
         {
@@ -723,7 +746,7 @@ class Foo
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void Updated_Leaf_Constructor_Parameter()
         {
@@ -769,10 +792,10 @@ class Foo
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.Renamed, "int b", "parameter"));
+                Diagnostic(RudeEditKind.Renamed, "int b", FeaturesResources.parameter));
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void Updated_Leaf_Constructor_Parameter_DefaultValue()
         {
@@ -818,10 +841,10 @@ class Foo
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.InitializerUpdate, "int a = 42", "parameter"));
+                Diagnostic(RudeEditKind.InitializerUpdate, "int a = 42", FeaturesResources.parameter));
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void Updated_Leaf_ConstructorChaining1()
         {
@@ -871,7 +894,7 @@ class A
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void Updated_Leaf_ConstructorChaining2()
         {
@@ -921,7 +944,7 @@ class A
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void InstanceConstructorWithoutInitializer()
         {
@@ -1224,6 +1247,63 @@ class C : D
             edits.VerifyRudeDiagnostics(active);
         }
 
+        [Fact]
+        public void InstanceConstructorWithInitializerWithLambda_Update1()
+        {
+            string src1 = @"
+class C
+{
+    public C() : this((a, b) => { <AS:0>Console.WriteLine(a + b);</AS:0> }) { }
+}";
+            string src2 = @"
+class C
+{
+    public C() : base((a, b) => { <AS:0>Console.WriteLine(a - b);</AS:0> }) { }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void InstanceConstructorWithInitializerWithLambda_Update2()
+        {
+            string src1 = @"
+class C
+{
+    public C() : <AS:1>this((a, b) => { <AS:0>Console.WriteLine(a + b);</AS:0> })</AS:1> { Console.WriteLine(1); }
+}";
+            string src2 = @"
+class C
+{
+    public C() : <AS:1>this((a, b) => { <AS:0>Console.WriteLine(a + b);</AS:0> })</AS:1> { Console.WriteLine(2); }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void InstanceConstructorWithInitializerWithLambda_Update3()
+        {
+            string src1 = @"
+class C
+{
+    public C() : <AS:1>this((a, b) => { <AS:0>Console.WriteLine(a + b);</AS:0> })</AS:1> { Console.WriteLine(1); }
+}";
+            string src2 = @"
+class C
+{
+    public C() : <AS:1>this((a, b) => { <AS:0>Console.WriteLine(a - b);</AS:0> })</AS:1> { Console.WriteLine(1); }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
         #endregion
 
         #region Field and Property Initializers
@@ -1261,7 +1341,7 @@ class C
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(742334)]
+        [WorkItem(742334, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742334")]
         [Fact]
         public void InstanceFieldInitializer_Leaf_Update1()
         {
@@ -1416,7 +1496,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.MethodBodyAdd, "get", "property getter"));
+                Diagnostic(RudeEditKind.MethodBodyAdd, "get", CSharpFeaturesResources.property_getter));
         }
 
         [Fact]
@@ -1639,18 +1719,18 @@ class C
             string src2 = @"
 class C
 {
-    <AS:1>public static readonly int a = F(1);</AS:1>
+    <AS:1>public static readonly int <TS:1>a = F(1)</TS:1>;</AS:1>
 
     public C() {}
 
     public static int F(int a)
     {
-        <AS:0>return a + 1;</AS:0> 
+        <TS:0><AS:0>return a + 1;</AS:0></TS:0>
     }
 
     static void Main(string[] args)
     {
-        <AS:2>C c = new C();</AS:2>
+        <TS:2><AS:2>C c = new C();</AS:2></TS:2>
     }
 }";
             var edits = GetTopEdits(src1, src2);
@@ -1685,8 +1765,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "z", "field"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -1715,8 +1794,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "z", "auto-property"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -1745,8 +1823,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "z", "field"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -1775,8 +1852,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "z", "auto-property"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -1804,7 +1880,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ModifiersUpdate, "const int a = 1", "field"));
+                Diagnostic(RudeEditKind.ModifiersUpdate, "const int a = 1", FeaturesResources.const_field));
         }
 
         [Fact]
@@ -1854,7 +1930,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ModifiersUpdate, "const int a = 1, b = 2", "field"));
+                Diagnostic(RudeEditKind.ModifiersUpdate, "const int a = 1, b = 2", FeaturesResources.const_field));
         }
 
         [Fact]
@@ -2006,7 +2082,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.Delete, "class C", "field"));
+                Diagnostic(RudeEditKind.Delete, "class C", FeaturesResources.field));
         }
 
         [Fact]
@@ -2140,8 +2216,8 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.Move, "int c", "field"),
-                Diagnostic(RudeEditKind.Delete, "class C", "field"));
+                Diagnostic(RudeEditKind.Move, "int c", FeaturesResources.field),
+                Diagnostic(RudeEditKind.Delete, "class C", FeaturesResources.field));
         }
 
         [Fact]
@@ -2191,7 +2267,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.Delete, "class C", "field"));
+                Diagnostic(RudeEditKind.Delete, "class C", FeaturesResources.field));
         }
 
         [Fact]
@@ -2213,7 +2289,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.Delete, "class C", "auto-property"));
+                Diagnostic(RudeEditKind.Delete, "class C", FeaturesResources.auto_property));
         }
 
         #endregion
@@ -2255,7 +2331,7 @@ class Test
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(755749)]
+        [WorkItem(755749, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755749")]
         [Fact]
         public void Lock_Insert_Leaf()
         {
@@ -2284,10 +2360,10 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "lock (lockThis)", "lock statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "lock (lockThis)", CSharpFeaturesResources.lock_statement));
         }
 
-        [WorkItem(755749)]
+        [WorkItem(755749, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755749")]
         [Fact]
         public void Lock_Insert_Leaf2()
         {
@@ -2318,7 +2394,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "lock (lockThis)", "lock statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "lock (lockThis)", CSharpFeaturesResources.lock_statement));
         }
 
         [Fact]
@@ -2411,8 +2487,8 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "lock (d)", "lock statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "lock (e)", "lock statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "lock (d)", CSharpFeaturesResources.lock_statement),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "lock (e)", CSharpFeaturesResources.lock_statement));
         }
 
         [Fact]
@@ -2472,10 +2548,10 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "lock (d)", "lock statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "lock (d)", CSharpFeaturesResources.lock_statement));
         }
 
-        [WorkItem(755752)]
+        [WorkItem(755752, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755752")]
         [Fact]
         public void Lock_Update_Leaf()
         {
@@ -2507,7 +2583,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "lock (\"test\")", "lock statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "lock (\"test\")", CSharpFeaturesResources.lock_statement));
         }
 
         [Fact]
@@ -2575,6 +2651,73 @@ class Test
             edits.VerifyRudeDiagnostics(active);
         }
 
+        [Fact]
+        public void Lock_Update_Lambda1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        lock (F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        lock (F(a => a + 1))
+        {
+            <AS:0>Console.WriteLine(2);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void Lock_Update_Lambda2()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        lock (F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        lock (G(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "lock (G(a => a))", CSharpFeaturesResources.lock_statement));
+        }
+
         #endregion
 
         #region Fixed Statement
@@ -2622,7 +2765,7 @@ class Test
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(755742)]
+        [WorkItem(755742, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755742")]
         [Fact]
         public void Fixed_Insert_Leaf()
         {
@@ -2659,7 +2802,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "fixed (int* pj = &value)", "fixed statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "fixed (int* pj = &value)", CSharpFeaturesResources.fixed_statement));
         }
 
         [Fact]
@@ -2699,7 +2842,7 @@ class Test
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(755742)]
+        [WorkItem(755742, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755742")]
         [Fact]
         public void Fixed_Insert_Leaf3()
         {
@@ -2741,10 +2884,10 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "fixed (int* pj = &value)", "fixed statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "fixed (int* pj = &value)", CSharpFeaturesResources.fixed_statement));
         }
 
-        [WorkItem(755742)]
+        [WorkItem(755742, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755742")]
         [Fact]
         public void Fixed_Reorder_Leaf1()
         {
@@ -2792,7 +2935,7 @@ class Test
             edits.VerifyRudeDiagnostics(active);
         }
 
-        [WorkItem(755746)]
+        [WorkItem(755746, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755746")]
         [Fact]
         public void Fixed_Update_Leaf1()
         {
@@ -2832,10 +2975,10 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "fixed (int* p = &value)", "fixed statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "fixed (int* p = &value)", CSharpFeaturesResources.fixed_statement));
         }
 
-        [WorkItem(755746)]
+        [WorkItem(755746, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/755746")]
         [Fact]
         public void Fixed_Update_Leaf2()
         {
@@ -2892,9 +3035,9 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "fixed (int* a = &value2)", "fixed statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "fixed (int* d = &value1)", "fixed statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "fixed (int* e = &value1)", "fixed statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "fixed (int* a = &value2)", CSharpFeaturesResources.fixed_statement),
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "fixed (int* d = &value1)", CSharpFeaturesResources.fixed_statement),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "fixed (int* e = &value1)", CSharpFeaturesResources.fixed_statement));
         }
 
         [Fact]
@@ -2933,6 +3076,73 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void Fixed_Update_Lambda1()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        fixed (byte* p = &F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        fixed (byte* p = &F(a => a + 1))
+        {
+            <AS:0>Console.WriteLine(2);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void Fixed_Update_Lambda2()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        fixed (byte* p = &F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        fixed (byte* p = &G(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "fixed (byte* p = &G(a => a))", CSharpFeaturesResources.fixed_statement));
         }
 
         #endregion
@@ -3114,7 +3324,7 @@ class Test
             // not ideal, but good enough:
             edits.VerifyRudeDiagnostics(active,
                 Diagnostic(RudeEditKind.ActiveStatementUpdate, "object c"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "foreach (      object c        in F())", "foreach statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "foreach (      object c        in F())", CSharpFeaturesResources.foreach_statement));
         }
 
         [Fact]
@@ -3253,9 +3463,9 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "foreach (var b in e1)", "foreach statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "foreach (var c in e1)", "foreach statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "foreach (var a in e1)", "foreach statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "foreach (var b in e1)", CSharpFeaturesResources.foreach_statement),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "foreach (var c in e1)", CSharpFeaturesResources.foreach_statement),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "foreach (var a in e1)", CSharpFeaturesResources.foreach_statement));
         }
 
         [Fact]
@@ -3444,9 +3654,75 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "foreach (var a in e1)", "foreach statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "foreach (var b in e1)", "foreach statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "foreach (var a in e1)", CSharpFeaturesResources.foreach_statement),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "foreach (var b in e1)", CSharpFeaturesResources.foreach_statement));
+        }
+
+        [Fact]
+        public void ForEach_Update_Lambda1()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        foreach (var a in F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        foreach (var a in F(a => a + 1))
+        {
+            <AS:0>Console.WriteLine(2);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void ForEach_Update_Lambda2()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        foreach (var a in F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        foreach (var a in G(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "foreach (var a in G(a => a))", CSharpFeaturesResources.foreach_statement));
         }
 
         #endregion
@@ -3563,7 +3839,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "for (;       i < 10       ; i++)"));
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "for (;       i < 10       ; i++)"));
         }
 
         [Fact]
@@ -3741,7 +4017,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_ACTIVE_STMT_DELETED, "for (int i = 1; ;       i++       )"));
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "for (int i = 1; ;       i++       )"));
         }
 
         [Fact]
@@ -3935,11 +4211,11 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "using (c)", "using statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "using (c)", CSharpFeaturesResources.using_statement));
         }
 
         [Fact]
-        public void Using_Lambda1()
+        public void Using_InLambdaBody1()
         {
             string src1 = @"
 class Test
@@ -3996,8 +4272,74 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "using (c)", "using statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "using (c)", CSharpFeaturesResources.using_statement));
+        }
+
+        [Fact]
+        public void Using_Update_Lambda1()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        using (F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        using (F(a => a + 1))
+        {
+            <AS:0>Console.WriteLine(2);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void Using_Update_Lambda2()
+        {
+            string src1 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        using (F(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static unsafe void Main(string[] args)
+    {
+        using (G(a => a))
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "using (G(a => a))", CSharpFeaturesResources.using_statement));
         }
 
         #endregion
@@ -4076,6 +4418,41 @@ class C
         }
 
         [Fact]
+        public void IfBody_Update_Lambda()
+        {
+            string src1 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>if (B(() => 1))</AS:1>
+		{
+			System.Console.WriteLine(0);
+        }
+    }
+}";
+            string src2 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>if (B(() => 2))</AS:1>
+		{
+			System.Console.WriteLine(0);
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
         public void WhileBody_Update1()
         {
             string src1 = @"
@@ -4144,6 +4521,41 @@ class C
 
             edits.VerifyRudeDiagnostics(active,
                 Diagnostic(RudeEditKind.ActiveStatementUpdate, "while (!B())"));
+        }
+
+        [Fact]
+        public void WhileBody_Update_Lambda()
+        {
+            string src1 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>while (B(() => 1))</AS:1>
+		{
+			System.Console.WriteLine(0);
+        }
+    }
+}";
+            string src2 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>while (B(() => 2))</AS:1>
+		{
+			System.Console.WriteLine(1);
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -4222,6 +4634,43 @@ class C
         }
 
         [Fact]
+        public void DoWhileBody_Update_Lambda()
+        {
+            string src1 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		do
+		{
+			System.Console.WriteLine(0);
+        }
+        <AS:1>while (B(() => 1));</AS:1>
+    }
+}";
+            string src2 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		do
+		{
+			System.Console.WriteLine(1);
+        }
+		<AS:1>while (B(() => 2));</AS:1>
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
         public void SwitchCase_Update1()
         {
             string src1 = @"
@@ -4246,6 +4695,43 @@ class C
 	public static void Main()
 	{
 		<AS:1>switch (F())</AS:1>
+		{
+			case ""a"": System.Console.WriteLine(0); break;
+			case ""b"": System.Console.WriteLine(2); break;
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void SwitchCase_Update_Lambda()
+        {
+            string src1 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>switch (B(() => 1))</AS:1>
+		{
+			case ""a"": System.Console.WriteLine(0); break;
+			case ""b"": System.Console.WriteLine(1); break;
+        }
+    }
+}";
+            string src2 = @"
+class C
+{
+	public static bool B(Func<int> a) => <AS:0>false</AS:0>;
+	
+	public static void Main()
+	{
+		<AS:1>switch (B(() => 2))</AS:1>
 		{
 			case ""a"": System.Console.WriteLine(0); break;
 			case ""b"": System.Console.WriteLine(2); break;
@@ -4302,7 +4788,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "try", "try block"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "try", CSharpFeaturesResources.try_block));
         }
 
         [Fact]
@@ -4387,7 +4873,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Foo();", "try block"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Foo();", CSharpFeaturesResources.try_block));
         }
 
         [Fact]
@@ -4478,7 +4964,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "try", "try block"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "try", CSharpFeaturesResources.try_block));
         }
 
         [Fact]
@@ -4625,6 +5111,169 @@ class C
             edits.VerifyRudeDiagnostics(active);
         }
 
+        [Fact]
+        public void TryFinally_DeleteStatement_Inner()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        <AS:0>Console.WriteLine(0);</AS:0>
+
+        try
+        {
+            <AS:1>Console.WriteLine(1);</AS:1>
+        }
+        <ER:1.0>finally
+        {
+            Console.WriteLine(2);
+        }</ER:1.0>
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        <AS:0>Console.WriteLine(0);</AS:0>
+     
+        try
+        {
+        <AS:1>}</AS:1>
+        finally
+        {
+            Console.WriteLine(2);
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"));
+        }
+
+        [Fact]
+        public void TryFinally_DeleteStatement_Leaf()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <ER:0.0>try
+        {
+            Console.WriteLine(0);
+        }
+        finally
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }</ER:0.0>
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        try
+        {
+            Console.WriteLine(0);
+        }
+        finally
+        {
+        <AS:0>}</AS:0>
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "finally", CSharpFeaturesResources.finally_clause));
+        }
+
+        [Fact]
+        public void Try_DeleteStatement_Inner()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        <AS:0>Console.WriteLine(0);</AS:0>
+        
+        try
+        {
+            <AS:1>Console.WriteLine(1);</AS:1>
+        }
+        finally
+        {
+            Console.WriteLine(2);
+        }
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        <AS:0>Console.WriteLine(0);</AS:0>
+        
+        try
+        {
+        <AS:1>}</AS:1>
+        finally
+        {
+            Console.WriteLine(2);
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.DeleteActiveStatement, "{"));
+        }
+
+        [Fact]
+        public void Try_DeleteStatement_Leaf()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        try
+        {
+            <AS:0>Console.WriteLine(1);</AS:0>
+        }
+        finally
+        {
+            Console.WriteLine(2);
+        }
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        try
+        {
+        <AS:0>}</AS:0>
+        finally
+        {
+            Console.WriteLine(2);
+        }
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
         #endregion
 
         #region Catch
@@ -4669,7 +5318,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4712,7 +5361,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4755,7 +5404,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Foo();", "catch clause"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Foo();", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4798,7 +5447,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Console.WriteLine(1);", "catch clause"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Console.WriteLine(1);", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4847,7 +5496,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4893,7 +5542,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4942,7 +5591,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -4989,7 +5638,7 @@ class C
 
             edits.VerifyRudeDiagnostics(active,
                 Diagnostic(RudeEditKind.ActiveStatementUpdate, "when (Foo(2))"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -5025,7 +5674,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         [Fact]
@@ -5061,7 +5710,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause));
         }
 
         #endregion
@@ -5108,7 +5757,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "finally", "finally clause"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "finally", CSharpFeaturesResources.finally_clause));
         }
 
         [Fact]
@@ -5151,7 +5800,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "finally", "finally clause"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "finally", CSharpFeaturesResources.finally_clause));
         }
 
         [Fact]
@@ -5194,7 +5843,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Foo();", "finally clause"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Foo();", CSharpFeaturesResources.finally_clause));
         }
 
         [Fact]
@@ -5237,7 +5886,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Console.WriteLine(1);", "finally clause"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Console.WriteLine(1);", CSharpFeaturesResources.finally_clause));
         }
 
         #endregion
@@ -5326,10 +5975,10 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "catch", "catch clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "try", "try block"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "Foo();", "try block"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "finally", "finally clause"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "catch", CSharpFeaturesResources.catch_clause),
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "try", CSharpFeaturesResources.try_block),
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "Foo();", CSharpFeaturesResources.try_block),
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "finally", CSharpFeaturesResources.finally_clause));
         }
 
         [Fact]
@@ -5538,8 +6187,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "x", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -5596,8 +6244,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "return 1 + Foo(x);", "try block"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "x", "method"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "return 1 + Foo(x);", CSharpFeaturesResources.try_block));
         }
 
         [Fact]
@@ -5647,8 +6294,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         #endregion
@@ -5721,7 +6367,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "checked", "checked statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "checked", CSharpFeaturesResources.checked_statement));
         }
 
         [Fact]
@@ -5760,7 +6406,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_DELETE_AROUND, "System.Console.WriteLine(5 * M(1, 2));", "checked statement"));
+                Diagnostic(RudeEditKind.DeleteAroundActiveStatement, "System.Console.WriteLine(5 * M(1, 2));", CSharpFeaturesResources.checked_statement));
         }
 
         [Fact]
@@ -5802,7 +6448,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "checked", "checked statement"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "checked", CSharpFeaturesResources.checked_statement));
         }
 
         [Fact]
@@ -5848,8 +6494,7 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "checked", "checked statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "checked", CSharpFeaturesResources.checked_statement));
         }
 
         [Fact]
@@ -5903,13 +6548,264 @@ class Test
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_AROUND_ACTIVE_STMT, "checked", "checked statement"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.UpdateAroundActiveStatement, "checked", CSharpFeaturesResources.checked_statement));
         }
 
         #endregion
 
         #region Lambdas
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_GeneralStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>F(a => <AS:0>1</AS:0>);</AS:1>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>F(a => <AS:0>2</AS:0>);</AS:1>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_Nested1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:2>F(b => <AS:1>F(a => <AS:0>1</AS:0>)</AS:1>);</AS:2>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:2>F(b => <AS:1>F(a => <AS:0>2</AS:0>)</AS:1>);</AS:2>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_Nested2()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:2>F(b => <AS:1>F(a => <AS:0>1</AS:0>)</AS:1>);</AS:2>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:2>F(b => <AS:1>G(a => <AS:0>2</AS:0>)</AS:1>);</AS:2>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementUpdate, "G(a =>       2       )"));
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_IfStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>if (F(a => <AS:0>1</AS:0>))</AS:1> { }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>if (F(a => <AS:0>2</AS:0>))</AS:1> { }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_WhileStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>while (F(a => <AS:0>1</AS:0>))</AS:1> { }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>while (F(a => <AS:0>2</AS:0>))</AS:1> { }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_DoStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        do {} <AS:1>while (F(a => <AS:0>1</AS:0>));</AS:1>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        do {} <AS:1>while (F(a => <AS:0>2</AS:0>));</AS:1>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_SwitchStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>switch (F(a => <AS:0>1</AS:0>))</AS:1>
+        {
+            case 0: break;
+            case 1: break;
+        }
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>switch (F(a => <AS:0>2</AS:0>))</AS:1>
+        {
+            case 0: break;
+            case 1: break;
+        }
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_LockStatement()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>lock (F(a => <AS:0>1</AS:0>))</AS:1> {}
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>lock (F(a => <AS:0>2</AS:0>))</AS:1> {}
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact, WorkItem(1359, "https://github.com/dotnet/roslyn/issues/1359")]
+        public void Lambdas_LeafEdits_UsingStatement1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>using (F(a => <AS:0>1</AS:0>))</AS:1> {}
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    {
+        <AS:1>using (F(a => <AS:0>2</AS:0>))</AS:1> {}
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
 
         [Fact]
         public void Lambdas_ExpressionToStatements()
@@ -5935,8 +6831,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "a", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -5963,8 +6858,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_ANON_METHOD, "delegate", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -5991,8 +6885,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "a", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -6019,8 +6912,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "a", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -6047,9 +6939,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            // TODO (bug 755959): better deleted active statement span
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_ANON_METHOD, "delegate", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -6091,8 +6981,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "return b;", "lambda"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "b", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "return b;", CSharpFeaturesResources.lambda));
         }
 
         [Fact]
@@ -6125,8 +7014,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "(b)", "lambda"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "(b)", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "(b)", CSharpFeaturesResources.lambda));
         }
 
         [Fact]
@@ -6174,8 +7062,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "F(b);", "lambda"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "b", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "F(b);", CSharpFeaturesResources.lambda));
         }
 
         [Fact]
@@ -6210,8 +7097,8 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "{", "lambda"),
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "{", "lambda"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "{", CSharpFeaturesResources.lambda),
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "{", CSharpFeaturesResources.lambda));
         }
 
         [Fact]
@@ -6231,7 +7118,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select b.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select b.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6240,8 +7127,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select b.bar", "where clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.where_clause));
         }
 
         [Fact]
@@ -6261,7 +7147,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select a.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select a.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6270,8 +7156,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select a.bar", "let clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.let_clause));
         }
 
         [Fact]
@@ -6294,7 +7179,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select a.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select a.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6303,8 +7188,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select a.bar", "join clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.join_clause));
         }
 
         [Fact]
@@ -6327,7 +7211,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select a.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select a.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6336,8 +7220,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select a.bar", "orderby clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.orderby_clause));
         }
 
         [Fact]
@@ -6360,7 +7243,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select a.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select a.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6369,8 +7252,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select a.bar", "orderby clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.orderby_clause));
         }
 
         [Fact]
@@ -6393,7 +7275,7 @@ class C
 {
     static void Main(string[] args)
     {
-        var <AS:0>s = from a in b select a.bar</AS:0>;
+        var s = <AS:0>from</AS:0> a in b select a.bar;
         <AS:1>s.ToArray();</AS:1>
     }
 }
@@ -6402,8 +7284,222 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "s = from a in b select a.bar", "orderby clause"),
-                Diagnostic(RudeEditKind.RUDE_EDIT_QUERY_EXPRESSION, "from", "method"));
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "from", CSharpFeaturesResources.orderby_clause));
+        }
+
+        [Fact]
+        public void Queries_Remove_JoinInto1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                join y in ys on F() equals G() into g
+                select <AS:0>1</AS:0>;
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                join y in ys on F() equals G()
+                select <AS:0>1</AS:0>;
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void Queries_Remove_QueryContinuation1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                group x by x.F() into g
+                where <AS:0>g.F()</AS:0>
+                select 1;
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                group x by x.F() <AS:0>into</AS:0> g
+                select 1;
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "into", CSharpFeaturesResources.where_clause));
+        }
+
+        [Fact]
+        public void Queries_Remove_QueryContinuation2()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                group x by x.F() into g
+                select <AS:0>1</AS:0>;
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from x in xs
+                <AS:0>join</AS:0> y in ys on F() equals G() into g
+                select 1;
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "join", CSharpFeaturesResources.select_clause));
+        }
+
+        [Fact]
+        public void Queries_Select_Reduced1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from a in array
+                where a > 0
+                select <AS:0>a + 1</AS:0>;
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from a in array
+                where a > 0
+                <AS:0>select</AS:0> a;
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "select", CSharpFeaturesResources.select_clause));
+        }
+
+        [Fact]
+        public void Queries_Select_Reduced2()
+        {
+            string src1 = @"
+class C
+{
+    static int F(IEnumerable<int> e) => <AS:0>1</AS:0>;
+
+    static void Main()
+    {
+        <AS:1>F(from a in array where a > 0 select a + 1);</AS:1>
+    }
+}";
+            string src2 = @"
+class C
+{
+    static int F(IEnumerable<int> e) => <AS:0>1</AS:0>;
+   
+    static void Main()
+    {
+        <AS:1>F(from a in array where a > 0 select a);</AS:1>
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementUpdate, "F(from a in array where a > 0 select a);"));
+        }
+
+        [Fact]
+        public void Queries_GroupBy_Reduced1()
+        {
+            string src1 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from a in array
+                group <AS:0>a + 1</AS:0> by a;
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main()
+    {
+        var q = from a in array
+                <AS:0>group</AS:0> a by a;
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementLambdaRemoved, "group", CSharpFeaturesResources.groupby_clause));
+        }
+
+        [Fact]
+        public void Queries_GroupBy_Reduced2()
+        {
+            string src1 = @"
+class C
+{
+    static int F(IEnumerable<IGrouping<int, int>> e) => <AS:0>1</AS:0>;
+
+    static void Main()
+    {
+        <AS:1>F(from a in array group a by a);</AS:1>
+    }
+}";
+            string src2 = @"
+class C
+{
+    static int F(IEnumerable<IGrouping<int, int>> e) => <AS:0>1</AS:0>;
+   
+    static void Main()
+    {
+        <AS:1>F(from a in array group a + 1 by a);</AS:1>
+    }
+}";
+
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.ActiveStatementUpdate, "F(from a in array group a + 1 by a);"));
         }
 
         #endregion
@@ -6437,7 +7533,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "yield return 1;", "yield statement"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "yield return 1;", CSharpFeaturesResources.yield_statement));
         }
 
         [Fact]
@@ -6467,8 +7563,7 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             // should not contain RUDE_EDIT_INSERT_AROUND
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
@@ -6501,7 +7596,7 @@ class C
         }
 
         [Fact]
-        public void MethodToAsyncMethod_WithActiveStatement()
+        public void MethodToAsyncMethod_WithActiveStatement1()
         {
             string src1 = @"
 class C
@@ -6528,11 +7623,67 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_INSERT_AROUND, "await", "await expression"));
+                Diagnostic(RudeEditKind.InsertAroundActiveStatement, "await", CSharpFeaturesResources.await_expression));
         }
 
         [Fact]
-        public void MethodToAsyncMethod_WithActiveStatementInLambda()
+        public void MethodToAsyncMethod_WithActiveStatement2()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    <AS:0>{</AS:0>
+        Console.WriteLine(1);
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    <AS:0>{</AS:0>
+        Console.WriteLine(1);
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdatingStateMachineMethodAroundActiveStatement, "static async void F()"));
+        }
+
+        [Fact]
+        public void MethodToAsyncMethod_WithActiveStatement3()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    {
+        <AS:0>Console.WriteLine(1);</AS:0>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    {
+        <AS:0>Console.WriteLine(1);</AS:0>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdatingStateMachineMethodAroundActiveStatement, "static async void F()"));
+        }
+
+        [Fact]
+        public void MethodToAsyncMethod_WithActiveStatementInLambda1()
         {
             string src1 = @"
 class C
@@ -6558,12 +7709,99 @@ class C
             var active = GetActiveStatements(src1, src2);
 
             // should not contain RUDE_EDIT_INSERT_AROUND
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]
-        public void MethodToAsyncMethod_WithoutActiveStatement()
+        public void MethodToAsyncMethod_WithActiveStatementInLambda_2()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    {
+        var f = new Action(() => { <AS:1>Console.WriteLine(1);</AS:1> });
+        <AS:0>f();</AS:0>
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    {
+        var f = new Action(() => { <AS:1>Console.WriteLine(1);</AS:1> });
+        <AS:0>f();</AS:0>
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdatingStateMachineMethodAroundActiveStatement, "static async void F()"));
+        }
+
+        [Fact]
+        public void MethodToAsyncMethod_WithActiveStatementInLambda_3()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    {
+        var f = new Action(() => { <AS:0>Console.WriteLine(1);</AS:0> });
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    {
+        var f = new Action(async () => { <AS:0>Console.WriteLine(1);</AS:0> });
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdatingStateMachineMethodAroundActiveStatement, "()"));
+        }
+
+        [Fact]
+        public void MethodToAsyncMethod_WithLambda()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    <AS:0>{</AS:0>
+        var f = new Action(() => { Console.WriteLine(1); });
+        f();
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    <AS:0>{</AS:0>
+        var f = new Action(() => { Console.WriteLine(1); });
+        f();
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.UpdatingStateMachineMethodAroundActiveStatement, "static async void F()"));
+        }
+
+        [Fact]
+        public void MethodToAsyncMethod_WithoutActiveStatement_1()
         {
             string src1 = @"
 class C
@@ -6591,6 +7829,103 @@ class C
             edits.VerifyRudeDiagnostics(active);
         }
 
+        [Fact]
+        public void MethodToAsyncMethod_WithoutActiveStatement_2()
+        {
+            string src1 = @"
+class C
+{
+    static void F()
+    {
+        Console.WriteLine(1);
+    }
+}
+";
+            string src2 = @"
+class C
+{
+    static async void F()
+    {
+        Console.WriteLine(1);
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void AsyncMethodEdit_Semantics()
+        {
+            string src1 = @"
+using System;
+using System.Threading.Tasks;
+
+class C
+{
+    static async Task<int> F()
+    {
+        Console.WriteLine(1);
+        return await Task.FromResult(1);
+    }
+}
+";
+            string src2 = @"
+using System;
+using System.Threading.Tasks;
+
+class C
+{
+    static async Task<int> F()
+    {
+        Console.WriteLine(2);
+        return await Task.FromResult(1);
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifySemanticDiagnostics();
+        }
+
+        [Fact]
+        public void IteratorMethodEdit_Semantics()
+        {
+            string src1 = @"
+using System;
+using System.Collections.Generic;
+
+class C
+{
+    static IEnumerable<int> F()
+    {
+        Console.WriteLine(1);
+        yield return 1;
+    }
+}
+";
+            string src2 = @"
+using System;
+using System.Collections.Generic;
+
+class C
+{
+    static IEnumerable<int> F()
+    {
+        Console.WriteLine(2);
+        yield return 2;
+    }
+}
+";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifySemanticDiagnostics();
+        }
+
         #endregion
 
         #region Misplaced AS 
@@ -6614,6 +7949,52 @@ class C
     {
         <AS:0>return a;</AS:0> 
         <AS:2>return a;</AS:2> 
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void MisplacedActiveStatement2()
+        {
+            string src1 = @"
+class C
+{
+    static <AS:0>void</AS:0> Main(string[] args)
+    {
+    }
+}";
+            string src2 = @"
+class C
+{
+    static void Main(string[] args)
+    <AS:0>{</AS:0>
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            edits.VerifyRudeDiagnostics(active);
+        }
+
+        [Fact]
+        public void MisplacedTrackingSpan1()
+        {
+            string src1 = @"
+class C
+{
+    static <AS:0>void</AS:0> Main(string[] args)
+    {
+    }
+}";
+            string src2 = @"
+class C
+{
+    static <TS:0>void</TS:0> Main(string[] args)
+    <AS:0>{</AS:0>
     }
 }";
             var edits = GetTopEdits(src1, src2);
@@ -6737,7 +8118,73 @@ class C
             var edits = GetTopEdits(src1, src2);
 
             edits.VerifyRudeDiagnostics(
-                Diagnostic(RudeEditKind.Delete, null, "class"));
+                Diagnostic(RudeEditKind.Delete, null, FeaturesResources.class_));
+        }
+
+        [Fact]
+        public void PartiallyExecutedActiveStatement()
+        {
+            string src1 = @"
+class C
+{
+    public static void F()
+    {
+        <AS:0>Console.WriteLine(1);</AS:0> 
+        <AS:1>Console.WriteLine(2);</AS:1> 
+        <AS:2>Console.WriteLine(3);</AS:2> 
+        <AS:3>Console.WriteLine(4);</AS:3> 
+    }
+}";
+            string src2 = @"
+class C
+{
+    public static void F()
+    {
+        <AS:0>Console.WriteLine(10);</AS:0> 
+        <AS:1>Console.WriteLine(20);</AS:1> 
+        <AS:2>Console.WriteLine(30);</AS:2> 
+        <AS:3>Console.WriteLine(40);</AS:3> 
+    }
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            active.OldSpans[0] = new ActiveStatementSpan(ActiveStatementFlags.PartiallyExecuted | ActiveStatementFlags.LeafFrame, active.OldSpans[0].Span);
+            active.OldSpans[1] = new ActiveStatementSpan(ActiveStatementFlags.PartiallyExecuted, active.OldSpans[1].Span);
+            active.OldSpans[2] = new ActiveStatementSpan(ActiveStatementFlags.LeafFrame, active.OldSpans[2].Span);
+            active.OldSpans[3] = new ActiveStatementSpan(ActiveStatementFlags.None, active.OldSpans[3].Span);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.PartiallyExecutedActiveStatementUpdate, "Console.WriteLine(10);"),
+                Diagnostic(RudeEditKind.ActiveStatementUpdate, "Console.WriteLine(20);"),
+                Diagnostic(RudeEditKind.ActiveStatementUpdate, "Console.WriteLine(40);"));
+        }
+
+        [Fact]
+        public void PartiallyExecutedActiveStatement_Deleted()
+        {
+            string src1 = @"
+class C
+{
+    public static void F()
+    {
+        <AS:0>Console.WriteLine(1);</AS:0> 
+    }
+}";
+            string src2 = @"
+class C
+{
+    public static void F()
+    { 
+    <AS:0>}</AS:0>
+}";
+            var edits = GetTopEdits(src1, src2);
+            var active = GetActiveStatements(src1, src2);
+
+            active.OldSpans[0] = new ActiveStatementSpan(ActiveStatementFlags.PartiallyExecuted | ActiveStatementFlags.LeafFrame, active.OldSpans[0].Span);
+
+            edits.VerifyRudeDiagnostics(active,
+                Diagnostic(RudeEditKind.PartiallyExecutedActiveStatementDelete, "{"));
         }
 
         #endregion

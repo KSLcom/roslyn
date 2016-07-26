@@ -1,9 +1,11 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
+
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
     Partial Public Class FindReferencesTests
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException1()
+        Public Async Function TestException1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -21,11 +23,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException1_VisualBasic()
+        Public Async Function TestException1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -36,16 +38,16 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         Class Program
             ''' <exception cref="[|$$EClass|]"></exception>
             Shared Sub Main(args As String())
-            End Sub
+            End Function
         End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException2()
+        Public Async Function TestException2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -67,11 +69,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException2_VisualBasic()
+        Public Async Function TestException2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -89,11 +91,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException3()
+        Public Async Function TestException3() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -124,11 +126,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException3_VisualBasic()
+        Public Async Function TestException3_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -154,11 +156,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         ]]></Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException3_Inverse()
+        Public Async Function TestException3_Inverse() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -189,11 +191,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestException3_Inverse_VisualBasic()
+        Public Async Function TestException3_Inverse_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -219,11 +221,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         ]]></Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestCrefConstructor1()
+        Public Async Function TestCrefConstructor1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -252,12 +254,12 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(769369)>
+        <WorkItem(769369, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/769369")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestCrefConstructor1_VisualBasic()
+        Public Async Function TestCrefConstructor1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -282,11 +284,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestCrefConstructor2()
+        Public Async Function TestCrefConstructor2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -312,11 +314,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="769477"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestCrefConstructor2_VisualBasic()
+        <WpfFact(Skip:="769477"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestCrefConstructor2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -341,11 +343,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam1()
+        Public Async Function TestParam1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -366,11 +368,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam1_VisualBasic()
+        Public Async Function TestParam1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -390,11 +392,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam2()
+        Public Async Function TestParam2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -415,11 +417,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam2_VisualBasic()
+        Public Async Function TestParam2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -439,11 +441,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="Bug 640274"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam3()
+        <WpfFact(Skip:="Bug 640274"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestParam3() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -464,11 +466,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="Bug 640274"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParam3_VisualBasic()
+        <WpfFact(Skip:="Bug 640274"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestParam3_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -487,11 +489,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParamRef1()
+        Public Async Function TestParamRef1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -514,11 +516,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestParamRef1_VisualBasic()
+        Public Async Function TestParamRef1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -541,11 +543,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestPermission()
+        Public Async Function TestPermission() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -562,11 +564,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestPermission_VisualBasic()
+        Public Async Function TestPermission_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -583,11 +585,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParameters1()
+        Public Async Function TestTypeParameters1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -608,11 +610,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParameters1_VisualBasic()
+        Public Async Function TestTypeParameters1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -637,11 +639,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParameters2()
+        Public Async Function TestTypeParameters2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -661,11 +663,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParameters2_VisualBasic()
+        Public Async Function TestTypeParameters2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -687,11 +689,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParametersInCref()
+        Public Async Function TestTypeParametersInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -708,11 +710,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestTypeParametersInCref_VisualBasic()
+        Public Async Function TestTypeParametersInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -729,11 +731,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestMethodParametersInCref()
+        Public Async Function TestMethodParametersInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -751,11 +753,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestMethodParametersInCref_VisualBasic()
+        Public Async Function TestMethodParametersInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -774,11 +776,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestFieldInCref()
+        Public Async Function TestFieldInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -807,11 +809,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestFieldInCref_VisualBasic()
+        Public Async Function TestFieldInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -836,11 +838,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestSpecialTypeSimpleNameInCref()
+        Public Async Function TestSpecialTypeSimpleNameInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -862,11 +864,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact(), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestSpecialTypeSimpleNameInCref_VisualBasic()
+        Public Async Function TestSpecialTypeSimpleNameInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -887,11 +889,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="Bug 640502"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref1()
+        <WpfFact(Skip:="Bug 640502"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestInterfaceInCref1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -916,11 +918,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="Bug 640502"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref1_VisualBasic()
+        <WpfFact(Skip:="Bug 640502"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestInterfaceInCref1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -945,11 +947,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref2()
+        Public Async Function TestInterfaceInCref2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -973,11 +975,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref2_VisualBasic()
+        Public Async Function TestInterfaceInCref2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -999,11 +1001,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref3()
+        Public Async Function TestInterfaceInCref3() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1031,11 +1033,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInterfaceInCref3_VisualBasic()
+        Public Async Function TestInterfaceInCref3_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1062,11 +1064,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInheritanceInCref1()
+        Public Async Function TestInheritanceInCref1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1092,12 +1094,12 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(769369)>
+        <WorkItem(769369, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/769369")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInheritanceInCref1_VisualBasic()
+        Public Async Function TestInheritanceInCref1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1119,11 +1121,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOverloadingInCref()
+        Public Async Function TestOverloadingInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1141,11 +1143,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOverloadingInCref_VisualBasic()
+        Public Async Function TestOverloadingInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1164,11 +1166,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInheritanceInCref()
+        Public Async Function TestInheritanceInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1190,11 +1192,11 @@ class Q : P
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact(), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestInheritanceInCref_VisualBasic()
+        Public Async Function TestInheritanceInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1213,11 +1215,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestConstructorInCref()
+        Public Async Function TestConstructorInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1235,12 +1237,12 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(769369)>
+        <WorkItem(769369, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/769369")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestConstructorInCref_VisualBasic()
+        Public Async Function TestConstructorInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1259,11 +1261,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestDelegateInCref()
+        Public Async Function TestDelegateInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1283,11 +1285,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestDelegateInCref_VisualBasic()
+        Public Async Function TestDelegateInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1307,11 +1309,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestScopeInCref()
+        Public Async Function TestScopeInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1337,11 +1339,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestScopeInCref_VisualBasic()
+        Public Async Function TestScopeInCref_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1362,129 +1364,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref1()
-            Dim input =
-<Workspace>
-    <Project Language="C#" CommonReferences="true">
-        <Document><![CDATA[
-                using System;
-                class Test
-                {
-                    /// <summary>
-                    /// <see cref="[|operator|] !"/>
-                    /// <see cref="[|operator|] +"/>
-                    /// <see cref="[|$$operator|]"/>
-                    /// </summary>
-                    /// <param name="t"></param>
-                    /// <returns></returns>
-                    public static Test {|Definition:operator|} !(Test t)
-                    {
-                        return new Test();
-                    }
-                    public static int {|Definition:operator|} +(Test t1, Test t2)
-                    {
-                        return 1;
-                    }
-                }]]>
-        </Document>
-    </Project>
-</Workspace>
-            Test(input)
-        End Sub
-
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref1_VisualBasic()
-            Dim input =
-<Workspace>
-    <Project Language="Visual Basic" CommonReferences="true">
-        <Document><![CDATA[
-                Imports System
-                Class Test
-                    ''' <summary>
-                    ''' <see cref="[|Operator|] Not"/>
-                    ''' <see cref="[|Operator|] +"/>
-                    ''' <see cref="[|$$Operator|]"/>
-                    ''' </summary>
-                    ''' <param name="t"></param>
-                    ''' <returns></returns>
-                    Public Shared {|Definition:Operator|} Not(t As Test) As Test
-                        Return New Test()
-                    End Operator
-                    Public Shared {|Definition:Operator|} +(t1 As Test, t2 As Test) As Integer
-                        Return 1
-                    End Operator
-                End Class]]>
-        </Document>
-    </Project>
-</Workspace>
-            Test(input)
-        End Sub
-
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref2()
-            Dim input =
-<Workspace>
-    <Project Language="C#" CommonReferences="true">
-        <Document><![CDATA[
-                using System;
-                class Test
-                {
-                    /// <summary>
-                    /// <see cref="[|$$operator|] !"/>
-                    /// <see cref="operator +"/>
-                    /// <see cref="[|operator|]"/>
-                    /// </summary>
-                    /// <param name="t"></param>
-                    /// <returns></returns>
-                    public static Test {|Definition:operator|} !(Test t)
-                    {
-                        return new Test();
-                    }
-                    public static int operator +(Test t1, Test t2)
-                    {
-                        return 1;
-                    }
-                }]]>
-        </Document>
-    </Project>
-</Workspace>
-            Test(input)
-        End Sub
-
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref2_VisualBasic()
-            Dim input =
-<Workspace>
-    <Project Language="Visual Basic" CommonReferences="true">
-        <Document><![CDATA[
-                Imports System
-                Class Test
-                    ''' <summary>
-                    ''' <see cref="[|$$Operator|] Not"/>
-                    ''' <see cref="Operator +"/>
-                    ''' <see cref="[|Operator|]"/>
-                    ''' </summary>
-                    ''' <param name="t"></param>
-                    ''' <returns></returns>
-                    Public Shared {|Definition:Operator|} Not(t As Test) As Test
-                        Return New Test()
-                    End Operator
-                    Public Shared Operator +(t1 As Test, t2 As Test) As Integer
-                        Return 1
-                    End Operator
-                End Class]]>
-        </Document>
-    </Project>
-</Workspace>
-            Test(input)
-        End Sub
-
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref3()
+        <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestOperatorInCref() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1494,9 +1378,7 @@ End Class]]>
                 {
                     /// <summary>
                     /// <see cref="operator !"/>
-                    /// <see cref="[|$$operator|] +"/>
-                    /// <see cref="[|operator|](Test,Test)"/>
-                    /// <see cref="[|operator|]"/>
+                    /// <see cref="operator [|+|]"/>
                     /// </summary>
                     /// <param name="t"></param>
                     /// <returns></returns>
@@ -1504,7 +1386,7 @@ End Class]]>
                     {
                         return new Test();
                     }
-                    public static int {|Definition:operator|} +(Test t1, Test t2)
+                    public static int operator {|Definition:$$+|}(Test t1, Test t2)
                     {
                         return 1;
                     }
@@ -1512,11 +1394,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="641100"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestOperatorInCref3_VisualBasic()
+        <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestOperatorInCrefVisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1524,28 +1406,26 @@ End Class]]>
                 Imports System
                 Class Test
                     ''' <summary>
-                    ''' <see cref="Operator Not"/>
-                    ''' <see cref="[|$$Operator|] +"/>
-                    ''' <see cref="[|Operator|](Test,Test)"/>
-                    ''' <see cref="[|Operator|]"/>
+                    ''' <see cref="Operator Not(Test)"/>
+                    ''' <see cref="Operator [|+|](Test, Test)"/>
                     ''' </summary>
                     ''' <param name="t"></param>
                     ''' <returns></returns>
                     Public Shared Operator Not(t As Test) As Test
                         Return New Test()
                     End Operator
-                    Public Shared {|Definition:Operator|} +(t1 As Test, t2 As Test) As Integer
+                    Public Shared Operator {|Definition:$$+|}(t1 As Test, t2 As Test) As Integer
                         Return 1
                     End Operator
                 End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref1()
+        Public Async Function TestIndexInCref1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1570,11 +1450,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref1_VisualBasic()
+        Public Async Function TestIndexInCref1_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1600,11 +1480,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref2()
+        Public Async Function TestIndexInCref2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1629,11 +1509,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref2_VisualBasic()
+        Public Async Function TestIndexInCref2_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1659,11 +1539,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref3()
+        Public Async Function TestIndexInCref3() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1694,11 +1574,11 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <Fact(Skip:="783135"), Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestIndexInCref3_VisualBasic()
+        <WpfFact(Skip:="783135"), Trait(Traits.Feature, Traits.Features.FindReferences)>
+        Public Async Function TestIndexInCref3_VisualBasic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -1727,7 +1607,7 @@ End Class]]>
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
     End Class
 End Namespace

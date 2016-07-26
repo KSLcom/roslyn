@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -35,7 +37,7 @@ Parameters:
 If the target path is a directory displays information for all *.dll, *.exe, *.winmd, 
 and *.netmodule files in the directory and all subdirectories.
 
-If /g is speficied the path must be baseline PE file (generation 0).
+If /g is specified the path must be baseline PE file (generation 0).
 ";
 
     public static Arguments TryParse(string[] args)
@@ -49,7 +51,7 @@ If /g is speficied the path must be baseline PE file (generation 0).
         result.Path = args[0];
         result.Recursive = Directory.Exists(args[0]);
 
-        result.EncDeltas = 
+        result.EncDeltas =
             (from arg in args
              where arg.StartsWith("/g:", StringComparison.Ordinal)
              let value = arg.Substring("/g:".Length).Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)

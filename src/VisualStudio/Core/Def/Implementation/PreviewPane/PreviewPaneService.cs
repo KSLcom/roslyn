@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Composition;
 using System.Globalization;
 using System.Linq;
@@ -11,8 +12,10 @@ using Microsoft.CodeAnalysis.Editor.Host;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Host.Mef;
+using Microsoft.CodeAnalysis.Simplification;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
+using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
 using Microsoft.VisualStudio.Shell;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.PreviewPane
@@ -20,12 +23,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.PreviewPane
     [ExportWorkspaceServiceFactory(typeof(IPreviewPaneService), ServiceLayer.Host), Shared]
     internal class PreviewPaneService : ForegroundThreadAffinitizedObject, IPreviewPaneService, IWorkspaceServiceFactory
     {
-        private readonly IServiceProvider _serviceProvider;
+        private readonly EnvDTE.DTE _dte;
 
         [ImportingConstructor]
         public PreviewPaneService(SVsServiceProvider serviceProvider)
         {
-            _serviceProvider = serviceProvider;
+            _dte = serviceProvider.GetService(typeof(EnvDTE.DTE)) as EnvDTE.DTE;
         }
 
         IWorkspaceService IWorkspaceServiceFactory.CreateService(HostWorkspaceServices workspaceServices)
@@ -33,7 +36,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.PreviewPane
             return this;
         }
 
-        private Image GetSeverityIconForDiagnostic(Diagnostic diagnostic)
+        private static Image GetSeverityIconForDiagnostic(DiagnosticData diagnostic)
         {
             ImageMoniker? moniker = null;
             switch (diagnostic.Severity)
@@ -63,31 +66,99 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.PreviewPane
             return null;
         }
 
-        object IPreviewPaneService.GetPreviewPane(Diagnostic diagnostic, object previewContent)
+        private static Uri GetHelpLink(DiagnosticData diagnostic, string language, string projectType, out string helpLinkToolTipText)
         {
-            var telemetry = diagnostic == null ? false : diagnostic.Descriptor.CustomTags.Contains(WellKnownDiagnosticTags.Telemetry);
+            var isBing = false;
+            helpLinkToolTipText = string.Empty;
 
-            if ((diagnostic == null) && (previewContent == null))
+            Uri helpLink;
+            if (!BrowserHelper.TryGetUri(diagnostic.HelpLink, out helpLink))
             {
-                // Bail out in cases where there is no diagnostic (which means there is nothing to put in
-                // the header section of the preview pane) as well as no preview content (i.e. no diff view).
-                return null;
+                // We use the ENU version of the message for bing search.
+                helpLink = BrowserHelper.CreateBingQueryUri(diagnostic.Id, diagnostic.ENUMessageForBingSearch, language, projectType);
+                isBing = true;
             }
 
-            if ((diagnostic == null) || (diagnostic.Descriptor is TriggerDiagnosticDescriptor))
+            // We make sure not to use Uri.AbsoluteUri for the url displayed in the tooltip so that the url displayed in the tooltip stays human readable.
+            if (helpLink != null)
             {
-                return new PreviewPane(
-                    null, null, null, null, null, null, telemetry, previewContent, _serviceProvider);
+                helpLinkToolTipText =
+                    string.Format(ServicesVSResources.Get_help_for_0_1_2_3, diagnostic.Id,
+                        isBing ? ServicesVSResources.from_Bing : null, Environment.NewLine, helpLink);
             }
-            else
+
+            return helpLink;
+        }
+
+        object IPreviewPaneService.GetPreviewPane(
+            DiagnosticData diagnostic, string language, string projectType, IReadOnlyList<object> previewContent)
+        {
+            var title = diagnostic?.Message;
+
+            if (string.IsNullOrWhiteSpace(title))
             {
+                if (previewContent == null)
+                {
+                    // Bail out in cases where there is nothing to put in the header section
+                    // of the preview pane and no preview content (i.e. no diff view) either.
+                    return null;
+                }
+
                 return new PreviewPane(
-                    GetSeverityIconForDiagnostic(diagnostic),
-                    diagnostic.Id, diagnostic.GetMessage(),
-                    diagnostic.Descriptor.MessageFormat.ToString(DiagnosticData.USCultureInfo),
-                    diagnostic.Descriptor.Description.ToString(CultureInfo.CurrentUICulture),
-                    diagnostic.Descriptor.HelpLinkUri, telemetry, previewContent, _serviceProvider);
+                    severityIcon: null, id: null, title: null, description: null, helpLink: null, helpLinkToolTipText: null,
+                    previewContent: previewContent, logIdVerbatimInTelemetry: false, dte: _dte);
             }
+
+            var helpLinkToolTipText = string.Empty;
+            Uri helpLink = GetHelpLink(diagnostic, language, projectType, out helpLinkToolTipText);
+
+            Guid optionPageGuid = default(Guid);
+            string optionName;
+            if (diagnostic.Properties.TryGetValue("OptionName", out optionName))
+            {
+                string optionLanguage = null;
+                diagnostic.Properties.TryGetValue("OptionLanguage", out optionLanguage);
+                optionPageGuid = GetOptionPageGuidForOptionName(optionName, optionLanguage);
+            }
+
+            return new PreviewPane(
+                severityIcon: GetSeverityIconForDiagnostic(diagnostic),
+                id: diagnostic.Id, title: title,
+                description: diagnostic.Description.ToString(CultureInfo.CurrentUICulture),
+                helpLink: helpLink,
+                helpLinkToolTipText: helpLinkToolTipText,
+                previewContent: previewContent,
+                logIdVerbatimInTelemetry: diagnostic.CustomTags.Contains(WellKnownDiagnosticTags.Telemetry),
+                dte: _dte,
+                optionPageGuid: optionPageGuid);
+        }
+
+        private Guid GetOptionPageGuidForOptionName(string optionName, string optionLanguage)
+        {
+            if (optionName == nameof(SimplificationOptions.NamingPreferences))
+            {
+                if (optionLanguage == LanguageNames.CSharp)
+                {
+                    return Guid.Parse(Guids.CSharpOptionPageNamingStyleIdString);
+                }
+                else if (optionLanguage == LanguageNames.VisualBasic)
+                {
+                    return Guid.Parse(Guids.VisualBasicOptionPageNamingStyleIdString);
+                }
+            }
+            else if (optionName == nameof(SimplificationOptions.PreferIntrinsicPredefinedTypeKeywordInMemberAccess))
+            {
+                if (optionLanguage == LanguageNames.CSharp)
+                {
+                    return Guid.Parse(Guids.CSharpOptionPageCodeStyleIdString);
+                }
+                else if (optionLanguage == LanguageNames.VisualBasic)
+                {
+                    return Guid.Parse(Guids.VisualBasicOptionPageVBSpecificIdString);
+                }
+            }
+
+            return default(Guid);
         }
     }
 }

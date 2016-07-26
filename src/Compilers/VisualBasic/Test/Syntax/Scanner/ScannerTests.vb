@@ -694,6 +694,14 @@ End If]]>.Value,
         Assert.Equal(42, tk.Value)
         Assert.Equal(" 42 ", tk.ToFullString())
 
+        Str = " 4_2 "
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(LiteralBase.Decimal, tk.GetBase())
+        Assert.Equal(42, tk.Value)
+        Assert.Equal(" 4_2 ", tk.ToFullString())
+        Assert.Equal("error BC36716: Visual Basic 14.0 does not support digit separators.", tk.Errors().Single().ToString())
+
         Str = " &H42L "
         tk = ScanOnce(Str)
         Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
@@ -701,12 +709,37 @@ End If]]>.Value,
         Assert.Equal(&H42L, tk.Value)
         Assert.Equal(" &H42L ", tk.ToFullString())
 
+        Str = " &H4_2L "
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(LiteralBase.Hexadecimal, tk.GetBase())
+        Assert.Equal(&H42L, tk.Value)
+        Assert.Equal(" &H4_2L ", tk.ToFullString())
+
         Str = " &H42L &H42& "
         Dim tks = ScanAllCheckDw(Str)
         Assert.Equal(SyntaxKind.IntegerLiteralToken, tks(0).Kind)
         Assert.Equal(LiteralBase.Hexadecimal, tks(1).GetBase())
         Assert.Equal(&H42L, tks(1).Value)
         Assert.Equal(TypeCharacter.Long, tks(1).GetTypeCharacter())
+
+        Str = " &B1010L "
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(LiteralBase.Binary, tk.GetBase())
+        Assert.Equal(&HAL, tk.Value)
+        Assert.Equal(" &B1010L ", tk.ToFullString())
+        Assert.Equal("error BC36716: Visual Basic 14.0 does not support binary literals.", tk.Errors().Single().ToString())
+
+        Str = " &B1_0_1_0L "
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(LiteralBase.Binary, tk.GetBase())
+        Assert.Equal(&HAL, tk.Value)
+        Assert.Equal(" &B1_0_1_0L ", tk.ToFullString())
+        Assert.Equal(2, tk.Errors().Count)
+        Assert.Equal("error BC36716: Visual Basic 14.0 does not support digit separators.", tk.Errors()(0).ToString())
+        Assert.Equal("error BC36716: Visual Basic 14.0 does not support binary literals.", tk.Errors()(1).ToString())
     End Sub
 
     <Fact>
@@ -722,6 +755,13 @@ End If]]>.Value,
         Assert.Equal(0.42, tk.Value)
         Assert.IsType(Of Double)(tk.Value)
         Assert.Equal(" 0.42 ", tk.ToFullString())
+
+        Str = " 0_0.4_2 "
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.FloatingLiteralToken, tk.Kind)
+        Assert.Equal(0.42, tk.Value)
+        Assert.IsType(Of Double)(tk.Value)
+        Assert.Equal(" 0_0.4_2 ", tk.ToFullString())
 
         Str = " 0.42# "
         tk = ScanOnce(Str)
@@ -782,7 +822,7 @@ End If]]>.Value,
         Assert.Equal(TypeCharacter.Decimal, tks(1).GetTypeCharacter())
     End Sub
 
-    <WorkItem(538543, "DevDiv")>
+    <WorkItem(538543, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538543")>
     <Fact>
     Public Sub Scanner_DecimalLiteralExpToken()
         Dim Str = "1E1D"
@@ -822,6 +862,22 @@ End If]]>.Value,
         Assert.Equal(30036, tk.GetSyntaxErrorsNoTree()(0).Code)
         Assert.Equal(0, CInt(tk.Value))
 
+        Str = "&B111111111111111111111111111111111I"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(30036, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
+
+        Str = "&B11111111111111111111111111111111UI"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(&HFFFFFFFFUI, CUInt(tk.Value))
+
+        Str = "&B1111111111111111111111111111111I"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(&H7FFFFFFFI, CInt(tk.Value))
+
         Str = "1.7976931348623157E+308d"
         tk = ScanOnce(Str)
         Assert.Equal(SyntaxKind.DecimalLiteralToken, tk.Kind)
@@ -833,6 +889,44 @@ End If]]>.Value,
         Assert.Equal(SyntaxKind.FloatingLiteralToken, tk.Kind)
         Assert.Equal(30036, tk.GetSyntaxErrorsNoTree()(0).Code)
         Assert.Equal(0.0F, tk.Value)
+    End Sub
+
+    <Fact>
+    Public Sub Scanner_UnderscoreWrongLocation()
+        Dim Str = "_1"
+        Dim tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IdentifierToken, tk.Kind)
+        Assert.Equal(0, tk.GetSyntaxErrorsNoTree().Count())
+
+        Str = "1_"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(30035, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
+
+        Str = "&H_1"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(30035, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
+
+        Str = "&H1_"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.IntegerLiteralToken, tk.Kind)
+        Assert.Equal(30035, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
+
+        Str = "1_.1"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.FloatingLiteralToken, tk.Kind)
+        Assert.Equal(30035, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
+
+        Str = "1.1_"
+        tk = ScanOnce(Str)
+        Assert.Equal(SyntaxKind.FloatingLiteralToken, tk.Kind)
+        Assert.Equal(30035, tk.GetSyntaxErrorsNoTree()(0).Code)
+        Assert.Equal(0, CInt(tk.Value))
     End Sub
 
     <Fact>
@@ -958,7 +1052,7 @@ End If]]>.Value,
         Assert.Equal(31085, token.GetSyntaxErrorsNoTree()(0).Code)
     End Sub
 
-    <Fact, WorkItem(529782, "DevDiv")>
+    <Fact, WorkItem(529782, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529782")>
     Public Sub DateAndDecimalCultureIndependentTokens()
         Dim SavedCultureInfo = CurrentThread.CurrentCulture
         Try
@@ -1136,7 +1230,7 @@ End If
         ]]>)
     End Sub
 
-    <WorkItem(538747, "DevDiv")>
+    <WorkItem(538747, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538747")>
     <Fact>
     Public Sub OghamSpacemark()
         ParseAndVerify(<![CDATA[
@@ -1146,7 +1240,7 @@ End Module
         ]]>)
     End Sub
 
-    <WorkItem(531175, "DevDiv")>
+    <WorkItem(531175, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531175")>
     <Fact>
     Public Sub Bug17703()
         ParseAndVerify(<![CDATA[
@@ -1165,7 +1259,7 @@ Dim x = <
                        </errors>)
     End Sub
 
-    <WorkItem(530916, "DevDiv")>
+    <WorkItem(530916, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530916")>
     <Fact>
     Public Sub Bug17189()
         ParseAndVerify(<![CDATA[
@@ -1187,7 +1281,7 @@ a<
         </errors>)
     End Sub
 
-    <WorkItem(530682, "DevDiv")>
+    <WorkItem(530682, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530682")>
     <Fact>
     Public Sub Bug16698()
         ParseAndVerify(<![CDATA[#Const x = <!--
@@ -1210,7 +1304,7 @@ a<
         VerifyNoWhitespaceInKeywords()
     End Sub
 
-    <WorkItem(547317, "DevDiv")>
+    <WorkItem(547317, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/547317")>
     <Fact>
     Public Sub ParseHugeNumber()
         ParseAndVerify(<![CDATA[
@@ -1230,7 +1324,7 @@ EndModule
         VerifyNoWhitespaceInKeywords()
     End Sub
 
-    <WorkItem(547317, "DevDiv")>
+    <WorkItem(547317, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/547317")>
     <Fact>
     Public Sub ParseHugeNumberLabel()
         ParseAndVerify(<![CDATA[

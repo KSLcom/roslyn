@@ -10,7 +10,7 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.Metadata.PE
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
-    Partial Class NamedTypeSymbol
+    Partial Friend Class NamedTypeSymbol
         Implements ITypeReference
         Implements ITypeDefinition
         Implements INamedTypeReference
@@ -25,7 +25,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Private ReadOnly Property ITypeReferenceIsEnum As Boolean Implements ITypeReference.IsEnum
             Get
                 Debug.Assert(Not Me.IsAnonymousType)
-                Return Me.TypeKind = TYPEKIND.Enum
+                Return Me.TypeKind = TypeKind.Enum
             End Get
         End Property
 
@@ -42,13 +42,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Return AsTypeDefinitionImpl(moduleBeingBuilt)
         End Function
 
-        Private Function ITypeReferenceTypeCode(context As EmitContext) As PrimitiveTypeCode Implements ITypeReference.TypeCode
+        Private Function ITypeReferenceTypeCode(context As EmitContext) As Cci.PrimitiveTypeCode Implements ITypeReference.TypeCode
             Debug.Assert(Not Me.IsAnonymousType)
             Debug.Assert(Me.IsDefinitionOrDistinct())
             If Me.IsDefinition Then
                 Return Me.PrimitiveTypeCode
             End If
-            Return PrimitiveTypeCode.NotPrimitive
+            Return Cci.PrimitiveTypeCode.NotPrimitive
         End Function
 
         Private ReadOnly Property ITypeReferenceTypeDef As TypeDefinitionHandle Implements ITypeReference.TypeDef
@@ -392,16 +392,21 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Return Nothing
         End Function
 
-        Private Iterator Function ITypeDefinitionInterfaces(context As EmitContext) As IEnumerable(Of ITypeReference) Implements ITypeDefinition.Interfaces
+        Private Iterator Function ITypeDefinitionInterfaces(context As EmitContext) _
+            As IEnumerable(Of Cci.TypeReferenceWithAttributes) Implements ITypeDefinition.Interfaces
             Debug.Assert(Not Me.IsAnonymousType)
             Debug.Assert((DirectCast(Me, ITypeReference)).AsTypeDefinition(context) IsNot Nothing)
 
             Dim moduleBeingBuilt As PEModuleBuilder = DirectCast(context.Module, PEModuleBuilder)
             For Each [interface] In GetInterfacesToEmit()
-                Yield moduleBeingBuilt.Translate([interface],
-                                                 syntaxNodeOpt:=DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode),
-                                                 diagnostics:=context.Diagnostics,
-                                                 fromImplements:=True)
+                Dim translated = moduleBeingBuilt.Translate([interface],
+                                                            syntaxNodeOpt:=DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode),
+                                                            diagnostics:=context.Diagnostics,
+                                                            fromImplements:=True)
+
+                ' TODO(https://github.com/dotnet/roslyn/issues/12592):
+                ' TODO: Add support for tuple attributes on interface implementations
+                Yield New Cci.TypeReferenceWithAttributes(translated)
             Next
         End Function
 
@@ -812,7 +817,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Get
                 'Debug.Assert(((ITypeReference)this).AsNamespaceTypeDefinition != null);
                 CheckDefinitionInvariant()
-                Return Me.DeclaredAccessibility = Accessibility.Public
+                Return PEModuleBuilder.MemberVisibility(Me) = Cci.TypeMemberVisibility.Public
             End Get
         End Property
 
@@ -854,9 +859,22 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Dim moduleBeingBuilt As PEModuleBuilder = DirectCast(context.Module, PEModuleBuilder)
             Debug.Assert((DirectCast(Me, ITypeReference)).AsGenericTypeInstanceReference IsNot Nothing)
 
+            Dim modifiers As ImmutableArray(Of ImmutableArray(Of CustomModifier)) = Nothing
+
+            If Me.HasTypeArgumentsCustomModifiers Then
+                modifiers = Me.TypeArgumentsCustomModifiers
+            End If
+
             Dim builder = ArrayBuilder(Of ITypeReference).GetInstance()
-            For Each t In Me.TypeArgumentsNoUseSiteDiagnostics
-                builder.Add(moduleBeingBuilt.Translate(t, syntaxNodeOpt:=DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode), diagnostics:=context.Diagnostics))
+            Dim arguments = Me.TypeArgumentsNoUseSiteDiagnostics
+            For i As Integer = 0 To arguments.Length - 1
+                Dim arg = moduleBeingBuilt.Translate(arguments(i), syntaxNodeOpt:=DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode), diagnostics:=context.Diagnostics)
+
+                If Not modifiers.IsDefault AndAlso Not modifiers(i).IsDefaultOrEmpty Then
+                    arg = New Cci.ModifiedTypeReference(arg, modifiers(i).As(Of Cci.ICustomModifier))
+                End If
+
+                builder.Add(arg)
             Next
 
             Return builder.ToImmutableAndFree

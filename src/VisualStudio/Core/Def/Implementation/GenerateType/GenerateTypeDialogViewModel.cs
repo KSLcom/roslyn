@@ -47,7 +47,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                                                 };
 
         // Below code details with the Access List and the manipulation
-        public List<string> AccessList { get; private set; }
+        public List<string> AccessList { get; }
         private int _accessSelectIndex;
         public int AccessSelectIndex
         {
@@ -136,12 +136,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
             }
         }
 
-        private void PopulateTypeKind(TypeKind typeKind, string csharpkKey, string visualBasicKey)
+        private void PopulateTypeKind(TypeKind typeKind, string csharpKey, string visualBasicKey)
         {
             _typeKindMap.Add(visualBasicKey, typeKind);
-            _typeKindMap.Add(csharpkKey, typeKind);
+            _typeKindMap.Add(csharpKey, typeKind);
 
-            _csharpTypeKindList.Add(csharpkKey);
+            _csharpTypeKindList.Add(csharpKey);
             _visualBasicTypeKindList.Add(visualBasicKey);
         }
 
@@ -240,20 +240,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                 // Case : \\Something
                 if (trimmedFileName.StartsWith(@"\\", StringComparison.Ordinal))
                 {
-                    SendFailureNotification(ServicesVSResources.IllegalCharactersInPath);
+                    SendFailureNotification(ServicesVSResources.Illegal_characters_in_path);
                     return false;
                 }
 
                 // Case : something\
                 if (string.IsNullOrWhiteSpace(trimmedFileName) || trimmedFileName.EndsWith(@"\", StringComparison.Ordinal))
                 {
-                    SendFailureNotification(ServicesVSResources.PathCannotHaveEmptyFileName);
+                    SendFailureNotification(ServicesVSResources.Path_cannot_have_empty_filename);
                     return false;
                 }
 
                 if (trimmedFileName.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
                 {
-                    SendFailureNotification(ServicesVSResources.IllegalCharactersInPath);
+                    SendFailureNotification(ServicesVSResources.Illegal_characters_in_path);
                     return false;
                 }
 
@@ -263,14 +263,14 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                 // Construct the implicit file path
                 if (isRootOfTheProject || this.SelectedProject != _document.Project)
                 {
-                    if (!TryGetImplicitFilePath(this.SelectedProject.FilePath ?? string.Empty, ServicesVSResources.IllegalPathForProject, out implicitFilePath))
+                    if (!TryGetImplicitFilePath(this.SelectedProject.FilePath ?? string.Empty, ServicesVSResources.Project_Path_is_illegal, out implicitFilePath))
                     {
                         return false;
                     }
                 }
                 else
                 {
-                    if (!TryGetImplicitFilePath(_document.FilePath, ServicesVSResources.IllegalPathForDocument, out implicitFilePath))
+                    if (!TryGetImplicitFilePath(_document.FilePath, ServicesVSResources.DocumentPath_is_illegal, out implicitFilePath))
                     {
                         return false;
                     }
@@ -325,19 +325,19 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                 {
                     projectRootPath = string.Empty;
                 }
-                else if (!TryGetImplicitFilePath(this.SelectedProject.FilePath, ServicesVSResources.IllegalPathForProject, out projectRootPath))
+                else if (!TryGetImplicitFilePath(this.SelectedProject.FilePath, ServicesVSResources.Project_Path_is_illegal, out projectRootPath))
                 {
                     return false;
                 }
 
-                if (this.FullFilePath.StartsWith(projectRootPath))
+                if (this.FullFilePath.StartsWith(projectRootPath, StringComparison.Ordinal))
                 {
                     // The new file will be within the root of the project
                     var folderPath = this.FullFilePath.Substring(projectRootPath.Length);
                     var containers = folderPath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
 
                     // Folder name was mentioned
-                    if (containers.Count() > 1)
+                    if (containers.Length > 1)
                     {
                         _fileName = containers.Last();
                         Folders = new List<string>(containers);
@@ -348,7 +348,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                             _areFoldersValidIdentifiers = false;
                         }
                     }
-                    else if (containers.Count() == 1)
+                    else if (containers.Length == 1)
                     {
                         // File goes at the root of the Directory
                         _fileName = containers[0];
@@ -356,7 +356,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                     }
                     else
                     {
-                        SendFailureNotification(ServicesVSResources.IllegalCharactersInPath);
+                        SendFailureNotification(ServicesVSResources.Illegal_characters_in_path);
                         return false;
                     }
                 }
@@ -368,7 +368,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                     var lastIndexOfSeparator = this.FullFilePath.LastIndexOf('\\');
                     if (lastIndexOfSeparator == -1)
                     {
-                        SendFailureNotification(ServicesVSResources.IllegalCharactersInPath);
+                        SendFailureNotification(ServicesVSResources.Illegal_characters_in_path);
                         return false;
                     }
 
@@ -378,7 +378,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                 // Check for reserved words in the folder or filename
                 if (this.FullFilePath.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries).Any(s => _reservedKeywords.Contains(s, StringComparer.OrdinalIgnoreCase)))
                 {
-                    SendFailureNotification(ServicesVSResources.FilePathCannotUseReservedKeywords);
+                    SendFailureNotification(ServicesVSResources.File_path_cannot_use_reserved_keywords);
                     return false;
                 }
 
@@ -389,7 +389,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
                      this.SelectedProject.Documents.Where(n => n.Name != null && n.Folders.Count > 0 && n.Name == this.FileName && this.Folders.SequenceEqual(n.Folders)).Any()) ||
                      File.Exists(FullFilePath))
                 {
-                    SendFailureNotification(ServicesVSResources.FileAlreadyExists);
+                    SendFailureNotification(ServicesVSResources.File_already_exists);
                     return false;
                 }
             }
@@ -503,7 +503,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
             }
         }
 
-        public List<ProjectSelectItem> ProjectList { get; private set; }
+        public List<ProjectSelectItem> ProjectList { get; }
 
         private Project _previouslyPopulatedProject = null;
         private List<DocumentSelectItem> _previouslyPopulatedDocumentList = null;
@@ -683,7 +683,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
         internal void UpdateFileNameExtension()
         {
             var currentFileName = this.FileName.Trim();
-            if (!string.IsNullOrWhiteSpace(currentFileName) && !currentFileName.EndsWith("\\"))
+            if (!string.IsNullOrWhiteSpace(currentFileName) && !currentFileName.EndsWith("\\", StringComparison.Ordinal))
             {
                 if (this.SelectedProject.Language == LanguageNames.CSharp)
                 {
@@ -751,7 +751,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.GenerateType
 
             this.ProjectList = projectListing;
 
-            _typeName = generateTypeDialogOptions.IsAttribute && !typeName.EndsWith("Attribute") ? typeName + "Attribute" : typeName;
+            const string attributeSuffix = "Attribute";
+            _typeName = generateTypeDialogOptions.IsAttribute && !typeName.EndsWith(attributeSuffix, StringComparison.Ordinal) ? typeName + attributeSuffix : typeName;
             this.FileName = typeName + fileExtension;
 
             _document = document;

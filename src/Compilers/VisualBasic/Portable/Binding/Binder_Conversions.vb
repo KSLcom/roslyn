@@ -387,7 +387,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 End If
 
                 If applyNullableIsTrueOperator Then
-                    result = Me.ApplyNullableIsTrueOperator(result, targetType)
+                    result = Binder.ApplyNullableIsTrueOperator(result, targetType)
                 End If
             Else
                 conv = Conversions.ClassifyConversion(argument, targetType, Me, useSiteDiagnostics)
@@ -404,7 +404,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return result
         End Function
 
-        Private Function ApplyNullableIsTrueOperator(argument As BoundExpression, booleanType As TypeSymbol) As BoundNullableIsTrueOperator
+        Private Shared Function ApplyNullableIsTrueOperator(argument As BoundExpression, booleanType As TypeSymbol) As BoundNullableIsTrueOperator
             Debug.Assert(argument.Type.IsNullableOfBoolean() AndAlso booleanType.IsBooleanType())
             Return New BoundNullableIsTrueOperator(argument.Syntax, argument, booleanType).MakeCompilerGenerated()
         End Function
@@ -467,7 +467,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 ' The array will get the type from the input type of the user defined conversion.
                 sourceType = convKind.Value.Parameters(0).Type
 
-                ' If the conversion from the inferred elrment type to the source type of the user defined conversion is a narrowing conversion then
+                ' If the conversion from the inferred element type to the source type of the user defined conversion is a narrowing conversion then
                 ' skip to the user defined conversion. Conversion errors on the individual elements will be reported when the array literal is reclassified.
                 If Not isExplicit AndAlso
                     Conversions.IsNarrowingConversion(convKind.Key) AndAlso
@@ -593,39 +593,39 @@ DoneWithDiagnostics:
         End Function
 
         Private Structure VarianceSuggestionTypeParameterInfo
-            Private m_IsViable As Boolean
-            Private m_TypeParameter As TypeParameterSymbol
-            Private m_DerivedArgument As TypeSymbol
-            Private m_BaseArgument As TypeSymbol
+            Private _isViable As Boolean
+            Private _typeParameter As TypeParameterSymbol
+            Private _derivedArgument As TypeSymbol
+            Private _baseArgument As TypeSymbol
 
             Public Sub [Set](parameter As TypeParameterSymbol, derived As TypeSymbol, base As TypeSymbol)
-                m_TypeParameter = parameter
-                m_DerivedArgument = derived
-                m_BaseArgument = base
-                m_IsViable = True
+                _typeParameter = parameter
+                _derivedArgument = derived
+                _baseArgument = base
+                _isViable = True
             End Sub
 
             Public ReadOnly Property IsViable As Boolean
                 Get
-                    Return m_IsViable
+                    Return _isViable
                 End Get
             End Property
 
             Public ReadOnly Property TypeParameter As TypeParameterSymbol
                 Get
-                    Return m_TypeParameter
+                    Return _typeParameter
                 End Get
             End Property
 
             Public ReadOnly Property DerivedArgument As TypeSymbol
                 Get
-                    Return m_DerivedArgument
+                    Return _derivedArgument
                 End Get
             End Property
 
             Public ReadOnly Property BaseArgument As TypeSymbol
                 Get
-                    Return m_BaseArgument
+                    Return _baseArgument
                 End Get
             End Property
         End Structure
@@ -633,7 +633,7 @@ DoneWithDiagnostics:
         ''' <summary>
         ''' Returns True if error or warning was reported.
         ''' 
-        ''' This function is invoked on the occassion of a Narrowing or NoConversion.
+        ''' This function is invoked on the occasion of a Narrowing or NoConversion.
         ''' It looks at the conversion. If the conversion could have been helped by variance in
         ''' some way, it reports an error/warning message to that effect and returns true. This
         ''' message is a substitute for whatever other conversion-failed message might have been displayed.
@@ -1617,7 +1617,13 @@ DoneWithDiagnostics:
                 Dim sourceElement = sourceArray.ElementType
                 Dim targetElement = targetArray.ElementType
 
-                If Not (sourceElement.IsErrorType() OrElse targetElement.IsErrorType()) Then
+                If sourceArray.Rank <> targetArray.Rank Then
+                    ReportDiagnostic(diagnostics, location, ERRID.ERR_ConvertArrayRankMismatch2, sourceType, targetType)
+
+                ElseIf sourceArray.IsSZArray <> targetArray.IsSZArray
+                    ReportDiagnostic(diagnostics, location, ERRID.ERR_TypeMismatch2, sourceType, targetType)
+
+                ElseIf Not (sourceElement.IsErrorType() OrElse targetElement.IsErrorType()) Then
                     Dim elemConv = Conversions.ClassifyDirectCastConversion(sourceElement, targetElement, Nothing)
 
                     If Not Conversions.IsIdentityConversion(elemConv) AndAlso
@@ -1631,13 +1637,9 @@ DoneWithDiagnostics:
                              (elemConv And (ConversionKind.Reference Or ConversionKind.Value Or ConversionKind.TypeParameter)) <> 0) Then
                         ReportDiagnostic(diagnostics, location, ERRID.ERR_ConvertArrayMismatch4, sourceType, targetType, sourceElement, targetElement)
 
-                    ElseIf sourceArray.Rank <> targetArray.Rank Then
-                        ReportDiagnostic(diagnostics, location, ERRID.ERR_ConvertArrayRankMismatch2, sourceType, targetType)
-
                     Else
                         ReportDiagnostic(diagnostics, location, ERRID.ERR_TypeMismatch2, sourceType, targetType)
                     End If
-
                 End If
 
             ElseIf sourceType.IsDateTimeType() AndAlso targetType.IsDoubleType() Then

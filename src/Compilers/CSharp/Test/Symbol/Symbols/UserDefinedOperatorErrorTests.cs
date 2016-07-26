@@ -1,14 +1,5 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Microsoft.CodeAnalysis.CSharp.Symbols;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
-using Microsoft.CodeAnalysis.Test.Utilities;
-using Microsoft.CodeAnalysis.Text;
-using Roslyn.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests
@@ -52,7 +43,7 @@ class C
     private class op_Multiply {} 
 
     // These two collide because they have different return types but
-    // identical parameters types. The behaviour is that the error
+    // identical parameters types. The behavior is that the error
     // given says that they collide because of the name op_Modulus,
     // rather than there being a custom error message as there is for
     // the following scenario.
@@ -101,7 +92,6 @@ class H
     public static implicit operator string(H h) { return null; }
     private class op_Implicit {}
 }
-
 ";
             var comp = CreateCompilationWithMscorlib(text);
             comp.VerifyDiagnostics(
@@ -144,13 +134,10 @@ class H
                 );
         }
 
-
-
-
         [Fact]
         public void UserDefinedOperatorBodyErrors()
         {
-            // User-defined operators have the same behaviour as other methods;
+            // User-defined operators have the same behavior as other methods;
             // for example, they must return a value compatible with their declared
             // return type and have an unreachable end point.
 
@@ -269,7 +256,7 @@ public class C
 }
 ";
             // UNDONE: Roslyn squiggles just the "operator"; Native compiler squiggles the "operator +".
-            // UNDONE: Consider matching the native compiler behaviour, or, even better, squiggle the
+            // UNDONE: Consider matching the native compiler behavior, or, even better, squiggle the
             // UNDONE: offending type.
 
             var comp = CreateCompilationWithMscorlib(text);
@@ -285,7 +272,6 @@ Diagnostic(ErrorCode.ERR_BadVisOpParam, "-").WithArguments("C.operator -(C, C.D)
 // (8,37): error CS0057: Inconsistent accessibility: parameter type 'C.D' is less accessible than operator 'C.explicit operator C(C.D)'
 //     public static explicit operator C(D d) { return null; }
 Diagnostic(ErrorCode.ERR_BadVisOpParam, "C").WithArguments("C.explicit operator C(C.D)", "C.D")
-
                 );
         }
 

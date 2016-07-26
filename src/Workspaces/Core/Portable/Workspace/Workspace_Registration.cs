@@ -19,7 +19,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (textContainer == null)
             {
-                throw new ArgumentNullException("textContainer");
+                throw new ArgumentNullException(nameof(textContainer));
             }
 
             var registration = GetWorkspaceRegistration(textContainer);
@@ -35,10 +35,15 @@ namespace Microsoft.CodeAnalysis
         {
             if (textContainer == null)
             {
-                throw new ArgumentNullException("textContainer");
+                throw new ArgumentNullException(nameof(textContainer));
             }
 
-            GetWorkspaceRegistration(textContainer).SetWorkspaceAndRaiseEvents(this);
+            var registration = GetWorkspaceRegistration(textContainer);
+            registration.SetWorkspace(this);
+            this.ScheduleTask(() =>
+            {
+                registration.RaiseEvents();
+            }, "Workspace.RegisterText");
         }
 
         /// <summary>
@@ -48,10 +53,15 @@ namespace Microsoft.CodeAnalysis
         {
             if (textContainer == null)
             {
-                throw new ArgumentNullException("textContainer");
+                throw new ArgumentNullException(nameof(textContainer));
             }
 
-            GetWorkspaceRegistration(textContainer).SetWorkspaceAndRaiseEvents(null);
+            var registration = GetWorkspaceRegistration(textContainer);
+
+            if (registration.Workspace == this)
+            {
+                registration.SetWorkspaceAndRaiseEvents(null);
+            }
         }
 
         private static WorkspaceRegistration CreateRegistration(SourceTextContainer container)
@@ -59,7 +69,7 @@ namespace Microsoft.CodeAnalysis
             return new WorkspaceRegistration();
         }
 
-        private static ConditionalWeakTable<SourceTextContainer, WorkspaceRegistration>.CreateValueCallback s_createRegistration = CreateRegistration;
+        private static readonly ConditionalWeakTable<SourceTextContainer, WorkspaceRegistration>.CreateValueCallback s_createRegistration = CreateRegistration;
 
         /// <summary>
         /// Returns a <see cref="WorkspaceRegistration" /> for a given text container.
@@ -68,7 +78,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (textContainer == null)
             {
-                throw new ArgumentNullException("textContainer");
+                throw new ArgumentNullException(nameof(textContainer));
             }
 
             return s_bufferToWorkspaceRegistrationMap.GetValue(textContainer, s_createRegistration);

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
@@ -39,7 +39,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
         {
             if (syntax != null && symbol is CodeGenerationSymbol)
             {
-                return (TSyntaxNode)syntax.WithAdditionalAnnotations(
+                return syntax.WithAdditionalAnnotations(
                     ((CodeGenerationSymbol)symbol).GetAnnotations());
             }
 
@@ -48,7 +48,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
 
         public static TSyntaxNode AddCleanupAnnotationsTo<TSyntaxNode>(TSyntaxNode node) where TSyntaxNode : SyntaxNode
         {
-            return (TSyntaxNode)node.WithAdditionalAnnotations(Formatter.Annotation);
+            return node.WithAdditionalAnnotations(Formatter.Annotation);
         }
 
         public static void CheckNodeType<TSyntaxNode1>(SyntaxNode node, string argumentName)
@@ -59,7 +59,7 @@ namespace Microsoft.CodeAnalysis.CodeGeneration
                 return;
             }
 
-            throw new ArgumentException(WorkspacesResources.NodeIsOfTheWrongType, argumentName);
+            throw new ArgumentException(WorkspacesResources.Node_is_of_the_wrong_type, argumentName);
         }
 
         public static void GetNameAndInnermostNamespace(

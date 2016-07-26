@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Options.Providers;
-using Microsoft.Internal.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
 using Microsoft.VisualStudio.Settings;
 using Roslyn.Utilities;
 
@@ -22,21 +22,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
     {
         // NOTE: This service is not public or intended for use by teams/individuals outside of Microsoft. Any data stored is subject to deletion without warning.
         [Guid("9B164E40-C3A2-4363-9BC5-EB4039DEF653")]
-        private class SVsSettingsPersistenceManager {};
+        private class SVsSettingsPersistenceManager { };
 
         protected readonly ISettingsManager Manager;
         private readonly IOptionService _optionService;
 
-        public AbstractSettingsManagerOptionSerializer(IServiceProvider serviceProvider, IOptionService optionService)
+        public AbstractSettingsManagerOptionSerializer(VisualStudioWorkspaceImpl workspace)
             : base(assertIsForeground: true) // The GetService call requires being on the UI thread or else it will marshal and risk deadlock
         {
-            Contract.ThrowIfNull(serviceProvider);
-            Contract.ThrowIfNull(optionService);
+            Contract.ThrowIfNull(workspace);
 
-            this.storageKeyToOptionMap = new Lazy<ImmutableDictionary<string, IOption>>(CreateStorageKeyToOptionMap, isThreadSafe: true);
+            _storageKeyToOptionMap = new Lazy<ImmutableDictionary<string, IOption>>(CreateStorageKeyToOptionMap, isThreadSafe: true);
 
-            this.Manager = (ISettingsManager)serviceProvider.GetService(typeof(SVsSettingsPersistenceManager));
-            this._optionService = optionService;
+            this.Manager = workspace.GetVsService<SVsSettingsPersistenceManager, ISettingsManager>();
+            _optionService = workspace.Services.GetService<IOptionService>();
 
             // While the settings persistence service should be available in all SKUs it is possible an ISO shell author has undefined the
             // contributing package. In that case persistence of settings won't work (we don't bother with a backup solution for persistence
@@ -67,7 +66,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             IOption option;
             if (this.StorageKeyToOptionMap.TryGetValue(args.PropertyName, out option))
             {
-                this.SetChangedOption(this._optionService, option, LanguageName);
+                this.SetChangedOption(_optionService, option, LanguageName);
             }
 
             return SpecializedTasks.Default<object>();
@@ -77,7 +76,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
 
         private void SetChangedOption(IOptionService optionService, IOption option, string languageName)
         {
-            OptionKey key = new OptionKey(option, languageName);
+            OptionKey key = new OptionKey(option, option.IsPerLanguage ? languageName : null);
 
             object currentValue;
             if (this.TryFetch(key, out currentValue))
@@ -89,7 +88,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             }
         }
 
-        private Lazy<ImmutableDictionary<string, IOption>> storageKeyToOptionMap;
+        private Lazy<ImmutableDictionary<string, IOption>> _storageKeyToOptionMap;
 
         protected abstract ImmutableDictionary<string, IOption> CreateStorageKeyToOptionMap();
 
@@ -97,10 +96,10 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
         {
             get
             {
-                return this.storageKeyToOptionMap.Value;
+                return _storageKeyToOptionMap.Value;
             }
         }
-       
+
         protected KeyValuePair<string, IOption> GetOptionInfo(FieldInfo fieldInfo)
         {
             var value = (IOption)fieldInfo.GetValue(null);
@@ -112,7 +111,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             var values = new List<KeyValuePair<string, IOption>>();
             foreach (Type type in types)
             {
-                FieldInfo[] fields = type.GetFields(flags) ?? new FieldInfo[0];
+                FieldInfo[] fields = type.GetFields(flags) ?? Array.Empty<FieldInfo>();
                 Func<FieldInfo, bool> localFilter = (fi) =>
                     {
                         if (!(fi.GetValue(null) is IOption))
@@ -127,7 +126,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
             }
 
             return values;
-        }        
+        }
 
         public virtual bool TryFetch(OptionKey optionKey, out object value)
         {
@@ -147,6 +146,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Options
 
             var storageKey = GetStorageKeyForOption(optionKey.Option);
             value = this.Manager.GetValueOrDefault(storageKey, optionKey.Option.DefaultValue);
+
+            // VS's ISettingsManager has some quirks around storing enums.  Specifically,
+            // it *can* persist and retrieve enums, but only if you properly call 
+            // GetValueOrDefault<EnumType>.  This is because it actually stores enums just
+            // as ints and depends on the type parameter passed in to convert the integral
+            // value back to an enum value.  Unfortunately, we call GetValueOrDefault<object>
+            // and so we get the value back as boxed integer.
+            //
+            // Because of that, manually convert the integer to an enum here so we don't
+            // crash later trying to cast a boxed integer to an enum value.
+            if (value != null && optionKey.Option.Type.IsEnum)
+            {
+                value = Enum.ToObject(optionKey.Option.Type, value);
+            }
 
             return true;
         }

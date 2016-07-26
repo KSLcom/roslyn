@@ -1,8 +1,8 @@
-﻿using System.ComponentModel.Composition;
-using System.Reflection;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System.ComponentModel.Composition;
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Windows.Controls;
-using System.Windows.Media.Imaging;
 
 namespace Microsoft.VisualStudio.InteractiveWindow.Commands
 {
@@ -17,12 +17,12 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
 
         public override string Description
         {
-            get { return "Clears the contents of the REPL editor window, leaving history and execution context intact."; }
+            get { return InteractiveWindowResources.ClearScreenCommandDescription; }
         }
 
-        public override string Name
+        public override IEnumerable<string> Names
         {
-            get { return "cls"; }
+            get { yield return "cls"; yield return "clear"; }
         }
     }
 }

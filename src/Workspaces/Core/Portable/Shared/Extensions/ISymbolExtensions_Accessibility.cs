@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Shared.Extensions
@@ -227,7 +226,7 @@ namespace Microsoft.CodeAnalysis.Shared.Extensions
             }
         }
 
-        // Is a member with declared accessibility "declaredAccessiblity" accessible from within
+        // Is a member with declared accessibility "declaredAccessibility" accessible from within
         // "within", which must be a named type or an assembly.
         private static bool IsMemberAccessible(
             INamedTypeSymbol containingType,

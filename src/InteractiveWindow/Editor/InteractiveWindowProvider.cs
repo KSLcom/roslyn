@@ -1,9 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System;
 using System.ComponentModel.Composition;
 using Microsoft.VisualStudio.Language.Intellisense;
+using Microsoft.VisualStudio.Language.Intellisense.Utilities;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.Text.Formatting;
 using Microsoft.VisualStudio.Text.Operations;
 using Microsoft.VisualStudio.Text.Projection;
 using Microsoft.VisualStudio.Utilities;
@@ -13,14 +16,17 @@ namespace Microsoft.VisualStudio.InteractiveWindow
     [Export(typeof(IInteractiveWindowFactoryService))]
     internal class InteractiveWindowProvider : IInteractiveWindowFactoryService
     {
-        private readonly IContentTypeRegistryService contentTypeRegistry;
-        private readonly ITextBufferFactoryService bufferFactory;
-        private readonly IProjectionBufferFactoryService projectionBufferFactory;
-        private readonly IEditorOperationsFactoryService editorOperationsFactory;
-        private readonly ITextEditorFactoryService editorFactory;
-        private readonly IIntellisenseSessionStackMapService intellisenseSessionStackMap;
-        private readonly ISmartIndentationService smartIndenterService;
-        private readonly IInteractiveWindowEditorFactoryService windowFactoryService;
+        private readonly IContentTypeRegistryService _contentTypeRegistry;
+        private readonly ITextBufferFactoryService _bufferFactory;
+        private readonly IProjectionBufferFactoryService _projectionBufferFactory;
+        private readonly IEditorOperationsFactoryService _editorOperationsFactory;
+        private readonly ITextBufferUndoManagerProvider _textBufferUndoManagerProvider;
+        private readonly ITextEditorFactoryService _editorFactory;
+        private readonly IRtfBuilderService _rtfBuilderService;
+        private readonly IIntellisenseSessionStackMapService _intellisenseSessionStackMap;
+        private readonly ISmartIndentationService _smartIndenterService;
+        private readonly IInteractiveWindowEditorFactoryService _windowFactoryService;
+        private readonly IWaitIndicator _waitIndicator;
 
         [ImportingConstructor]
         public InteractiveWindowProvider(
@@ -28,19 +34,25 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             ITextBufferFactoryService bufferFactory,
             IProjectionBufferFactoryService projectionBufferFactory,
             IEditorOperationsFactoryService editorOperationsFactory,
+            ITextBufferUndoManagerProvider textBufferUndoManagerProvider,
             ITextEditorFactoryService editorFactory,
+            IRtfBuilderService rtfBuilderService,
             IIntellisenseSessionStackMapService intellisenseSessionStackMap,
             ISmartIndentationService smartIndenterService,
-            IInteractiveWindowEditorFactoryService windowFactoryService)
+            IInteractiveWindowEditorFactoryService windowFactoryService,
+            IWaitIndicator waitIndicator)
         {
-            this.contentTypeRegistry = contentTypeRegistry;
-            this.bufferFactory = bufferFactory;
-            this.projectionBufferFactory = projectionBufferFactory;
-            this.editorOperationsFactory = editorOperationsFactory;
-            this.editorFactory = editorFactory;
-            this.intellisenseSessionStackMap = intellisenseSessionStackMap;
-            this.smartIndenterService = smartIndenterService;
-            this.windowFactoryService = windowFactoryService;
+            _contentTypeRegistry = contentTypeRegistry;
+            _bufferFactory = bufferFactory;
+            _projectionBufferFactory = projectionBufferFactory;
+            _editorOperationsFactory = editorOperationsFactory;
+            _textBufferUndoManagerProvider = textBufferUndoManagerProvider;
+            _editorFactory = editorFactory;
+            _rtfBuilderService = rtfBuilderService;
+            _intellisenseSessionStackMap = intellisenseSessionStackMap;
+            _smartIndenterService = smartIndenterService;
+            _windowFactoryService = windowFactoryService;
+            _waitIndicator = waitIndicator;
         }
 
         public IInteractiveWindow CreateWindow(IInteractiveEvaluator evaluator)
@@ -51,15 +63,18 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             }
 
             return new InteractiveWindow(
-                windowFactoryService,
-                contentTypeRegistry,
-                bufferFactory,
-                projectionBufferFactory,
-                editorOperationsFactory,
-                editorFactory,
-                intellisenseSessionStackMap,
-                smartIndenterService, 
-                evaluator);
+                _windowFactoryService,
+                _contentTypeRegistry,
+                _bufferFactory,
+                _projectionBufferFactory,
+                _editorOperationsFactory,
+                _textBufferUndoManagerProvider,
+                _editorFactory,
+                _rtfBuilderService,
+                _intellisenseSessionStackMap,
+                _smartIndenterService,
+                evaluator,
+                _waitIndicator);
         }
     }
 }

@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows.Controls;
 using Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.QuickInfo;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Classification;
@@ -189,12 +190,12 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.QuickInfo
                 content.TypeSwitch(
                         (QuickInfoDisplayDeferredContent qiContent) =>
                         {
-                            var actualContent = ((QuickInfoDisplayDeferredContent)qiContent).MainDescription.ClassifiableContent;
+                            var actualContent = qiContent.MainDescription.ClassifiableContent;
                             ClassificationTestHelper.Verify(expectedText, expectedClassifications, actualContent);
                         },
                         (ClassifiableDeferredContent classifiable) =>
                         {
-                            var actualContent = ((ClassifiableDeferredContent)classifiable).ClassifiableContent;
+                            var actualContent = classifiable.ClassifiableContent;
                             ClassificationTestHelper.Verify(expectedText, expectedClassifications, actualContent);
                         });
             };
@@ -215,9 +216,9 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.QuickInfo
 
                         Assert.Equal(expectedText, actualText);
                     },
-                    (ClassifiableDeferredContent classifable) =>
+                    (ClassifiableDeferredContent classifiable) =>
                     {
-                        var actualContent = classifable.ClassifiableContent;
+                        var actualContent = classifiable.ClassifiableContent;
                         Assert.Equal(expectedText, actualContent.GetFullText());
                         ClassificationTestHelper.Verify(expectedText, expectedClassifications, actualContent);
                     });
@@ -279,14 +280,23 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.QuickInfo
             };
         }
 
-        protected static bool CanUseSpeculativeSemanticModel(Document document, int position)
+        protected Action<object> Exceptions(string expectedText)
+        {
+            return (content) =>
+            {
+                var quickInfoContent = (QuickInfoDisplayDeferredContent)content;
+                Assert.Equal(expectedText, quickInfoContent.ExceptionText.ClassifiableContent.GetFullText());
+            };
+        }
+
+        protected static async Task<bool> CanUseSpeculativeSemanticModelAsync(Document document, int position)
         {
             var service = document.Project.LanguageServices.GetService<ISyntaxFactsService>();
-            var node = document.GetSyntaxRootAsync().Result.FindToken(position).Parent;
+            var node = (await document.GetSyntaxRootAsync()).FindToken(position).Parent;
 
             return !service.GetMemberBodySpanForSpeculativeBinding(node).IsEmpty;
         }
 
-        protected abstract void Test(string markup, params Action<object>[] expectedResults);
+        protected abstract Task TestAsync(string markup, params Action<object>[] expectedResults);
     }
 }

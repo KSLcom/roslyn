@@ -6,12 +6,10 @@ Imports System.Xml.Linq
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Extensions
 Imports Microsoft.CodeAnalysis.Text
-Imports Microsoft.CodeAnalysis.VisualBasic
-Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests
-    Module Utils
+    Friend Module Utils
         Friend Function ParseCode(code As String) As SyntaxTree
             Dim text = SourceText.From(code)
             Return SyntaxFactory.ParseSyntaxTree(text)
@@ -118,13 +116,13 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests
                 _node = node
             End Sub
 
-            ReadOnly Property Tree As SyntaxTree
+            Public ReadOnly Property Tree As SyntaxTree
                 Get
                     Return _tree
                 End Get
             End Property
 
-            ReadOnly Property Node As T
+            Public ReadOnly Property Node As T
                 Get
                     Return _node
                 End Get
@@ -332,7 +330,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests
                     Return String.Join(vbCrLf, lines)
 
                 Case Else
-                    Throw New ArgumentException("Unexpected testSource XML tag.", "testSource")
+                    Throw New ArgumentException("Unexpected testSource XML tag.", NameOf(testSource))
             End Select
         End Function
     End Module

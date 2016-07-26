@@ -9,7 +9,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Emit.NoPia
     Friend NotInheritable Class EmbeddedType
         Inherits EmbeddedTypesManager.CommonEmbeddedType
 
-        Private embeddedAllMembersOfImplementedInterface As Boolean
+        Private _embeddedAllMembersOfImplementedInterface As Boolean
 
         Public Sub New(typeManager As EmbeddedTypesManager, underlyingNamedType As NamedTypeSymbol)
             MyBase.New(typeManager, underlyingNamedType)
@@ -22,11 +22,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Emit.NoPia
         Public Sub EmbedAllMembersOfImplementedInterface(syntaxNodeOpt As VisualBasicSyntaxNode, diagnostics As DiagnosticBag)
             Debug.Assert(UnderlyingNamedType.IsInterfaceType())
 
-            If embeddedAllMembersOfImplementedInterface Then
+            If _embeddedAllMembersOfImplementedInterface Then
                 Return
             End If
 
-            embeddedAllMembersOfImplementedInterface = True
+            _embeddedAllMembersOfImplementedInterface = True
 
             ' Embed all members
             For Each m In UnderlyingNamedType.GetMethodsToEmit()
@@ -76,13 +76,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Emit.NoPia
             Return UnderlyingNamedType.GetPropertiesToEmit()
         End Function
 
-        Protected Overrides Iterator Function GetInterfaces(context As EmitContext) As IEnumerable(Of Cci.ITypeReference)
+        Protected Overrides Iterator Function GetInterfaces(context As EmitContext) As IEnumerable(Of Cci.TypeReferenceWithAttributes)
             Debug.Assert(TypeManager.ModuleBeingBuilt Is context.Module)
 
             Dim moduleBeingBuilt = DirectCast(context.Module, PEModuleBuilder)
 
             For Each [interface] In UnderlyingNamedType.GetInterfacesToEmit()
-                Yield moduleBeingBuilt.Translate([interface], DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode), context.Diagnostics)
+                Dim translated = moduleBeingBuilt.Translate([interface],
+                                                            DirectCast(context.SyntaxNodeOpt, VisualBasicSyntaxNode),
+                                                            context.Diagnostics)
+
+                ' TODO(https://github.com/dotnet/roslyn/issues/12592):
+                ' TODO: Add support for tuple attributes on interface implementations
+                Yield New Cci.TypeReferenceWithAttributes(translated)
             Next
         End Function
 

@@ -1,9 +1,11 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
+
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
     Partial Public Class FindReferencesTests
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocal()
+        Public Async Function TestLocal() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -19,11 +21,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalInFieldInitializerLambda1()
+        Public Async Function TestLocalInFieldInitializerLambda1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -40,11 +42,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalInFieldInitializerLambda2()
+        Public Async Function TestLocalInFieldInitializerLambda2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -61,11 +63,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalCaseSensitivity()
+        Public Async Function TestLocalCaseSensitivity() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -81,11 +83,11 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalCaseInsensitivity()
+        Public Async Function TestLocalCaseInsensitivity() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -101,12 +103,12 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.FindReferences
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(530636)>
+        <WorkItem(530636, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530636")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalInLambdaInField1()
+        Public Async Function TestLocalInLambdaInField1() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -117,12 +119,12 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
-        <WorkItem(530636)>
+        <WorkItem(530636, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530636")>
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocalInLambdaInField2()
+        Public Async Function TestLocalInLambdaInField2() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -133,12 +135,12 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        <WorkItem(608210)>
-        Public Sub TestLocalInPropertyInitializer()
+        <WorkItem(608210, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/608210")>
+        Public Async Function TestLocalInPropertyInitializer() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -153,13 +155,40 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
+
+        <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
+        <WorkItem(2667, "https://github.com/dotnet/roslyn/issues/2667")>
+        Public Async Function TestLocalWithWithStatement() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+        Class C
+            Public Property P As String
+            Public Property L As New List(Of String)
+            Sub M()
+                Dim {|Definition:$$x|} As New C
+                With [|x|]
+                    .P = "abcd"
+                End With
+
+                With [|x|].L
+                    .Add("efgh")
+                End With
+            End Function
+        End Class
+        </Document>
+    </Project>
+</Workspace>
+            Await TestAsync(input)
+        End Function
 
 
 #Region "FAR on collection initializers"
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocal_CSharpNamedIdentifiersUsedInNestedColInit()
+        Public Async Function TestLocal_CSharpNamedIdentifiersUsedInNestedColInit() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -177,11 +206,11 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocal_VBNamedIdentifiersUsedInNestedColInit()
+        Public Async Function TestLocal_VBNamedIdentifiersUsedInNestedColInit() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -197,11 +226,11 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocal_CSharpNamedIdentifiersUsedInAVeryLongColInitExp()
+        Public Async Function TestLocal_CSharpNamedIdentifiersUsedInAVeryLongColInitExp() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -217,11 +246,11 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.FindReferences)>
-        Public Sub TestLocal_VBNamedIdentifiersUsedInAVeryLongColInitEx()
+        Public Async Function TestLocal_VBNamedIdentifiersUsedInAVeryLongColInitEx() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -235,8 +264,8 @@ End Module
         </Document>
     </Project>
 </Workspace>
-            Test(input)
-        End Sub
+            Await TestAsync(input)
+        End Function
 #End Region
     End Class
 End Namespace

@@ -78,7 +78,7 @@ public class X
 
 
 
-            // Verify use of cyrillic namespace results in same behavior
+            // Verify use of Cyrillic namespace results in same behavior
             source = @"
 namespace решения
 {
@@ -168,7 +168,7 @@ namespace N.Foo;
                 Diagnostic(ErrorCode.WRN_UnreferencedFieldAssg, "ro").WithArguments("N.X.ro"));
         }
 
-        // Check that EmitMetadaOnly works
+        // Check that EmitMetadataOnly works
         [Fact]
         public void EmitMetadataOnly()
         {
@@ -338,7 +338,7 @@ class Class2
             // NOTE: there's no point in trying to run the EXE since it depends on a DLL with no method bodies.
         }
 
-        [WorkItem(539982, "DevDiv")]
+        [WorkItem(539982, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539982")]
         [Fact]
         public void EmitNestedLambdaWithAddPlusOperator()
         {
@@ -357,7 +357,7 @@ public class C
 ");
         }
 
-        [Fact, WorkItem(539983, "DevDiv")]
+        [Fact, WorkItem(539983, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539983")]
         public void EmitAlwaysFalseExpression()
         {
             CompileAndVerify(@"
@@ -373,7 +373,7 @@ class C
 ");
         }
 
-        [WorkItem(540146, "DevDiv")]
+        [WorkItem(540146, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540146")]
         [Fact]
         public void EmitLambdaInConstructorInitializer()
         {
@@ -395,7 +395,7 @@ public class A
             CompileAndVerify(source, expectedOutput: "Hello");
         }
 
-        [WorkItem(540146, "DevDiv")]
+        [WorkItem(540146, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540146")]
         [Fact]
         public void EmitLambdaInConstructorBody()
         {
@@ -423,7 +423,7 @@ public void func(Func<string> x)
             CompileAndVerify(source, expectedOutput: "Hello!");
         }
 
-        [WorkItem(540146, "DevDiv")]
+        [WorkItem(540146, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540146")]
         [Fact]
         public void EmitLambdaInConstructorInitializerAndBody()
         {
@@ -453,7 +453,7 @@ Hello!
 ");
         }
 
-        [WorkItem(541786, "DevDiv")]
+        [WorkItem(541786, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541786")]
         [Fact]
         public void EmitInvocationExprInIfStatementNestedInsideCatch()
         {
@@ -479,7 +479,7 @@ static class Test
             CompileAndVerify(source, expectedOutput: "45");
         }
 
-        [WorkItem(541822, "DevDiv")]
+        [WorkItem(541822, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541822")]
         [Fact]
         public void EmitSwitchOnByteType()
         {
@@ -508,7 +508,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "0");
         }
 
-        [WorkItem(541823, "DevDiv")]
+        [WorkItem(541823, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541823")]
         [Fact]
         public void EmitSwitchOnIntTypeBoundary()
         {
@@ -519,10 +519,10 @@ public class Test
     {
         switch (val)
         {
-            case (int)int.MinValue: 
-            case (int)int.MinValue + 1: 
-            case (int)short.MinValue: 
-            case (int)short.MinValue + 1: 
+            case (int)int.MinValue:
+            case (int)int.MinValue + 1:
+            case (int)short.MinValue:
+            case (int)short.MinValue + 1:
             case (int)sbyte.MinValue: return 0;
             case (int)-1: return -1;
             case (int)0: return 0;
@@ -531,7 +531,7 @@ public class Test
             case (int)0xFE: return 0;
             case (int)0xFF: return 0;
             case (int)0x7FFE: return 0;
-            case (int)0xFFFE: 
+            case (int)0xFFFE:
             case (int)0x7FFFFFFF: return 0;
             default: return null;
         }
@@ -545,7 +545,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "-1");
         }
 
-        [WorkItem(541824, "DevDiv")]
+        [WorkItem(541824, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541824")]
         [Fact]
         public void EmitSwitchOnLongTypeBoundary()
         {
@@ -591,7 +591,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "0");
         }
 
-        [WorkItem(541840, "DevDiv")]
+        [WorkItem(541840, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541840")]
         [Fact]
         public void EmitSwitchOnLongTypeBoundary2()
         {
@@ -636,7 +636,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "0");
         }
 
-        [WorkItem(541840, "DevDiv")]
+        [WorkItem(541840, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541840")]
         [Fact]
         public void EmitSwitchOnLongTypeBoundary3()
         {
@@ -709,7 +709,7 @@ public class Test
         }
 
 
-        [WorkItem(541840, "DevDiv")]
+        [WorkItem(541840, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541840")]
         [Fact]
         public void EmitSwitchOnCharTypeBoundary()
         {
@@ -753,7 +753,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "True");
         }
 
-        [WorkItem(541840, "DevDiv")]
+        [WorkItem(541840, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541840")]
         [Fact]
         public void EmitSwitchOnUIntTypeBoundary()
         {
@@ -806,7 +806,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "True");
         }
 
-        [WorkItem(541824, "DevDiv")]
+        [WorkItem(541824, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541824")]
         [Fact]
         public void EmitSwitchOnUnsignedLongTypeBoundary()
         {
@@ -831,7 +831,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "0");
         }
 
-        [WorkItem(541847, "DevDiv")]
+        [WorkItem(541847, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541847")]
         [Fact]
         public void EmitSwitchOnUnsignedLongTypeBoundary2()
         {
@@ -890,7 +890,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "True");
         }
 
-        [WorkItem(541839, "DevDiv")]
+        [WorkItem(541839, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541839")]
         [Fact]
         public void EmitSwitchOnShortTypeBoundary()
         {
@@ -925,7 +925,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "1");
         }
 
-        [WorkItem(542563, "DevDiv")]
+        [WorkItem(542563, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542563")]
         [Fact]
         public void IncompleteIndexerDeclWithSyntaxErrors()
         {
@@ -946,7 +946,7 @@ public class Test
             Assert.NotEmpty(emitResult.Diagnostics);
         }
 
-        [WorkItem(541639, "DevDiv")]
+        [WorkItem(541639, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541639")]
         [Fact]
         public void VariableDeclInsideSwitchCaptureInLambdaExpr()
         {
@@ -978,7 +978,7 @@ class C
             Assert.True(emitResult.Success);
         }
 
-        [WorkItem(541639, "DevDiv")]
+        [WorkItem(541639, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541639")]
         [Fact]
         public void MultipleVariableDeclInsideSwitchCaptureInLambdaExpr()
         {
@@ -1292,7 +1292,7 @@ class C
             Assert.Equal(0x8560u, (ushort)peHeaders.PEHeader.DllCharacteristics);  //DYNAMIC_BASE | NX_COMPAT | NO_SEH | TERMINAL_SERVER_AWARE | HIGH_ENTROPY_VA (0x20)
         }
 
-        [WorkItem(764418, "DevDiv")]
+        [WorkItem(764418, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/764418")]
         [Fact]
         public void CheckDllCharacteristicsWinRtApp()
         {
@@ -1526,7 +1526,7 @@ using System;
                             );
         }
 
-        [WorkItem(543763, "DevDiv")]
+        [WorkItem(543763, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543763")]
         [Fact()]
         public void OptionalParamTypeAsDecimal()
         {
@@ -1547,7 +1547,7 @@ public class Test
             CompileAndVerify(source, expectedOutput: "0");
         }
 
-        [WorkItem(543932, "DevDiv")]
+        [WorkItem(543932, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543932")]
         [Fact]
         public void BranchCodeGenOnConditionDebug()
         {
@@ -1755,7 +1755,7 @@ public class Test
             }
         }
 
-        [WorkItem(570975, "DevDiv")]
+        [WorkItem(570975, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/570975")]
         [Fact]
         public void Bug570975()
         {
@@ -1764,7 +1764,7 @@ public sealed class ContentType
 {       
 	public void M(System.Collections.Generic.Dictionary<object, object> p)
 	{   
-		foreach (object paramterKey in p.Keys)
+		foreach (object parameterKey in p.Keys)
 		{
 		}
 	}
@@ -1778,7 +1778,7 @@ public sealed class ContentType
                 var reader = block.MetadataReader;
                 foreach (var typeRef in reader.TypeReferences)
                 {
-                    Handle scope = reader.GetTypeReference(typeRef).ResolutionScope;
+                    EntityHandle scope = reader.GetTypeReference(typeRef).ResolutionScope;
                     if (scope.Kind == HandleKind.TypeReference)
                     {
                         Assert.InRange(reader.GetRowNumber(scope), 1, reader.GetRowNumber(typeRef) - 1);
@@ -2137,7 +2137,7 @@ class C
                 });
         }
         [Fact]
-        [WorkItem(545651, "DevDiv")]
+        [WorkItem(545651, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545651")]
 
         private void TestReferenceToNestedGenericType()
         {
@@ -2158,7 +2158,7 @@ public class Test
             CompileAndVerify(p2, new[] { MetadataReference.CreateFromStream(c1.EmitToStream()) }, expectedOutput: "0");
         }
 
-        [WorkItem(546450, "DevDiv")]
+        [WorkItem(546450, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546450")]
         [Fact]
         public void EmitNetModuleWithReferencedNetModule()
         {
@@ -2166,11 +2166,11 @@ public class Test
             string source2 = @"public class B: A {}";
             var comp = CreateCompilationWithMscorlib(source1, options: TestOptions.ReleaseModule);
             var metadataRef = ModuleMetadata.CreateFromStream(comp.EmitToStream()).GetReference();
-            CompileAndVerify(source2, additionalRefs: new[] { metadataRef }, options: TestOptions.ReleaseModule, emitOptions: TestEmitters.RefEmitBug, verify: false);
+            CompileAndVerify(source2, additionalRefs: new[] { metadataRef }, options: TestOptions.ReleaseModule, verify: false);
         }
 
         [Fact]
-        [WorkItem(530879, "DevDiv")]
+        [WorkItem(530879, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530879")]
         public void TestCompilationEmitUsesDifferentStreamsForBinaryAndPdb()
         {
             string p1 = @"public class C1 { }";
@@ -2190,7 +2190,7 @@ public class Test
             Assert.True(File.Exists(pdbPath));
         }
 
-        [Fact, WorkItem(540777, "DevDiv"), WorkItem(546354, "DevDiv")]
+        [Fact, WorkItem(540777, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540777"), WorkItem(546354, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/546354")]
         public void CS0219WRN_UnreferencedVarAssg_ConditionalOperator()
         {
             var text = @"
@@ -2559,6 +2559,7 @@ public interface ITestPlatform
             var refCompilation = CreateCompilation(refSource, options: TestOptions.ReleaseModule.WithPlatform(Platform.Itanium), assemblyName: "PlatformMismatch");
 
             refCompilation.VerifyEmitDiagnostics(emitOptions);
+
             var imageRef = refCompilation.EmitToImageReference();
 
             string useSource = @"
@@ -2575,12 +2576,12 @@ public interface IUsePlatform
             useCompilation.VerifyEmitDiagnostics(emitOptions);
         }
 
-        [Fact, WorkItem(769741, "DevDiv")]
+        [Fact, WorkItem(769741, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/769741")]
         public void Bug769741()
         {
             var comp = CreateCompilation("", new[] { TestReferences.SymbolsTests.netModule.x64COFF }, options: TestOptions.DebugDll);
             // modules not supported in ref emit
-            CompileAndVerify(comp, emitOptions: TestEmitters.RefEmitBug, verify: false);
+            CompileAndVerify(comp, verify: false);
             Assert.NotSame(comp.Assembly.CorLibrary, comp.Assembly);
             comp.GetSpecialType(SpecialType.System_Int32);
         }
@@ -2633,6 +2634,62 @@ class Viewable
             Assert.Equal(P2RVA, P1RVA);
         }
 
+        private static bool SequenceMatches(byte[] buffer, int startIndex, byte[] pattern)
+        {
+            for (int i = 0; i < pattern.Length; i++)
+            {
+                if (buffer[startIndex + i] != pattern[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static int IndexOfPattern(byte[] buffer, int startIndex, byte[] pattern)
+        {
+            // Naive linear search for target within buffer
+            int end = buffer.Length - pattern.Length;
+            for (int i = startIndex; i < end; i++)
+            {
+                if (SequenceMatches(buffer, i, pattern))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        [Fact, WorkItem(1669, "https://github.com/dotnet/roslyn/issues/1669")]
+        public void FoldMethods2()
+        {
+            // Verifies that IL folding eliminates duplicate copies of small method bodies by
+            // examining the emitted binary.
+            string source = @"
+class C
+{
+    ulong M() => 0x8675309ABCDE4225UL; 
+    long P => -8758040459200282075L;
+}
+";
+
+            var compilation = CreateCompilationWithMscorlib(source, null, TestOptions.ReleaseDll);
+            using (var stream = compilation.EmitToStream())
+            {
+                var bytes = new byte[stream.Length];
+                Assert.Equal(bytes.Length, stream.Read(bytes, 0, bytes.Length));
+
+                // The constant should appear exactly once
+                byte[] pattern = new byte[] { 0x25, 0x42, 0xDE, 0xBC, 0x9A, 0x30, 0x75, 0x86 };
+                int firstMatch = IndexOfPattern(bytes, 0, pattern);
+                Assert.True(firstMatch >= 0, "Couldn't find the expected byte pattern in the output.");
+                int secondMatch = IndexOfPattern(bytes, firstMatch + 1, pattern);
+                Assert.True(secondMatch < 0, "Expected to find just one occurrence of the pattern in the output.");
+            }
+        }
+
         [Fact]
         public void BrokenOutStream()
         {
@@ -2642,10 +2699,17 @@ class Viewable
             var compilation = CreateCompilationWithMscorlib(source);
 
             var output = new BrokenStream();
-            Assert.Throws<IOException>(() => compilation.Emit(output));
 
-            output.BreakHow = 1;
-            Assert.Throws<NotSupportedException>(() => compilation.Emit(output));
+            output.BreakHow = BrokenStream.BreakHowType.ThrowOnWrite;
+            var result = compilation.Emit(output);
+            result.Diagnostics.Verify(
+                // error CS8104: An error occurred while writing the Portable Executable file.
+                Diagnostic(ErrorCode.ERR_PeWritingFailure).WithArguments(output.ThrownException.ToString()).WithLocation(1, 1));
+          
+            // Stream.Position is not called:
+            output.BreakHow = BrokenStream.BreakHowType.ThrowOnSetPosition;
+            result = compilation.Emit(output);
+            result.Diagnostics.Verify();
 
             // disposed stream is not writable
             var outReal = new MemoryStream();
@@ -2661,7 +2725,7 @@ class Viewable
 
             var output = new MemoryStream();
             var pdb = new BrokenStream();
-            pdb.BreakHow = 2;
+            pdb.BreakHow = BrokenStream.BreakHowType.ThrowOnSetLength;
             var result = compilation.Emit(output, pdb);
 
             // error CS0041: Unexpected error writing debug information -- 'Exception from HRESULT: 0x806D0004'
@@ -2669,7 +2733,8 @@ class Viewable
 
             Assert.Equal((int)ErrorCode.FTL_DebugEmitFailure, err.Code);
             Assert.Equal(1, err.Arguments.Count);
-            Assert.True(((string)err.Arguments[0]).EndsWith(" HRESULT: 0x806D0004"));
+            var ioExceptionMessage = new IOException().Message;
+            Assert.Equal(ioExceptionMessage, (string)err.Arguments[0]);
 
             pdb.Dispose();
             result = compilation.Emit(output, pdb);
@@ -2679,7 +2744,258 @@ class Viewable
 
             Assert.Equal((int)ErrorCode.FTL_DebugEmitFailure, err.Code);
             Assert.Equal(1, err.Arguments.Count);
-            Assert.True(((string)err.Arguments[0]).EndsWith(" HRESULT: 0x806D0004"));
+            Assert.Equal(ioExceptionMessage, (string)err.Arguments[0]);
+        }
+
+        [Fact]
+        public void MultipleNetmodulesWithPrivateImplementationDetails()
+        {
+            var s1 = @"
+public class A
+{
+    private static char[] contents = { 'H', 'e', 'l', 'l', 'o', ',', ' ' };
+    public static string M1()
+    {
+        return new string(contents);
+    }
+}";
+            var s2 = @"
+public class B : A
+{
+    private static char[] contents = { 'w', 'o', 'r', 'l', 'd', '!' };
+    public static string M2()
+    {
+        return new string(contents);
+    }
+}";
+            var s3 = @"
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        System.Console.Write(A.M1());
+        System.Console.WriteLine(B.M2());
+    }
+}";
+            var comp1 = CreateCompilationWithMscorlib(s1, options: TestOptions.ReleaseModule);
+            comp1.VerifyDiagnostics();
+            var ref1 = comp1.EmitToImageReference();
+
+            var comp2 = CreateCompilationWithMscorlib(s2, options: TestOptions.ReleaseModule, references: new[] { ref1 });
+            comp2.VerifyDiagnostics();
+            var ref2 = comp2.EmitToImageReference();
+
+            var comp3 = CreateCompilationWithMscorlib(s3, options: TestOptions.ReleaseExe, references: new[] { ref1, ref2 });
+            // Before the bug was fixed, the PrivateImplementationDetails classes clashed, resulting in the commented-out error below.
+            comp3.VerifyDiagnostics(
+                ////// error CS0101: The namespace '<global namespace>' already contains a definition for '<PrivateImplementationDetails>'
+                ////Diagnostic(ErrorCode.ERR_DuplicateNameInNS).WithArguments("<PrivateImplementationDetails>", "<global namespace>").WithLocation(1, 1)
+                );
+            CompileAndVerify(comp3, expectedOutput: "Hello, world!");
+        }
+
+        [Fact]
+        public void MultipleNetmodulesWithAnonymousTypes()
+        {
+            var s1 = @"
+public class A
+{
+    internal object o1 = new { hello = 1, world = 2 };
+    public static string M1()
+    {
+        return ""Hello, "";
+    }
+}";
+            var s2 = @"
+public class B : A
+{
+    internal object o2 = new { hello = 1, world = 2 };
+    public static string M2()
+    {
+        return ""world!"";
+    }
+}";
+            var s3 = @"
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        System.Console.Write(A.M1());
+        System.Console.WriteLine(B.M2());
+    }
+}";
+            var comp1 = CreateCompilationWithMscorlib(s1, options: TestOptions.ReleaseModule.WithModuleName("A"));
+            comp1.VerifyDiagnostics();
+            var ref1 = comp1.EmitToImageReference();
+
+            var comp2 = CreateCompilationWithMscorlib(s2, options: TestOptions.ReleaseModule.WithModuleName("B"), references: new[] { ref1 });
+            comp2.VerifyDiagnostics();
+            var ref2 = comp2.EmitToImageReference();
+
+            var comp3 = CreateCompilationWithMscorlib(s3, options: TestOptions.ReleaseExe.WithModuleName("C"), references: new[] { ref1, ref2 });
+            comp3.VerifyDiagnostics();
+            CompileAndVerify(comp3, expectedOutput: "Hello, world!");
+        }
+
+        /// <summary>
+        /// Ordering of anonymous type definitions
+        /// in metadata should be deterministic.
+        /// </summary>
+        [Fact]
+        public void AnonymousTypeMetadataOrder()
+        {
+            var source =
+@"class C1
+{
+    object F = new { A = 1, B = 2 };
+}
+class C2
+{
+    object F = new { a = 3, b = 4 };
+}
+class C3
+{
+    object F = new { AB = 3 };
+}
+class C4
+{
+    object F = new { a = 1, B = 2 };
+}
+class C5
+{
+    object F = new { a = 1, B = 2 };
+}
+class C6
+{
+    object F = new { Ab = 5 };
+}";
+            var compilation = CreateCompilationWithMscorlib(source, options: TestOptions.ReleaseDll);
+            var bytes = compilation.EmitToArray();
+            using (var metadata = ModuleMetadata.CreateFromImage(bytes))
+            {
+                var reader = metadata.MetadataReader;
+                var actualNames = reader.GetTypeDefNames().Select(h => reader.GetString(h));
+                var expectedNames = new[]
+                    {
+                        "<Module>",
+                        "<>f__AnonymousType0`2",
+                        "<>f__AnonymousType1`2",
+                        "<>f__AnonymousType2`1",
+                        "<>f__AnonymousType3`2",
+                        "<>f__AnonymousType4`1",
+                        "C1",
+                        "C2",
+                        "C3",
+                        "C4",
+                        "C5",
+                        "C6",
+                    };
+                AssertEx.Equal(expectedNames, actualNames);
+            }
+        }
+
+        /// <summary>
+        /// Ordering of synthesized delegates in
+        /// metadata should be deterministic.
+        /// </summary>
+        [WorkItem(1440, "https://github.com/dotnet/roslyn/issues/1440")]
+        [Fact]
+        public void SynthesizedDelegateMetadataOrder()
+        {
+            var source =
+@"class C1
+{
+    static void M(dynamic d, object x, int y)
+    {
+        d(1, ref x, out y);
+    }
+}
+class C2
+{
+    static object M(dynamic d, object o)
+    {
+        return d(o, ref o);
+    }
+}
+class C3
+{
+    static void M(dynamic d, object o)
+    {
+        d(ref o);
+    }
+}
+class C4
+{
+    static int M(dynamic d, object o)
+    {
+        return d(ref o, 2);
+    }
+}";
+            var compilation = CreateCompilationWithMscorlib(source, options: TestOptions.ReleaseDll, references: new[] { SystemCoreRef, CSharpRef });
+            var bytes = compilation.EmitToArray();
+            using (var metadata = ModuleMetadata.CreateFromImage(bytes))
+            {
+                var reader = metadata.MetadataReader;
+                var actualNames = reader.GetTypeDefNames().Select(h => reader.GetString(h));
+                var expectedNames = new[]
+                    {
+                        "<Module>",
+                        "<>A{00000004}`3",
+                        "<>A{00000018}`5",
+                        "<>F{00000004}`5",
+                        "<>F{00000008}`5",
+                        "C1",
+                        "C2",
+                        "C3",
+                        "C4",
+                        "<>o__0",
+                        "<>o__0",
+                        "<>o__0",
+                        "<>o__0",
+                    };
+                AssertEx.Equal(expectedNames, actualNames);
+            }
+        }
+
+        [Fact]
+        [WorkItem(3240, "https://github.com/dotnet/roslyn/pull/8227")]
+        public void FailingEmitter()
+        {
+            string source = @"
+public class X
+{
+    public static void Main()
+    {
+  
+    }
+}";
+            var compilation = CreateCompilationWithMscorlib(source);
+            var broken = new BrokenStream();
+            broken.BreakHow = BrokenStream.BreakHowType.ThrowOnWrite;
+            var result = compilation.Emit(broken);
+            Assert.False(result.Success);
+            result.Diagnostics.Verify(
+                // error CS8104: An error occurred while writing the Portable Executable file.
+                Diagnostic(ErrorCode.ERR_PeWritingFailure).WithArguments(broken.ThrownException.ToString()).WithLocation(1, 1));
+        }
+
+        [Fact]
+        [WorkItem(9308, "https://github.com/dotnet/roslyn/issues/9308")]
+        public void FailingEmitterAllowsCancelationExceptionsThrough()
+        {
+            string source = @"
+public class X
+{
+    public static void Main()
+    {
+  
+    }
+}";
+            var compilation = CreateCompilationWithMscorlib(source);
+            var broken = new BrokenStream();
+            broken.BreakHow = BrokenStream.BreakHowType.CancelOnWrite;
+
+            Assert.Throws<OperationCanceledException>(() => compilation.Emit(broken));
         }
     }
 }

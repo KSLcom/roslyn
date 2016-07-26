@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.Shared.Extensions
 {
@@ -37,12 +36,12 @@ namespace Microsoft.CodeAnalysis.Shared.Extensions
 
                 foreach (var arg in symbol.TypeArguments)
                 {
-                    accessibility = CommonAccessibilityUtilities.Minimum(accessibility, arg.Accept(this));
+                    accessibility = AccessibilityUtilities.Minimum(accessibility, arg.Accept(this));
                 }
 
                 if (symbol.ContainingType != null)
                 {
-                    accessibility = CommonAccessibilityUtilities.Minimum(accessibility, symbol.ContainingType.Accept(this));
+                    accessibility = AccessibilityUtilities.Minimum(accessibility, symbol.ContainingType.Accept(this));
                 }
 
                 return accessibility;

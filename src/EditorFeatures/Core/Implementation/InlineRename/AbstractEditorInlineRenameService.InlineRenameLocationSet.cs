@@ -14,16 +14,16 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
     {
         private class InlineRenameLocationSet : IInlineRenameLocationSet
         {
-            private readonly RenameLocationSet _renameLocationSet;
+            private readonly RenameLocations _renameLocationSet;
             private readonly SymbolInlineRenameInfo _renameInfo;
 
-            public IList<InlineRenameLocation> Locations { get; private set; }
+            public IList<InlineRenameLocation> Locations { get; }
 
-            public InlineRenameLocationSet(SymbolInlineRenameInfo renameInfo, RenameLocationSet renameLocationSet)
+            public InlineRenameLocationSet(SymbolInlineRenameInfo renameInfo, RenameLocations renameLocationSet)
             {
                 _renameInfo = renameInfo;
                 _renameLocationSet = renameLocationSet;
-                this.Locations = renameLocationSet.Locations.Where(l => !l.IsCandidateLocation).Select(ConvertLocation).ToList();
+                this.Locations = renameLocationSet.Locations.Where(l => !l.IsCandidateLocation || l.IsMethodGroupReference).Select(ConvertLocation).ToList();
             }
 
             private InlineRenameLocation ConvertLocation(RenameLocation location)
@@ -36,7 +36,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
             {
                 var conflicts = await ConflictResolver.ResolveConflictsAsync(
                     _renameLocationSet, _renameLocationSet.Symbol.Name,
-                    _renameInfo.GetFinalSymbolName(replacementText), optionSet, cancellationToken).ConfigureAwait(false);
+                    _renameInfo.GetFinalSymbolName(replacementText), optionSet, hasConflict: null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 return new InlineRenameReplacementInfo(conflicts);
             }

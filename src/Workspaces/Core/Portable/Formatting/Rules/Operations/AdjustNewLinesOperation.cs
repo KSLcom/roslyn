@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Formatting.Rules
@@ -20,7 +19,7 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             this.Option = option;
         }
 
-        public int Line { get; private set; }
-        public AdjustNewLinesOption Option { get; private set; }
+        public int Line { get; }
+        public AdjustNewLinesOption Option { get; }
     }
 }

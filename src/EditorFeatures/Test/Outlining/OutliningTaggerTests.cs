@@ -3,11 +3,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor;
 using Microsoft.CodeAnalysis.Editor.Implementation.Outlining;
 using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
+using Microsoft.CodeAnalysis.Editor.Tagging;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
+using Microsoft.CodeAnalysis.Shared.TestHooks;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
@@ -21,29 +24,27 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Outlining
 {
     public class OutliningTaggerTests
     {
-        [Fact, Trait(Traits.Feature, Traits.Features.Outlining)]
-        public void CSharpOutliningTagger()
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Outlining)]
+        public async Task CSharpOutliningTagger()
         {
-            var code = new string[]
-            {
-                "using System;",
-                "namespace MyNamespace",
-                "{",
-                "#region MyRegion",
-                "    public class MyClass",
-                "    {",
-                "        static void Main(string[] args)",
-                "        {",
-                "            int x = 5;",
-                "        }",
-                "    }",
-                "#endregion",
-                "}"
-            };
+            var code =
+@"using System;
+namespace MyNamespace
+{
+#region MyRegion
+    public class MyClass
+    {
+        static void Main(string[] args)
+        {
+            int x = 5;
+        }
+    }
+#endregion
+}";
 
-            using (var workspace = CSharpWorkspaceFactory.CreateWorkspaceFromLines(code))
+            using (var workspace = await TestWorkspace.CreateCSharpAsync(code))
             {
-                var tags = GetTagsFromWorkspace(workspace);
+                var tags = await GetTagsFromWorkspaceAsync(workspace);
 
                 // ensure all 4 outlining region tags were found
                 Assert.Equal(4, tags.Count);
@@ -64,26 +65,23 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Outlining
             }
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Outlining)]
-        public void VisualBasicOutliningTagger()
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Outlining)]
+        public async Task VisualBasicOutliningTagger()
         {
-            var code = new string[]
-            {
-                "Imports System",
-                "Namespace MyNamespace",
-                "#Region \"MyRegion\"",
-                "    Module MyClass",
-                "        Sub Main(args As String())",
-                "            Dim x As Integer = 5",
-                "        End Sub",
-                "    End Module",
-                "#End Region",
-                "End Namespace"
-            };
+            var code = @"Imports System
+Namespace MyNamespace
+#Region ""MyRegion""
+    Module MyClass
+        Sub Main(args As String())
+            Dim x As Integer = 5
+        End Sub
+    End Module
+#End Region
+End Namespace";
 
-            using (var workspace = VisualBasicWorkspaceFactory.CreateWorkspaceFromLines(code))
+            using (var workspace = await TestWorkspace.CreateVisualBasicAsync(code))
             {
-                var tags = GetTagsFromWorkspace(workspace);
+                var tags = await GetTagsFromWorkspaceAsync(workspace);
 
                 // ensure all 4 outlining region tags were found
                 Assert.Equal(4, tags.Count);
@@ -104,20 +102,17 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Outlining
             }
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Outlining)]
-        public void OutliningTaggerTooltipText()
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Outlining)]
+        public async Task OutliningTaggerTooltipText()
         {
-            var code = new string[]
-            {
-                "Module Module1",
-                "    Sub Main(args As String())",
-                "    End Sub",
-                "End Module",
-            };
+            var code = @"Module Module1
+    Sub Main(args As String())
+    End Sub
+End Module";
 
-            using (var workspace = VisualBasicWorkspaceFactory.CreateWorkspaceFromLines(code))
+            using (var workspace = await TestWorkspace.CreateVisualBasicAsync(code))
             {
-                var tags = GetTagsFromWorkspace(workspace);
+                var tags = await GetTagsFromWorkspaceAsync(workspace);
 
                 var hints = tags.Select(x => x.CollapsedHintForm).Cast<ViewHostingControl>().ToArray();
                 Assert.Equal("Sub Main(args As String())\r\nEnd Sub", hints[1].ToString()); // method
@@ -125,7 +120,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Outlining
             }
         }
 
-        private static List<IOutliningRegionTag> GetTagsFromWorkspace(TestWorkspace workspace)
+        private static async Task<List<IOutliningRegionTag>> GetTagsFromWorkspaceAsync(TestWorkspace workspace)
         {
             var hostdoc = workspace.Documents.First();
             var view = hostdoc.GetTextView();
@@ -133,16 +128,16 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Outlining
             var editorService = workspace.GetService<IEditorOptionsFactoryService>();
             var projectionService = workspace.GetService<IProjectionBufferFactoryService>();
 
-            var provider = new OutliningTaggerProvider.TagProducer(
-                textService, editorService, projectionService);
+            var provider = new OutliningTaggerProvider(
+                workspace.ExportProvider.GetExportedValue<IForegroundNotificationService>(),
+                textService, editorService, projectionService,
+                AggregateAsynchronousOperationListener.EmptyListeners);
 
-            Document document = workspace.CurrentSolution.GetDocument(hostdoc.Id);
+            var document = workspace.CurrentSolution.GetDocument(hostdoc.Id);
+            var context = new TaggerContext<IOutliningRegionTag>(document, view.TextSnapshot);
+            await provider.ProduceTagsAsync_ForTestingPurposesOnly(context);
 
-            return provider.ProduceTagsAsync(
-                document,
-                new SnapshotSpan(view.TextSnapshot, 0, view.TextSnapshot.Length),
-                null,
-                CancellationToken.None).Result.Select(x => x.Tag).ToList();
+            return context.tagSpans.Select(x => x.Tag).ToList();
         }
     }
 }

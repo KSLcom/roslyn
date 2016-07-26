@@ -23,10 +23,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
     Friend Class VisualBasicNavigationBarItemService
         Inherits AbstractNavigationBarItemService
 
-        Private ReadOnly TypeFormat As SymbolDisplayFormat = New SymbolDisplayFormat(
+        Private ReadOnly _typeFormat As SymbolDisplayFormat = New SymbolDisplayFormat(
             genericsOptions:=SymbolDisplayGenericsOptions.IncludeTypeParameters Or SymbolDisplayGenericsOptions.IncludeVariance)
 
-        Private ReadOnly MemberFormat As SymbolDisplayFormat = New SymbolDisplayFormat(
+        Private ReadOnly _memberFormat As SymbolDisplayFormat = New SymbolDisplayFormat(
             genericsOptions:=SymbolDisplayGenericsOptions.IncludeTypeParameters,
             memberOptions:=SymbolDisplayMemberOptions.IncludeParameters Or SymbolDisplayMemberOptions.IncludeType,
             parameterOptions:=SymbolDisplayParameterOptions.IncludeType,
@@ -36,7 +36,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
         Private ReadOnly _textUndoHistoryRegistry As ITextUndoHistoryRegistry
 
         <ImportingConstructor>
-        Sub New(editorOperationsFactoryService As IEditorOperationsFactoryService, textUndoHistoryRegistry As ITextUndoHistoryRegistry)
+        Public Sub New(editorOperationsFactoryService As IEditorOperationsFactoryService, textUndoHistoryRegistry As ITextUndoHistoryRegistry)
             _editorOperationsFactoryService = editorOperationsFactoryService
             _textUndoHistoryRegistry = textUndoHistoryRegistry
         End Sub
@@ -45,7 +45,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             Dim semanticModel = Await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(False)
             Contract.ThrowIfNull(semanticModel)
 
-            Dim types = GetTypesInFile(semanticModel, cancellationToken)
+            Dim typesAndDeclarations = GetTypesAndDeclarationsInFile(semanticModel, cancellationToken)
 
             Dim typeItems As New List(Of NavigationBarItem)
             Dim typeSymbolIndexProvider As New NavigationBarSymbolIdIndexProvider(caseSensitive:=False)
@@ -53,8 +53,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             Dim symbolDeclarationService = document.GetLanguageService(Of ISymbolDeclarationService)
             Dim workspaceSupportsDocumentChanges = document.Project.Solution.Workspace.CanApplyChange(ApplyChangesKind.ChangeDocument)
 
-            For Each typeSymbol In types
-                typeItems.AddRange(CreateItemsForType(typeSymbol, typeSymbolIndexProvider.GetIndexForSymbolId(typeSymbol.GetSymbolKey()), semanticModel, workspaceSupportsDocumentChanges, symbolDeclarationService, cancellationToken))
+            For Each typeAndDeclaration In typesAndDeclarations
+                Dim type = typeAndDeclaration.Item1
+                Dim position = typeAndDeclaration.Item2.SpanStart
+                typeItems.AddRange(CreateItemsForType(type, position, typeSymbolIndexProvider.GetIndexForSymbolId(type.GetSymbolKey()), semanticModel, workspaceSupportsDocumentChanges, symbolDeclarationService, cancellationToken))
             Next
 
             Return typeItems
@@ -65,23 +67,23 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             Return TypeOf item IsNot AbstractGenerateCodeItem
         End Function
 
-        Private Function GetTypesInFile(semanticModel As SemanticModel, cancellationToken As CancellationToken) As IEnumerable(Of INamedTypeSymbol)
+        Private Function GetTypesAndDeclarationsInFile(semanticModel As SemanticModel, cancellationToken As CancellationToken) As IEnumerable(Of Tuple(Of INamedTypeSymbol, SyntaxNode))
             Try
-                Dim types As New HashSet(Of INamedTypeSymbol)
+                Dim typesAndDeclarations As New Dictionary(Of INamedTypeSymbol, SyntaxNode)
                 Dim nodesToVisit As New Stack(Of SyntaxNode)
 
                 nodesToVisit.Push(DirectCast(semanticModel.SyntaxTree.GetRoot(cancellationToken), SyntaxNode))
 
                 Do Until nodesToVisit.IsEmpty
                     If cancellationToken.IsCancellationRequested Then
-                        Return SpecializedCollections.EmptyEnumerable(Of INamedTypeSymbol)()
+                        Return SpecializedCollections.EmptyEnumerable(Of Tuple(Of INamedTypeSymbol, SyntaxNode))()
                     End If
 
                     Dim node = nodesToVisit.Pop()
                     Dim type = TryCast(semanticModel.GetDeclaredSymbol(node, cancellationToken), INamedTypeSymbol)
 
                     If type IsNot Nothing Then
-                        types.Add(type)
+                        typesAndDeclarations(type) = node
                     End If
 
                     If TypeOf node Is MethodBlockBaseSyntax OrElse
@@ -99,13 +101,14 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                     Next
                 Loop
 
-                Return types.OrderBy(Function(t) t.Name)
+                Return typesAndDeclarations.Select(Function(kvp) Tuple.Create(kvp.Key, kvp.Value)).OrderBy(Function(t) t.Item1.Name)
             Catch ex As Exception When FatalError.ReportUnlessCanceled(ex)
                 Throw ExceptionUtilities.Unreachable
             End Try
         End Function
 
         Private Function CreateItemsForType(type As INamedTypeSymbol,
+                                            position As Integer,
                                             typeSymbolIdIndex As Integer,
                                             semanticModel As SemanticModel,
                                             workspaceSupportsDocumentChanges As Boolean,
@@ -120,6 +123,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 If type.TypeKind <> TypeKind.Interface Then
                     Dim typeEvents = CreateItemForEvents(
                         type,
+                        position,
                         type,
                         eventContainer:=Nothing,
                         semanticModel:=semanticModel,
@@ -139,6 +143,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                             items.Add(
                                 CreateItemForEvents(
                                     type,
+                                    position,
                                     propertySymbol.Type,
                                     propertySymbol,
                                     semanticModel,
@@ -229,7 +234,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 Next
             End If
 
-            Dim name = type.ToDisplayString(TypeFormat)
+            Dim name = type.ToDisplayString(_typeFormat)
 
             If type.ContainingType IsNot Nothing Then
                 name &= " (" & type.ContainingType.ToDisplayString() & ")"
@@ -264,7 +269,15 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 Return Not p.IsWithEvents
             End If
 
-            Return symbol.Kind = SymbolKind.Event
+            If symbol.Kind = SymbolKind.Event Then
+                Return True
+            End If
+
+            If symbol.Kind = SymbolKind.Field AndAlso Not symbol.IsImplicitlyDeclared Then
+                Return True
+            End If
+
+            Return False
         End Function
 
         ''' <summary>
@@ -279,6 +292,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
         ''' <param name="eventContainer">If this is an entry for a WithEvents member, the WithEvents
         ''' property itself.</param>
         Private Function CreateItemForEvents(containingType As INamedTypeSymbol,
+                                             position As Integer,
                                              eventType As ITypeSymbol,
                                              eventContainer As IPropertySymbol,
                                              semanticModel As SemanticModel,
@@ -288,10 +302,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
 
             Dim rightHandMemberItems As New List(Of NavigationBarItem)
 
-            ' Get all of the events and methods implementing them. We must include events from base
-            ' types, as well as static events.
-            Dim allEvents = eventType.GetBaseTypesAndThis().SelectMany(Function(t) t.GetMembers()).OfType(Of IEventSymbol)().OrderBy(Function(e) e.Name)
-            Dim accessibleEvents = allEvents.Where(Function(e) e.IsAccessibleWithin(containingType))
+            Dim accessibleEvents = semanticModel.LookupSymbols(position, eventType).OfType(Of IEventSymbol).OrderBy(Function(e) e.Name)
+
             Dim methodsImplementingEvents = containingType.GetMembers().OfType(Of IMethodSymbol) _
                                                           .Where(Function(m) m.HandledEvents.Any(Function(he) Object.Equals(he.EventContainer, eventContainer)))
 
@@ -299,10 +311,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
 
             For Each method In methodsImplementingEvents
                 For Each handledEvent In method.HandledEvents
-                    Dim list As list(Of IMethodSymbol) = Nothing
+                    Dim list As List(Of IMethodSymbol) = Nothing
 
                     If Not eventToImplementingMethods.TryGetValue(handledEvent.EventSymbol, list) Then
-                        list = New list(Of IMethodSymbol)
+                        list = New List(Of IMethodSymbol)
                         eventToImplementingMethods.Add(handledEvent.EventSymbol, list)
                     End If
 
@@ -354,15 +366,15 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             Next
 
             If eventContainer IsNot Nothing Then
-                Return New NavigationBarItem(
+                Return New NavigationBarActionlessItem(
                     eventContainer.Name,
                     eventContainer.GetGlyph(),
                     indent:=1,
                     spans:=allMethodSpans,
                     childItems:=rightHandMemberItems)
             Else
-                Return New NavigationBarItem(
-                    String.Format(VBEditorResources.Events, containingType.Name),
+                Return New NavigationBarActionlessItem(
+                    String.Format(VBEditorResources._0_Events, containingType.Name),
                     Glyph.EventPublic,
                     indent:=1,
                     spans:=allMethodSpans,
@@ -394,7 +406,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
 
             ' If there is exactly one member that has no type arguments, we will skip showing the
             ' parameters for it to maintain behavior with Dev11
-            Dim displayFormat = If(members.Count() = 1 AndAlso firstMember.GetArity() = 0, New SymbolDisplayFormat(), MemberFormat)
+            Dim displayFormat = If(members.Count() = 1 AndAlso firstMember.GetArity() = 0, New SymbolDisplayFormat(), _memberFormat)
 
             ' If we're doing operators, we want to include the keyword
             If firstMember.IsUserDefinedOperator OrElse firstMember.IsConversion Then
@@ -460,13 +472,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
                 symbol = symbols.CandidateSymbols(item.NavigationSymbolIndex.Value)
             End If
 
-            ' First figure out the location that we want to grab considering partial types
-            Dim location = symbol.Locations.FirstOrDefault(Function(l) l.SourceTree.Equals(document.GetSyntaxTreeAsync(cancellationToken).WaitAndGetResult(cancellationToken)))
-
-            If location Is Nothing Then
-                location = symbol.Locations.FirstOrDefault
-            End If
-
+            Dim location As Location = GetSourceNavigationLocation(document, symbol, cancellationToken)
             If location Is Nothing Then
                 Return Nothing
             End If
@@ -484,6 +490,20 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             Return New VirtualTreePoint(location.SourceTree, location.SourceTree.GetText(cancellationToken), location.SourceSpan.Start)
         End Function
 
+        Private Shared Function GetSourceNavigationLocation(document As Document, symbol As ISymbol, cancellationToken As CancellationToken) As Location
+            Dim sourceLocations = symbol.Locations.Where(Function(l) l.IsInSource)
+
+            ' First figure out the location that we want to grab considering partial types
+            Dim syntaxTree = document.GetSyntaxTreeSynchronously(cancellationToken)
+            Dim location = sourceLocations.FirstOrDefault(Function(l) l.SourceTree.Equals(syntaxTree))
+
+            If location Is Nothing Then
+                location = sourceLocations.FirstOrDefault
+            End If
+
+            Return location
+        End Function
+
         Public Overrides Sub NavigateToItem(document As Document, item As NavigationBarItem, textView As ITextView, cancellationToken As CancellationToken)
             Dim generateCodeItem = TryCast(item, AbstractGenerateCodeItem)
 
@@ -498,12 +518,12 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.NavigationBar
             ' We'll compute everything up front before we go mutate state
             Dim text = document.GetTextAsync(cancellationToken).WaitAndGetResult(cancellationToken)
             Dim newDocument = generateCodeItem.GetGeneratedDocumentAsync(document, cancellationToken).WaitAndGetResult(cancellationToken)
-            Dim generatedTree = newDocument.GetSyntaxRootAsync(cancellationToken).WaitAndGetResult(cancellationToken)
+            Dim generatedTree = newDocument.GetSyntaxRootSynchronously(cancellationToken)
             Dim generatedNode = generatedTree.GetAnnotatedNodes(AbstractGenerateCodeItem.GeneratedSymbolAnnotation).Single().FirstAncestorOrSelf(Of MethodBlockBaseSyntax)
-            Dim indentSize = document.Project.Solution.Workspace.Options.GetOption(FormattingOptions.IndentationSize, LanguageNames.VisualBasic)
+            Dim indentSize = newDocument.Options.GetOption(FormattingOptions.IndentationSize)
             Dim navigationPoint = NavigationPointHelpers.GetNavigationPoint(generatedTree.GetText(text.Encoding), indentSize, generatedNode)
 
-            Using transaction = New CaretPreservingEditTransaction(VBEditorResources.GenerateMember, textView, _textUndoHistoryRegistry, _editorOperationsFactoryService)
+            Using transaction = New CaretPreservingEditTransaction(VBEditorResources.Generate_Member, textView, _textUndoHistoryRegistry, _editorOperationsFactoryService)
                 newDocument.Project.Solution.Workspace.ApplyDocumentChanges(newDocument, cancellationToken)
 
                 ' WARNING: now that we've edited, nothing can check the cancellation token from here

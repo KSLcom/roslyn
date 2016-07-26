@@ -30,45 +30,39 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         Public Function IsExpressionContext(semanticModel As SemanticModel,
                                             position As Integer,
                                             cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsExpressionContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsExpressionContext(position, token, cancellationToken, visualBasicSemanticModel)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsExpressionContext(position, token, cancellationToken, semanticModel)
         End Function
 
         Public Function IsMemberDeclarationContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsMemberDeclarationContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsInterfaceMemberDeclarationKeywordContext(position, token, cancellationToken) OrElse
-                visualBasicSemanticModel.SyntaxTree.IsTypeMemberDeclarationKeywordContext(position, token, cancellationToken)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsInterfaceMemberDeclarationKeywordContext(position, token, cancellationToken) OrElse
+                semanticModel.SyntaxTree.IsTypeMemberDeclarationKeywordContext(position, token, cancellationToken)
         End Function
 
         Public Function IsNamespaceContext(semanticModel As SemanticModel,
                                            position As Integer,
                                            cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsNamespaceContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsNamespaceContext(position, token, cancellationToken, visualBasicSemanticModel)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsNamespaceContext(position, token, cancellationToken, semanticModel)
         End Function
 
         Public Function IsStatementContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsStatementContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsSingleLineStatementContext(position, token, cancellationToken) OrElse
-                visualBasicSemanticModel.SyntaxTree.IsMultiLineStatementStartContext(position, token, cancellationToken)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsSingleLineStatementContext(position, token, cancellationToken) OrElse
+                semanticModel.SyntaxTree.IsMultiLineStatementStartContext(position, token, cancellationToken)
         End Function
 
         Public Function IsTypeContext(semanticModel As SemanticModel,
                                       position As Integer,
                                       cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsTypeContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsTypeContext(position, token, cancellationToken, visualBasicSemanticModel)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsTypeContext(position, token, cancellationToken, semanticModel)
         End Function
 
         Public Function IsTypeDeclarationContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsTypeDeclarationContext
-            Dim visualBasicSemanticModel = DirectCast(semanticModel, SemanticModel)
-            Dim token = visualBasicSemanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
-            Return visualBasicSemanticModel.SyntaxTree.IsTypeDeclarationContext(position, token, cancellationToken)
+            Dim token = semanticModel.SyntaxTree.GetTargetToken(position, cancellationToken)
+            Return semanticModel.SyntaxTree.IsTypeDeclarationContext(position, token, cancellationToken)
         End Function
 
         Public Function IsPreProcessorDirectiveContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsPreProcessorDirectiveContext
@@ -248,6 +242,18 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
         Public Function IsNameOfContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsNameOfContext
             Return semanticModel.SyntaxTree.IsNameOfContext(position, cancellationToken)
+        End Function
+
+        Public Function IsNamespaceDeclarationNameContext(semanticModel As SemanticModel, position As Integer, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsNamespaceDeclarationNameContext
+            Return semanticModel.SyntaxTree.IsNamespaceDeclarationNameContext(position, cancellationToken)
+        End Function
+
+        Public Function IsPartial(typeSymbol As ITypeSymbol, cancellationToken As CancellationToken) As Boolean Implements ISemanticFactsService.IsPartial
+            Dim syntaxRefs = typeSymbol.DeclaringSyntaxReferences
+            Return syntaxRefs.Any(
+                Function(n As SyntaxReference)
+                    Return DirectCast(n.GetSyntax(cancellationToken), TypeStatementSyntax).Modifiers.Any(SyntaxKind.PartialKeyword)
+                End Function)
         End Function
     End Class
 End Namespace

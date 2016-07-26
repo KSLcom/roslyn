@@ -22,7 +22,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
     /// </summary>
     internal abstract class PENamedTypeSymbol : NamedTypeSymbol
     {
-        private static readonly Dictionary<string, ImmutableArray<PENamedTypeSymbol>> s_emptyNestedTypes = new Dictionary<string, ImmutableArray<PENamedTypeSymbol>>();
+        private static readonly Dictionary<string, ImmutableArray<PENamedTypeSymbol>> s_emptyNestedTypes = new Dictionary<string, ImmutableArray<PENamedTypeSymbol>>(EmptyComparer.Instance);
 
         private readonly NamespaceOrTypeSymbol _container;
         private readonly TypeDefinitionHandle _handle;
@@ -426,12 +426,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                 try
                 {
                     var moduleSymbol = ContainingPEModule;
-                    Handle token = moduleSymbol.Module.GetBaseTypeOfTypeOrThrow(_handle);
+                    EntityHandle token = moduleSymbol.Module.GetBaseTypeOfTypeOrThrow(_handle);
 
                     if (!token.IsNil)
                     {
                         TypeSymbol decodedType = new MetadataDecoder(moduleSymbol, this).GetTypeOfToken(token);
-                        return (NamedTypeSymbol)DynamicTypeDecoder.TransformType(decodedType, 0, _handle, moduleSymbol);
+                        decodedType = DynamicTypeDecoder.TransformType(decodedType, 0, _handle, moduleSymbol);
+                        return (NamedTypeSymbol)TupleTypeDecoder.DecodeTupleTypesIfApplicable(decodedType,
+                                                                                              _handle,
+                                                                                              moduleSymbol);
                     }
                 }
                 catch (BadImageFormatException mrEx)
@@ -458,8 +461,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                     int i = 0;
                     foreach (var interfaceImpl in interfaceImpls)
                     {
-                        Handle interfaceHandle = moduleSymbol.Module.MetadataReader.GetInterfaceImplementation(interfaceImpl).Interface;
+                        EntityHandle interfaceHandle = moduleSymbol.Module.MetadataReader.GetInterfaceImplementation(interfaceImpl).Interface;
                         TypeSymbol typeSymbol = tokenDecoder.GetTypeOfToken(interfaceHandle);
+
+                        typeSymbol = TupleTypeDecoder.DecodeTupleTypesIfApplicable(typeSymbol, interfaceHandle, moduleSymbol);
 
                         var namedTypeSymbol = typeSymbol as NamedTypeSymbol;
                         symbols[i++] = (object)namedTypeSymbol != null ? namedTypeSymbol : new UnsupportedMetadataTypeSymbol(); // interface tmpList contains a bad type
@@ -538,8 +543,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                         break;
 
                     default:
-                        Debug.Assert(false, "Unexpected!!!");
-                        break;
+                        throw ExceptionUtilities.UnexpectedValue(_flags & TypeAttributes.VisibilityMask);
                 }
 
                 return access;
@@ -813,8 +817,72 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
             }
             else
             {
-                // If there are any fields, they are at the very beginning.
-                return GetMembers<FieldSymbol>(this.GetMembers(), SymbolKind.Field, offset: 0);
+                // If there are any non-event fields, they are at the very beginning.
+                IEnumerable<FieldSymbol> nonEventFields = GetMembers<FieldSymbol>(this.GetMembers(), SymbolKind.Field, offset: 0);
+
+                // Event backing fields are not part of the set returned by GetMembers. Let's add them manually.
+                ArrayBuilder<FieldSymbol> eventFields = null;
+
+                foreach (var eventSymbol in GetEventsToEmit())
+                {
+                    FieldSymbol associatedField = eventSymbol.AssociatedField;
+                    if ((object)associatedField != null)
+                    {
+                        Debug.Assert((object)associatedField.AssociatedSymbol != null);
+                        Debug.Assert(!nonEventFields.Contains(associatedField));
+
+                        if (eventFields == null)
+                        {
+                            eventFields = ArrayBuilder<FieldSymbol>.GetInstance();
+                        }
+
+                        eventFields.Add(associatedField);
+                    }
+                }
+
+                if (eventFields == null)
+                {
+                    // Simple case
+                    return nonEventFields;
+                }
+
+                // We need to merge non-event fields with event fields while preserving their relative declaration order
+                var handleToFieldMap = new SmallDictionary<FieldDefinitionHandle, FieldSymbol>();
+                int count = 0;
+
+                foreach (PEFieldSymbol field in nonEventFields)
+                {
+                    handleToFieldMap.Add(field.Handle, field);
+                    count++;
+                }
+
+                foreach (PEFieldSymbol field in eventFields)
+                {
+                    handleToFieldMap.Add(field.Handle, field);
+                }
+
+                count += eventFields.Count;
+                eventFields.Free();
+
+                var result = ArrayBuilder<FieldSymbol>.GetInstance(count);
+
+                try
+                {
+                    foreach (var handle in this.ContainingPEModule.Module.GetFieldsOfTypeOrThrow(_handle))
+                    {
+                        FieldSymbol field;
+                        if (handleToFieldMap.TryGetValue(handle, out field))
+                        {
+                            result.Add(field);
+                        }
+                    }
+                }
+                catch (BadImageFormatException)
+                { }
+
+                Debug.Assert(result.Count == count);
+
+                return result.ToImmutableAndFree();
             }
         }
 
@@ -1396,6 +1464,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
             }
         }
 
+        internal override bool HasTypeArgumentsCustomModifiers
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        internal override ImmutableArray<ImmutableArray<CustomModifier>> TypeArgumentsCustomModifiers
+        {
+            get
+            {
+                return ImmutableArray<ImmutableArray<CustomModifier>>.Empty;
+            }
+        }
+
         public override ImmutableArray<TypeParameterSymbol> TypeParameters
         {
             get
@@ -1506,10 +1590,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
         {
             get
             {
-                if (_lazyKind == TypeKind.Unknown)
-                {
-                    TypeKind result;
+                TypeKind result = _lazyKind;
 
+                if (result == TypeKind.Unknown)
+                {
                     if (_flags.IsInterface())
                     {
                         result = TypeKind.Interface;
@@ -1524,22 +1608,26 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                         {
                             SpecialType baseCorTypeId = @base.SpecialType;
 
-                            // Code is cloned from MetaImport::DoImportBaseAndImplements()
-                            if (baseCorTypeId == SpecialType.System_Enum)
+                            switch (baseCorTypeId)
                             {
-                                // Enum
-                                result = TypeKind.Enum;
-                            }
-                            else if (baseCorTypeId == SpecialType.System_MulticastDelegate)
-                            {
-                                // Delegate
-                                result = TypeKind.Delegate;
-                            }
-                            else if (baseCorTypeId == SpecialType.System_ValueType &&
-                                     this.SpecialType != SpecialType.System_Enum)
-                            {
-                                // Struct
-                                result = TypeKind.Struct;
+                                case SpecialType.System_Enum:
+                                    // Enum
+                                    result = TypeKind.Enum;
+                                    break;
+
+                                case SpecialType.System_MulticastDelegate:
+                                    // Delegate
+                                    result = TypeKind.Delegate;
+                                    break;
+
+                                case SpecialType.System_ValueType:
+                                    // System.Enum is the only class that derives from ValueType
+                                    if (this.SpecialType != SpecialType.System_Enum)
+                                    {
+                                        // Struct
+                                        result = TypeKind.Struct;
+                                    }
+                                    break;
                             }
                         }
                     }
@@ -1547,7 +1635,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                     _lazyKind = result;
                 }
 
-                return _lazyKind;
+                return result;
             }
         }
 
@@ -1794,7 +1882,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
 
         private static Dictionary<string, ImmutableArray<Symbol>> GroupByName(ArrayBuilder<Symbol> symbols)
         {
-            return symbols.ToDictionary(s => s.Name);
+            return symbols.ToDictionary(s => s.Name, StringOrdinalComparer.Instance);
         }
 
         private static Dictionary<string, ImmutableArray<PENamedTypeSymbol>> GroupByName(ArrayBuilder<PENamedTypeSymbol> symbols)
@@ -1804,7 +1892,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                 return s_emptyNestedTypes;
             }
 
-            return symbols.ToDictionary(s => s.Name);
+            return symbols.ToDictionary(s => s.Name, StringOrdinalComparer.Instance);
         }
 
 
@@ -1853,7 +1941,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                     // NOTE: the default member name is frequently null (e.g. if there is not indexer in the type).
                     // Make sure we set a non-null value so that we don't recompute it repeatedly.
                     // CONSIDER: this makes it impossible to distinguish between not having the attribute and
-                    // haveing the attribute with a value of "".
+                    // having the attribute with a value of "".
                     Interlocked.CompareExchange(ref uncommon.lazyDefaultMemberName, defaultMemberName ?? "", null);
                 }
                 return uncommon.lazyDefaultMemberName;
@@ -2172,6 +2260,22 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                 {
                     // This is always the instance type, so the type arguments are the same as the type parameters.
                     return this.TypeParameters.Cast<TypeParameterSymbol, TypeSymbol>();
+                }
+            }
+
+            internal override bool HasTypeArgumentsCustomModifiers
+            {
+                get
+                {
+                    return false;
+                }
+            }
+
+            internal override ImmutableArray<ImmutableArray<CustomModifier>> TypeArgumentsCustomModifiers
+            {
+                get
+                {
+                    return CreateEmptyTypeArgumentsCustomModifiers();
                 }
             }
 

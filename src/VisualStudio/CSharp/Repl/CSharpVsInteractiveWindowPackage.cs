@@ -5,7 +5,6 @@ using System.ComponentModel.Design;
 using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.LanguageServices.Interactive;
 using Microsoft.VisualStudio.Shell;
-using Roslyn.Utilities;
 using Microsoft.VisualStudio.InteractiveWindow.Shell;
 using LanguageServiceGuids = Microsoft.VisualStudio.LanguageServices.Guids;
 
@@ -13,8 +12,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Interactive
 {
     [Guid(LanguageServiceGuids.CSharpReplPackageIdString)]
     [PackageRegistration(UseManagedResourcesOnly = true)]
-    [ProvideMenuResource("Menus.ctmenu", 16)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.CSharpProject_string)]
+    [ProvideMenuResource("Menus.ctmenu", 17)]
     [ProvideLanguageExtension(LanguageServiceGuids.CSharpLanguageServiceIdString, ".csx")]
     [ProvideInteractiveWindow(
         IdString,
@@ -31,19 +29,9 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Interactive
             get { return Id; }
         }
 
-        protected override string LanguageName
-        {
-            get { return "C#"; }
-        }
-
         protected override Guid LanguageServiceGuid
         {
             get { return LanguageServiceGuids.CSharpLanguageServiceId; }
-        }
-
-        protected override string ProjectKind
-        {
-            get { return VSLangProj.PrjKind.prjKindCSharpProject; }
         }
 
         protected override void InitializeMenuCommands(OleMenuCommandService menuCommandService)
@@ -53,21 +41,6 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Interactive
                 new CommandID(CSharpInteractiveCommands.InteractiveCommandSetId, CSharpInteractiveCommands.InteractiveToolWindow));
 
             menuCommandService.AddCommand(openInteractiveCommand);
-        }
-
-        protected override CommandID GetResetInteractiveFromProjectCommandID()
-        {
-            return new CommandID(CSharpInteractiveCommands.InteractiveCommandSetId, CSharpInteractiveCommands.ResetInteractiveFromProject);
-        }
-
-        protected override string CreateReference(string referenceName)
-        {
-            return string.Format("#r \"{0}\"", referenceName);
-        }
-
-        protected override string CreateImport(string namespaceName)
-        {
-            return string.Format("using {0};", namespaceName);
         }
     }
 }

@@ -2,12 +2,13 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.Emit;
 
 namespace Microsoft.CodeAnalysis.CodeGen
 {
     // HashBucket used when emitting hash table based string switch.
-    // Each hash bucket contains the list of "<string constant, label>" keyvalue pairs
+    // Each hash bucket contains the list of "<string constant, label>" key-value pairs
     // having identical hash value.
     using HashBucket = List<KeyValuePair<ConstantValue, object>>;
 
@@ -156,7 +157,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         private void EmitNonHashTableSwitch(KeyValuePair<ConstantValue, object>[] labels)
         {
-            // Direct string comparision for each case label
+            // Direct string comparison for each case label
             foreach (var kvPair in labels)
             {
                 this.EmitCondBranchForStringSwitch(kvPair.Key, kvPair.Value);

@@ -1,14 +1,13 @@
-﻿using System;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
-using System.Composition.Convention;
 using System.Composition.Hosting;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Microsoft.CodeAnalysis.Host.Mef
 {
@@ -35,7 +34,7 @@ namespace Microsoft.CodeAnalysis.Host.Mef
         {
             if (assemblies == null)
             {
-                throw new ArgumentNullException("assemblies");
+                throw new ArgumentNullException(nameof(assemblies));
             }
 
             var compositionConfiguration = new ContainerConfiguration().WithAssemblies(assemblies);
@@ -132,6 +131,11 @@ namespace Microsoft.CodeAnalysis.Host.Mef
             var assemblyShortName = thisAssemblyName.Name;
             var assemblyVersion = thisAssemblyName.Version;
             var publicKeyToken = thisAssemblyName.GetPublicKeyToken().Aggregate(string.Empty, (s, b) => s + b.ToString("x2"));
+
+            if (string.IsNullOrEmpty(publicKeyToken))
+            {
+                publicKeyToken = "null";
+            }
 
             var assemblyName = new AssemblyName(string.Format("{0}, Version={1}, Culture=neutral, PublicKeyToken={2}", assemblySimpleName, assemblyVersion, publicKeyToken));
 

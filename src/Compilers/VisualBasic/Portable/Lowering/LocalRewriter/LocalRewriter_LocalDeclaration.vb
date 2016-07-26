@@ -118,68 +118,45 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 result = RegisterUnstructuredExceptionHandlingResumeTarget(node.Syntax, result, canThrow:=True)
             End If
 
-            Return MarkInitializerSequencePoint(result, node.Syntax)
-        End Function
-
-        Private Function MarkInitializerSequencePoint(rewrittenStatement As BoundStatement, syntax As VisualBasicSyntaxNode) As BoundStatement
-            Debug.Assert(syntax.IsKind(SyntaxKind.ModifiedIdentifier))
-            Debug.Assert(syntax.Parent.Kind = SyntaxKind.VariableDeclarator)
-
-            If Not GenerateDebugInfo Then
-                Return rewrittenStatement
+            If Instrument(node) Then
+                result = _instrumenter.InstrumentLocalInitialization(node, result)
             End If
 
-            Dim modifiedIdentitifer = DirectCast(syntax, ModifiedIdentifierSyntax)
-            If modifiedIdentitifer.ArrayBounds IsNot Nothing Then
-                ' Dim [|a(1)|], b(1) As Integer
-                Return New BoundSequencePoint(syntax, rewrittenStatement)
-            End If
-
-            Dim declarator = DirectCast(syntax.Parent, VariableDeclaratorSyntax)
-            If declarator.Names.Count > 1 Then
-                Debug.Assert(declarator.AsClause.IsKind(SyntaxKind.AsNewClause))
-
-                ' Dim [|a|], b As New C()
-                Return New BoundSequencePoint(syntax, rewrittenStatement)
-            End If
-
-            ' Dim [|a = 1|]
-            ' Dim [|a As New C()|]
-            Return New BoundSequencePoint(declarator, rewrittenStatement)
+            Return result
         End Function
 
         Private Function CreateBackingFieldsForStaticLocal(localSymbol As LocalSymbol, hasInitializer As Boolean) As KeyValuePair(Of SynthesizedStaticLocalBackingField, SynthesizedStaticLocalBackingField)
             Debug.Assert(localSymbol.IsStatic)
 
-            If staticLocalMap Is Nothing Then
-                staticLocalMap = New Dictionary(Of LocalSymbol, KeyValuePair(Of SynthesizedStaticLocalBackingField, SynthesizedStaticLocalBackingField))(ReferenceEqualityComparer.Instance)
+            If _staticLocalMap Is Nothing Then
+                _staticLocalMap = New Dictionary(Of LocalSymbol, KeyValuePair(Of SynthesizedStaticLocalBackingField, SynthesizedStaticLocalBackingField))(ReferenceEqualityComparer.Instance)
             End If
 
             Dim result As New KeyValuePair(Of SynthesizedStaticLocalBackingField, SynthesizedStaticLocalBackingField)(
                                                 New SynthesizedStaticLocalBackingField(localSymbol, isValueField:=True, reportErrorForLongNames:=Not hasInitializer),
                                                 If(hasInitializer, New SynthesizedStaticLocalBackingField(localSymbol, isValueField:=False, reportErrorForLongNames:=True), Nothing))
 
-            If emitModule IsNot Nothing Then
-                emitModule.AddSynthesizedDefinition(Me.topMethod.ContainingType, result.Key)
+            If _emitModule IsNot Nothing Then
+                _emitModule.AddSynthesizedDefinition(Me._topMethod.ContainingType, result.Key)
 
                 If result.Value IsNot Nothing Then
-                    emitModule.AddSynthesizedDefinition(Me.topMethod.ContainingType, result.Value)
+                    _emitModule.AddSynthesizedDefinition(Me._topMethod.ContainingType, result.Value)
                 End If
             End If
 
-            staticLocalMap.Add(localSymbol, result)
+            _staticLocalMap.Add(localSymbol, result)
 
             Return result
         End Function
 
         Public Overrides Function VisitLocal(node As BoundLocal) As BoundNode
             If node.LocalSymbol.IsStatic Then
-                Dim backingValueField As SynthesizedStaticLocalBackingField = staticLocalMap(node.LocalSymbol).Key
+                Dim backingValueField As SynthesizedStaticLocalBackingField = _staticLocalMap(node.LocalSymbol).Key
 
                 Return New BoundFieldAccess(node.Syntax,
-                                            If(topMethod.IsShared,
+                                            If(_topMethod.IsShared,
                                                Nothing,
-                                               New BoundMeReference(node.Syntax, topMethod.ContainingType)),
+                                               New BoundMeReference(node.Syntax, _topMethod.ContainingType)),
                                                backingValueField, isLValue:=node.IsLValue, type:=backingValueField.Type)
             Else
                 Return MyBase.VisitLocal(node)
@@ -212,9 +189,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim statements = ArrayBuilder(Of BoundStatement).GetInstance()
 
             Dim flag = New BoundFieldAccess(syntax,
-                                            If(topMethod.IsShared,
+                                            If(_topMethod.IsShared,
                                                Nothing,
-                                               New BoundMeReference(syntax, topMethod.ContainingType)),
+                                               New BoundMeReference(syntax, _topMethod.ContainingType)),
                                             staticLocalBackingFields.Value, isLValue:=True, type:=staticLocalBackingFields.Value.Type)
 
             Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
@@ -222,7 +199,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                    flag.MakeRValue(),
                                                    Conversions.ClassifyDirectCastConversion(flag.Type, objectType, useSiteDiagnostics),
                                                    objectType)
-            diagnostics.Add(syntax, useSiteDiagnostics)
+            _diagnostics.Add(syntax, useSiteDiagnostics)
 
             ' If flag Is Nothing
             '    Interlocked.CompareExchange(flag, New StaticLocalInitFlag, Nothing)  
@@ -248,7 +225,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                   Nothing,
                                   flag.Type)
 
-            Dim conditionalFlagInit = RewriteIfStatement(syntax, syntax, flagIsNothing, interlockedCompareExchangeFlagWithNewInstance.ToStatement(), Nothing, generateDebugInfo:=False)
+            Dim conditionalFlagInit = RewriteIfStatement(syntax, flagIsNothing, interlockedCompareExchangeFlagWithNewInstance.ToStatement(), Nothing, instrumentationTargetOpt:=Nothing)
 
             statements.Add(conditionalFlagInit)
 
@@ -309,15 +286,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                                                                           ctorIncompleteInitialization.ContainingType))
 
             Dim conditionalValueInit =
-                RewriteIfStatement(syntax, syntax,
+                RewriteIfStatement(syntax,
                                    flagStateIsZero,
                                    New BoundStatementList(syntax, ImmutableArray.Create(flagStateAssignTwo, rewrittenInitialization)),
-                                   RewriteIfStatement(syntax, syntax,
+                                   RewriteIfStatement(syntax,
                                                       flagStateIsTwo,
                                                       throwIncompleteInitialization,
                                                       Nothing,
-                                                      generateDebugInfo:=False),
-                                   generateDebugInfo:=False)
+                                                      instrumentationTargetOpt:=Nothing),
+                                   instrumentationTargetOpt:=Nothing)
 
             Dim locals As ImmutableArray(Of LocalSymbol)
             Dim statementsInTry As ImmutableArray(Of BoundStatement)

@@ -34,10 +34,10 @@ namespace Roslyn.SyntaxVisualizer.Control
         }
 
         #region Private State
-        private TreeViewItem _currentSelection = null;
-        private bool _isNavigatingFromSourceToTree = false;
-        private bool _isNavigatingFromTreeToSource = false;
-        private System.Windows.Forms.PropertyGrid _propertyGrid;
+        private TreeViewItem _currentSelection;
+        private bool _isNavigatingFromSourceToTree;
+        private bool _isNavigatingFromTreeToSource;
+        private readonly System.Windows.Forms.PropertyGrid _propertyGrid;
         private static readonly Thickness s_defaultBorderThickness = new Thickness(1);
         #endregion
 
@@ -216,7 +216,7 @@ namespace Roslyn.SyntaxVisualizer.Control
             }
         }
 
-        // Ensure that the supplied treeview item and all its ancsestors are expanded.
+        // Ensure that the supplied treeview item and all its ancestors are expanded.
         private void ExpandPathTo(TreeViewItem item)
         {
             if (item != null)
@@ -778,7 +778,7 @@ namespace Roslyn.SyntaxVisualizer.Control
                 else
                 {
                     typeTextLabel.Visibility = Visibility.Visible;
-                    typeValueLabel.Content = value.Value.GetType().Name;
+                    typeValueLabel.Content = value.Value?.GetType().Name ?? "<null>";
                     _propertyGrid.SelectedObject = value;
                 }
             }

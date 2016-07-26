@@ -1,20 +1,25 @@
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition;
+using System.Composition;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Editor;
 using Microsoft.CodeAnalysis.Shared.TestHooks;
 using Roslyn.Test.Utilities;
 
 namespace Roslyn.Hosting.Diagnostics.Waiters
 {
-    [Export]
+    [Export, Shared]
     public class TestingOnly_WaitingService
     {
-        [ImportMany]
-        private IEnumerable<Lazy<IAsynchronousOperationWaiter, FeatureMetadata>> waiters = null;
+        private readonly IEnumerable<Lazy<IAsynchronousOperationWaiter, FeatureMetadata>> _waiters;
+
+        [ImportingConstructor]
+        private TestingOnly_WaitingService([ImportMany] IEnumerable<Lazy<IAsynchronousOperationWaiter, FeatureMetadata>> waiters)
+        {
+            _waiters = waiters;
+        }
 
         private void WaitForAsyncOperations(
             Func<FeatureMetadata, bool> predicate,
@@ -30,12 +35,12 @@ namespace Roslyn.Hosting.Diagnostics.Waiters
             // match. Read more at http://mef.codeplex.com/wikipage?title=Exports%20and%20Metadata
 
             var workspaceListener =
-                (from export in waiters
+                (from export in _waiters
                  where export.Metadata.FeatureName == FeatureAttribute.Workspace
                  select export.Value).FirstOrDefault();
 
             var listeners =
-                (from export in waiters
+                (from export in _waiters
                  where predicate(export.Metadata)
                  select export.Value).ToArray();
 
@@ -90,7 +95,7 @@ namespace Roslyn.Hosting.Diagnostics.Waiters
 
         public void SetTrackActiveTokens(bool trackTokens)
         {
-            foreach (var waiter in waiters)
+            foreach (var waiter in _waiters)
             {
                 waiter.Value.TrackActiveTokens = trackTokens;
             }
@@ -98,26 +103,20 @@ namespace Roslyn.Hosting.Diagnostics.Waiters
 
         public IEnumerable<string> GetTotalFeatures()
         {
-            return waiters.Select(w => w.Metadata.FeatureName);
+            return _waiters.Select(w => w.Metadata.FeatureName);
         }
 
         public IEnumerable<string> GetActiveFeatures()
         {
-            var activeFeatures = from w in waiters where w.Value.HasPendingWork select w.Metadata.FeatureName;
-            return activeFeatures;
+            return from w in _waiters where w.Value.HasPendingWork select w.Metadata.FeatureName;
         }
 
         public void EnableActiveTokenTracking(bool enable)
         {
-            foreach (var waiter in this.waiters)
+            foreach (var waiter in _waiters)
             {
                 waiter.Value.TrackActiveTokens = enable;
             }
-        }
-
-        public void PumpingWait(Task task)
-        {
-            task.PumpingWait();
         }
     }
 }

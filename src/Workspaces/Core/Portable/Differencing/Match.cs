@@ -1,12 +1,10 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Differencing
 {
@@ -26,54 +24,55 @@ namespace Microsoft.CodeAnalysis.Differencing
         private readonly Dictionary<TNode, TNode> _oneToTwo;
         private readonly Dictionary<TNode, TNode> _twoToOne;
 
-        internal Match(TNode root1, TNode root2, TreeComparer<TNode> nodeComparer, IEnumerable<KeyValuePair<TNode, TNode>> knownMatches)
+        internal Match(TNode root1, TNode root2, TreeComparer<TNode> comparer, IEnumerable<KeyValuePair<TNode, TNode>> knownMatches)
         {
             _root1 = root1;
             _root2 = root2;
-            _comparer = nodeComparer;
+            _comparer = comparer;
 
-            int labelCount = nodeComparer.LabelCount;
+            int labelCount = comparer.LabelCount;
 
             // Calculate chains (not including root node):
             int count1, count2;
             List<TNode>[] nodes1, nodes2;
-            CategorizeNodesByLabels(root1, labelCount, out nodes1, out count1);
-            CategorizeNodesByLabels(root2, labelCount, out nodes2, out count2);
+            CategorizeNodesByLabels(comparer, root1, labelCount, out nodes1, out count1);
+            CategorizeNodesByLabels(comparer, root2, labelCount, out nodes2, out count2);
 
-            // Calculate match:
-            _oneToTwo = new Dictionary<TNode, TNode>(count1);
-            _twoToOne = new Dictionary<TNode, TNode>(count2);
+            _oneToTwo = new Dictionary<TNode, TNode>();
+            _twoToOne = new Dictionary<TNode, TNode>();
+
+            // Root nodes always match. Add them before adding known matches to make sure we always have root mapping.
+            TryAdd(root1, root2);
 
             if (knownMatches != null)
             {
                 foreach (var knownMatch in knownMatches)
                 {
-                    if (_comparer.GetLabel(knownMatch.Key) != _comparer.GetLabel(knownMatch.Value))
+                    if (comparer.GetLabel(knownMatch.Key) != comparer.GetLabel(knownMatch.Value))
                     {
-                        throw new ArgumentException(string.Format(WorkspacesResources.MatchingNodesMustHaveTheSameLabel, knownMatch.Key, knownMatch.Value), "knownMatches");
+                        throw new ArgumentException(string.Format(WorkspacesResources.Matching_nodes_0_and_1_must_have_the_same_label, knownMatch.Key, knownMatch.Value), nameof(knownMatches));
                     }
 
-                    if (!_comparer.TreesEqual(knownMatch.Key, root1))
+                    if (!comparer.TreesEqual(knownMatch.Key, root1))
                     {
-                        throw new ArgumentException(string.Format(WorkspacesResources.NodeMustBeContainedInTheOldTree, knownMatch.Key), "knownMatches");
+                        throw new ArgumentException(string.Format(WorkspacesResources.Node_0_must_be_contained_in_the_old_tree, knownMatch.Key), nameof(knownMatches));
                     }
 
-                    if (!_comparer.TreesEqual(knownMatch.Value, root2))
+                    if (!comparer.TreesEqual(knownMatch.Value, root2))
                     {
-                        throw new ArgumentException(string.Format(WorkspacesResources.NodeMustBeContainedInTheNewTree, knownMatch.Value), "knownMatches");
+                        throw new ArgumentException(string.Format(WorkspacesResources.Node_0_must_be_contained_in_the_new_tree, knownMatch.Value), nameof(knownMatches));
                     }
 
-                    if (!_oneToTwo.ContainsKey(knownMatch.Key))
-                    {
-                        Add(knownMatch.Key, knownMatch.Value);
-                    }
+                    // skip pairs whose key or value is already mapped:
+                    TryAdd(knownMatch.Key, knownMatch.Value);
                 }
             }
 
             ComputeMatch(nodes1, nodes2);
         }
 
-        private void CategorizeNodesByLabels(
+        private static void CategorizeNodesByLabels(
+            TreeComparer<TNode> comparer,
             TNode root,
             int labelCount,
             out List<TNode>[] nodes,
@@ -86,12 +85,12 @@ namespace Microsoft.CodeAnalysis.Differencing
             // This order ensures that a node of a certain kind can have a parent of the same kind 
             // and we can still use tied-to-parent for that kind. That's because the parent will always
             // be processed earlier than the child due to depth-first prefix ordering.
-            foreach (TNode node in _comparer.GetDescendants(root))
+            foreach (TNode node in comparer.GetDescendants(root))
             {
-                int label = _comparer.GetLabel(node);
+                int label = comparer.GetLabel(node);
                 if (label < 0 || label >= labelCount)
                 {
-                    throw new InvalidOperationException(string.Format(WorkspacesResources.LabelForNodeIsInvalid, node, labelCount));
+                    throw new InvalidOperationException(string.Format(WorkspacesResources.Label_for_node_0_is_invalid_it_must_be_within_bracket_0_1, node, labelCount));
                 }
 
                 var list = nodes[label];
@@ -111,12 +110,6 @@ namespace Microsoft.CodeAnalysis.Differencing
         private void ComputeMatch(List<TNode>[] nodes1, List<TNode>[] nodes2)
         {
             Debug.Assert(nodes1.Length == nodes2.Length);
-
-            // Root nodes always match but they might have been added as knownMatches
-            if (!HasPartnerInTree2(_root1))
-            {
-                Add(_root1, _root2);
-            }
 
             // --- The original FastMatch algorithm ---
             // 
@@ -140,14 +133,14 @@ namespace Microsoft.CodeAnalysis.Differencing
             // 
             // 1) A label may be marked "tied to parent". Let x, y have both label l and l is "tied to parent".
             //    Then (x,y) can be in M only if (parent(x), parent(y)) in M.
-            //    Thus we require labels of children tied to a parent to be preceeded by all their possible parent labels.
+            //    Thus we require labels of children tied to a parent to be preceded by all their possible parent labels.
             //
             // 2) Rather than defining function equal in terms of constants f and t, which are hard to get right,
-            //    we try to match multiple times with different threashold for node distance.
+            //    we try to match multiple times with different threshold for node distance.
             //    The comparer defines the distance [0..1] between two nodes and it can do so by analyzing 
             //    the node structure and value. The comparer can tune the distance specifically for each node kind.
-            //    We first try to match nodes of the same labels to the exactly matching or almost matching counterpars.
-            //    The we keep increasing the threashold and keep adding matches. 
+            //    We first try to match nodes of the same labels to the exactly matching or almost matching counterparts.
+            //    The we keep increasing the threshold and keep adding matches. 
 
             for (int l = 0; l < nodes1.Length; l++)
             {
@@ -213,7 +206,7 @@ namespace Microsoft.CodeAnalysis.Differencing
                     if (tiedToAncestor > 0)
                     {
                         // TODO (tomat): For nodes tied to their parents, 
-                        // consider avoding matching them to all other nodes of the same label.
+                        // consider avoiding matching them to all other nodes of the same label.
                         // Rather we should only match them with their siblings that share the same parent.
 
                         var ancestor1 = _comparer.GetAncestor(node1, tiedToAncestor);
@@ -258,7 +251,11 @@ namespace Microsoft.CodeAnalysis.Differencing
 
                 if (matched && bestDistance <= maxAcceptableDistance)
                 {
-                    Add(node1, bestMatch);
+                    bool added = TryAdd(node1, bestMatch);
+
+                    // We checked above that node1 doesn't have a partner. 
+                    // The map is a bijection by construction, so we should be able to add the mapping.
+                    Debug.Assert(added);
 
                     // If we exactly matched to firstNonMatch2 we can advance it.
                     if (i2 == firstNonMatch2)
@@ -269,13 +266,19 @@ namespace Microsoft.CodeAnalysis.Differencing
             }
         }
 
-        internal void Add(TNode node1, TNode node2)
+        internal bool TryAdd(TNode node1, TNode node2)
         {
             Debug.Assert(_comparer.TreesEqual(node1, _root1));
             Debug.Assert(_comparer.TreesEqual(node2, _root2));
 
+            if (_oneToTwo.ContainsKey(node1) || _twoToOne.ContainsKey(node2))
+            {
+                return false;
+            }
+
             _oneToTwo.Add(node1, node2);
             _twoToOne.Add(node2, node1);
+            return true;
         }
 
         internal bool TryGetPartnerInTree1(TNode node2, out TNode partner1)
@@ -382,12 +385,12 @@ namespace Microsoft.CodeAnalysis.Differencing
         {
             if (oldNodes == null)
             {
-                throw new ArgumentNullException("oldNodes");
+                throw new ArgumentNullException(nameof(oldNodes));
             }
 
             if (newNodes == null)
             {
-                throw new ArgumentNullException("newNodes");
+                throw new ArgumentNullException(nameof(newNodes));
             }
 
             var oldList = (oldNodes as IReadOnlyList<TNode>) ?? oldNodes.ToList();

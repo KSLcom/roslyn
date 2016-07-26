@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Tagging;
 using Roslyn.Utilities;
@@ -86,11 +85,6 @@ namespace Microsoft.CodeAnalysis.Text.Shared.Extensions
             return new SnapshotSpan(snapshot, span);
         }
 
-        public static SnapshotSpan GetFullSpan(this ITextSnapshot snapshot)
-        {
-            return snapshot.GetSpan(0, snapshot.Length);
-        }
-
         public static ITagSpan<TTag> GetTagSpan<TTag>(this ITextSnapshot snapshot, Span span, TTag tag)
             where TTag : ITag
         {
@@ -114,11 +108,18 @@ namespace Microsoft.CodeAnalysis.Text.Shared.Extensions
             return new SnapshotSpan(snapshot, Span.FromBounds(startPosition.Value, endPosition.Value));
         }
 
-        public static SnapshotSpan GetSpan(this ITextSnapshot snapshot)
+        public static SnapshotSpan GetFullSpan(this ITextSnapshot snapshot)
         {
             Contract.ThrowIfNull(snapshot);
 
             return new SnapshotSpan(snapshot, new Span(0, snapshot.Length));
+        }
+
+        public static NormalizedSnapshotSpanCollection GetSnapshotSpanCollection(this ITextSnapshot snapshot)
+        {
+            Contract.ThrowIfNull(snapshot);
+
+            return new NormalizedSnapshotSpanCollection(snapshot.GetFullSpan());
         }
 
         public static void GetLineAndColumn(this ITextSnapshot snapshot, int position, out int lineNumber, out int columnIndex)

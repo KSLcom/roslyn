@@ -17,18 +17,20 @@ namespace Microsoft.CodeAnalysis.CSharp
             var rewrittenConsequence = VisitStatement(node.Consequence);
             var rewrittenAlternative = VisitStatement(node.AlternativeOpt);
             var syntax = (IfStatementSyntax)node.Syntax;
-            var result = RewriteIfStatement(syntax, AddConditionSequencePoint(rewrittenCondition, node), rewrittenConsequence, rewrittenAlternative, node.HasErrors);
+
+            // EnC: We need to insert a hidden sequence point to handle function remapping in case 
+            // the containing method is edited while methods invoked in the condition are being executed.
+            if (this.Instrument && !node.WasCompilerGenerated)
+            {
+                rewrittenCondition = _instrumenter.InstrumentIfStatementCondition(node, rewrittenCondition, _factory);
+            }
+
+            var result = RewriteIfStatement(syntax, node.Locals, rewrittenCondition, rewrittenConsequence, rewrittenAlternative, node.HasErrors);
 
             // add sequence point before the whole statement
-            if (this.GenerateDebugInfo && !node.WasCompilerGenerated)
+            if (this.Instrument && !node.WasCompilerGenerated)
             {
-                result = new BoundSequencePointWithSpan(
-                    syntax,
-                    result,
-                    TextSpan.FromBounds(
-                        syntax.IfKeyword.SpanStart,
-                        syntax.CloseParenToken.Span.End),
-                    node.HasErrors);
+                result = _instrumenter.InstrumentIfStatement(node, result);
             }
 
             return result;
@@ -36,6 +38,17 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private static BoundStatement RewriteIfStatement(
             CSharpSyntaxNode syntax,
+            BoundExpression rewrittenCondition,
+            BoundStatement rewrittenConsequence,
+            BoundStatement rewrittenAlternativeOpt,
+            bool hasErrors)
+        {
+            return RewriteIfStatement(syntax, ImmutableArray<LocalSymbol>.Empty, rewrittenCondition, rewrittenConsequence, rewrittenAlternativeOpt, hasErrors);
+        }
+
+        private static BoundStatement RewriteIfStatement(
+            CSharpSyntaxNode syntax,
+            ImmutableArray<LocalSymbol> patternVariables,
             BoundExpression rewrittenCondition,
             BoundStatement rewrittenConsequence,
             BoundStatement rewrittenAlternativeOpt,
@@ -57,6 +70,11 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 builder.Add(new BoundConditionalGoto(rewrittenCondition.Syntax, rewrittenCondition, false, afterif));
                 builder.Add(rewrittenConsequence);
+                builder.Add(new BoundLabelStatement(syntax, afterif));
+                var statements = builder.ToImmutableAndFree();
+                return (patternVariables.IsDefaultOrEmpty)
+                    ? new BoundStatementList(syntax, statements, hasErrors)
+                    : new BoundBlock(syntax, patternVariables, ImmutableArray<LocalFunctionSymbol>.Empty, statements, hasErrors) { WasCompilerGenerated = true };
             }
             else
             {
@@ -80,12 +98,18 @@ namespace Microsoft.CodeAnalysis.CSharp
                 builder.Add(rewrittenConsequence);
                 builder.Add(new BoundGotoStatement(syntax, afterif));
                 builder.Add(new BoundLabelStatement(syntax, alt));
+                if (!patternVariables.IsDefaultOrEmpty)
+                {
+                    // pattern variables are not in scope in the else part
+                    var firstPart = new BoundBlock(syntax, patternVariables, ImmutableArray<LocalFunctionSymbol>.Empty, builder.ToImmutableAndFree(), hasErrors) { WasCompilerGenerated = true };
+                    builder = ArrayBuilder<BoundStatement>.GetInstance();
+                    builder.Add(firstPart);
+                }
                 builder.Add(rewrittenAlternativeOpt);
+                builder.Add(new BoundLabelStatement(syntax, afterif));
+                return new BoundStatementList(syntax, builder.ToImmutableAndFree(), hasErrors);
             }
 
-            builder.Add(new BoundLabelStatement(syntax, afterif));
-
-            return new BoundStatementList(syntax, builder.ToImmutableAndFree(), hasErrors);
         }
     }
 }

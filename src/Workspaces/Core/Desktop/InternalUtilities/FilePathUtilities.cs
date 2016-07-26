@@ -2,7 +2,6 @@
 
 using System;
 using System.IO;
-using Microsoft.CodeAnalysis;
 
 namespace Roslyn.Utilities
 {
@@ -10,7 +9,10 @@ namespace Roslyn.Utilities
     {
         public static bool IsNestedPath(string basePath, string fullPath)
         {
-            return fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase);
+            return basePath.Length > 0
+                && fullPath.Length > basePath.Length
+                && fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase)
+                && (PathUtilities.IsDirectorySeparator(basePath[basePath.Length - 1]) || PathUtilities.IsDirectorySeparator(fullPath[basePath.Length]));
         }
 
         public static string GetNestedPath(string baseDirectory, string fullPath)
@@ -29,7 +31,7 @@ namespace Roslyn.Utilities
             return fullPath;
         }
 
-        private static char[] s_pathChars = new char[] { Path.VolumeSeparatorChar, Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        private static readonly char[] s_pathChars = new char[] { Path.VolumeSeparatorChar, Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
 
         public static string GetRelativePath(string baseDirectory, string fullPath)
         {
@@ -73,7 +75,7 @@ namespace Roslyn.Utilities
                 string directorySeparator = Path.DirectorySeparatorChar.ToString();
                 for (int i = 0; i < remainingParts; i++)
                 {
-                    relativePath += relativePath + ".." + directorySeparator;
+                    relativePath = relativePath + ".." + directorySeparator;
                 }
             }
 
@@ -86,22 +88,24 @@ namespace Roslyn.Utilities
             return relativePath;
         }
 
-        internal static void RequireAbsolutePath(string path, string argumentName)
-        {
-            if (path == null)
-            {
-                throw new ArgumentNullException(argumentName);
-            }
-
-            if (!PathUtilities.IsAbsolute(path))
-            {
-                throw new ArgumentException(WorkspacesResources.AbsolutePathExpected, argumentName);
-            }
-        }
-
         public static bool PathsEqual(string path1, string path2)
         {
             return string.Compare(path1, path2, StringComparison.OrdinalIgnoreCase) == 0;
+        }
+
+        public static bool TryCombine(string path1, string path2, out string result)
+        {
+            try
+            {
+                // don't throw exception when either path1 or path2 contains illegal path char
+                result = Path.Combine(path1, path2);
+                return true;
+            }
+            catch
+            {
+                result = null;
+                return false;
+            }
         }
     }
 }

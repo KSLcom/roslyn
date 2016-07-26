@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Editor.SymbolMapping;
@@ -25,7 +24,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
         /// an important scenario that we can be generating multiple documents in parallel, and so 
         /// we simply take this lock around all public entrypoints to enforce sequential access.
         /// </summary>
-        private readonly AsyncSemaphore _gate = new AsyncSemaphore(initialCount: 1);
+        private readonly SemaphoreSlim _gate = new SemaphoreSlim(initialCount: 1);
 
         /// <summary>
         /// For a description of the key, see GetKeyAsync.
@@ -71,17 +70,17 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
         {
             if (project == null)
             {
-                throw new ArgumentNullException("project");
+                throw new ArgumentNullException(nameof(project));
             }
 
             if (symbol == null)
             {
-                throw new ArgumentNullException("symbol");
+                throw new ArgumentNullException(nameof(symbol));
             }
 
             if (symbol.Kind == SymbolKind.Namespace)
             {
-                throw new ArgumentException(EditorFeaturesResources.SymbolCannotBeNamespace, "symbol");
+                throw new ArgumentException(EditorFeaturesResources.symbol_cannot_be_a_namespace, nameof(symbol));
             }
 
             symbol = symbol.GetOriginalUnreducedDefinition();
@@ -89,7 +88,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
             MetadataAsSourceGeneratedFileInfo fileInfo;
             Location navigateLocation = null;
             var topLevelNamedType = MetadataAsSourceHelpers.GetTopLevelContainingNamedType(symbol);
-            var symbolId = SymbolKey.Create(symbol, await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false), cancellationToken);
+            var symbolId = SymbolKey.Create(symbol, cancellationToken);
 
             using (await _gate.DisposableWaitAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -139,7 +138,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
                     // Mark read-only
                     new FileInfo(fileInfo.TemporaryFilePath).IsReadOnly = true;
 
-                    // Locate the target in the thing we just crated
+                    // Locate the target in the thing we just created
                     navigateLocation = await MetadataAsSourceHelpers.GetLocationInGeneratedSourceAsync(symbolId, temporaryDocument, cancellationToken).ConfigureAwait(false);
                 }
 
@@ -153,7 +152,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
             var documentName = string.Format(
                 "{0} [{1}]",
                 topLevelNamedType.Name,
-                EditorFeaturesResources.FromMetadata);
+                EditorFeaturesResources.from_metadata);
 
             var documentTooltip = topLevelNamedType.ToDisplayString(new SymbolDisplayFormat(typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces));
 
@@ -245,11 +244,11 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.MetadataAsSource
 
             if (peMetadataReference.FilePath != null)
             {
-                return new UniqueDocumentKey(peMetadataReference.FilePath, project.Language, SymbolKey.Create(topLevelNamedType, compilation, cancellationToken));
+                return new UniqueDocumentKey(peMetadataReference.FilePath, project.Language, SymbolKey.Create(topLevelNamedType, cancellationToken));
             }
             else
             {
-                return new UniqueDocumentKey(topLevelNamedType.ContainingAssembly.Identity, project.Language, SymbolKey.Create(topLevelNamedType, compilation, cancellationToken));
+                return new UniqueDocumentKey(topLevelNamedType.ContainingAssembly.Identity, project.Language, SymbolKey.Create(topLevelNamedType, cancellationToken));
             }
         }
 

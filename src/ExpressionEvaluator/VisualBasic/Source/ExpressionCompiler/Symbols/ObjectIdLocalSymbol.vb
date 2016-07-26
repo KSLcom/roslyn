@@ -9,12 +9,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
     Friend NotInheritable Class ObjectIdLocalSymbol
         Inherits PlaceholderLocalSymbol
 
-        Private ReadOnly _id As String
         Private ReadOnly _isReadOnly As Boolean
 
-        Friend Sub New(method As MethodSymbol, type As TypeSymbol, id As String, isReadOnly As Boolean)
-            MyBase.New(method, id, type)
-            _id = id
+        Friend Sub New(method As MethodSymbol, type As TypeSymbol, name As String, displayName As String, isReadOnly As Boolean)
+            MyBase.New(method, name, displayName, type)
             _isReadOnly = isReadOnly
         End Sub
 
@@ -85,7 +83,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 ' so the return type of GetVariableAddress(Of T)(name As String)
                 ' is an error type. Since the method is only used for emit, an
                 ' updated placeholder method is used instead.
-                Debug.Assert(method.ReturnType.TypeKind = TypeKind.Error) ' If byref return types are supported in the future, use method as is.
+
+                ' TODO: refs are available
+                'Debug.Assert(method.ReturnType.TypeKind = TypeKind.Error) ' If byref return types are supported in the future, use method as is.
                 method = New PlaceholderMethodSymbol(
                     method.ContainingType,
                     method.Name,

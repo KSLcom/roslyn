@@ -2,9 +2,11 @@
 
 using System.Collections.Generic;
 using System.Composition;
+using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting.Rules;
 using Microsoft.CodeAnalysis.Options;
+using System.Linq;
 
 namespace Microsoft.CodeAnalysis.CSharp.Formatting
 {
@@ -14,13 +16,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
     {
         internal const string Name = "CSharp Suppress Formatting Rule";
 
-        public override void AddSuppressOperations(List<SuppressOperation> list, SyntaxNode node, OptionSet optionSet, NextAction<SuppressOperation> nextOperation)
+        public override void AddSuppressOperations(List<SuppressOperation> list, SyntaxNode node, SyntaxToken lastToken, OptionSet optionSet, NextAction<SuppressOperation> nextOperation)
         {
             nextOperation.Invoke(list);
 
             AddInitializerSuppressOperations(list, node);
 
-            AddBraceSuppressOperations(list, node);
+            AddBraceSuppressOperations(list, node, lastToken);
 
             AddStatementExceptBlockSuppressOperations(list, node);
 
@@ -42,6 +44,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
                 return;
             }
 
+            var constructorInitializerNode = node as ConstructorInitializerSyntax;
+            if (constructorInitializerNode != null)
+            {
+                var constructorDeclarationNode = constructorInitializerNode.Parent as ConstructorDeclarationSyntax;
+                if (constructorDeclarationNode?.Body != null)
+                {
+                    AddSuppressWrappingIfOnSingleLineOperation(list, constructorInitializerNode.ColonToken, constructorDeclarationNode.Body.CloseBraceToken);
+                }
+
+                return;
+            }
+
             var whileStatementNode = node as DoStatementSyntax;
             if (whileStatementNode != null)
             {
@@ -52,15 +66,37 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
             var memberDeclNode = node as MemberDeclarationSyntax;
             if (memberDeclNode != null)
             {
+                // Attempt to keep the part of a member that follows hte attributes on a single
+                // line if that's how it's currently written.
                 var tokens = memberDeclNode.GetFirstAndLastMemberDeclarationTokensAfterAttributes();
                 AddSuppressWrappingIfOnSingleLineOperation(list, tokens.Item1, tokens.Item2);
+                
+                var attributes = memberDeclNode.GetAttributes();
+                if (attributes.Count > 0)
+                {
+                    // Also, If the member is on single line with its attributes on it, then keep 
+                    // it on a single line.  This is for code like the following:
+                    //
+                    //      [Import] public int Field1;
+                    //      [Import] public int Field2;
+                    AddSuppressWrappingIfOnSingleLineOperation(list,
+                        node.GetFirstToken(includeZeroWidth: true),
+                        node.GetLastToken(includeZeroWidth: true));
+                }
+
+                var propertyDeclNode = node as PropertyDeclarationSyntax;
+                if (propertyDeclNode?.Initializer != null && propertyDeclNode?.AccessorList != null)
+                {
+                    AddSuppressWrappingIfOnSingleLineOperation(list, tokens.Item1, propertyDeclNode.AccessorList.GetLastToken());
+                }
+
                 return;
             }
 
             var accessorDeclNode = node as AccessorDeclarationSyntax;
             if (accessorDeclNode != null)
             {
-                AddSuppressWrappingIfOnSingleLineOperation(list, accessorDeclNode.GetFirstToken(includeZeroWidth: true), accessorDeclNode.GetLastToken(includeZeroWidth: true));
+                AddSuppressWrappingIfOnSingleLineOperation(list, accessorDeclNode.Keyword, accessorDeclNode.GetLastToken(includeZeroWidth: true));
                 return;
             }
 
@@ -139,6 +175,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
                     AddSuppressWrappingIfOnSingleLineOperation(list, finallyClause.FinallyKeyword, finallyClause.Block.CloseBraceToken);
                 }
             }
+
+            var interpolatedStringExpression = node as InterpolatedStringExpressionSyntax;
+            if (interpolatedStringExpression != null)
+            {
+                AddSuppressWrappingIfOnSingleLineOperation(list, interpolatedStringExpression.StringStartToken, interpolatedStringExpression.StringEndToken);
+            }
         }
 
         private void AddStatementExceptBlockSuppressOperations(List<SuppressOperation> list, SyntaxNode node)
@@ -153,27 +195,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Formatting
             var lastToken = statementNode.GetLastToken(includeZeroWidth: true);
 
             AddSuppressWrappingIfOnSingleLineOperation(list, firstToken, lastToken);
-        }
-
-        private void AddBraceSuppressOperations(List<SuppressOperation> list, SyntaxNode node)
-        {
-            var bracePair = node.GetBracePair();
-            if (!bracePair.IsValidBracePair())
-            {
-                return;
-            }
-
-            var firstTokenOfNode = node.GetFirstToken(includeZeroWidth: true);
-
-            if (node.IsLambdaBodyBlock())
-            {
-                // include lambda itself.
-                firstTokenOfNode = node.Parent.GetFirstToken(includeZeroWidth: true);
-            }
-
-            // suppress wrapping on whole construct that owns braces and also brace pair itself if it is on same line
-            AddSuppressWrappingIfOnSingleLineOperation(list, firstTokenOfNode, bracePair.Item2);
-            AddSuppressWrappingIfOnSingleLineOperation(list, bracePair.Item1, bracePair.Item2);
         }
 
         private void AddInitializerSuppressOperations(List<SuppressOperation> list, SyntaxNode node)

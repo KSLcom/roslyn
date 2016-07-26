@@ -86,7 +86,7 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
                     continue;
                 }
 
-                // throw away operation that encloses overselves
+                // throw away operation that encloses ourselves
                 if (operation.TextSpan.Contains(_span))
                 {
                     list[i] = null;
@@ -94,7 +94,7 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
                 }
 
                 // now we have an interesting case where indentation block intersects with us.
-                // this can happen if code is splitted in two different script blocks or nuggets.
+                // this can happen if code is split in two different script blocks or nuggets.
                 // here, we will re-adjust block to be contained within our span.
                 if (operation.TextSpan.IntersectsWith(_span))
                 {
@@ -168,6 +168,8 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
 
         private static TextSpan GetSpanFromTokens(TextSpan span, SyntaxToken token1, SyntaxToken token2)
         {
+            var tree = token1.SyntaxTree;
+
             // adjust span to include all whitespace before and after the given span.
             var start = token1.Span.End;
 
@@ -176,9 +178,12 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             {
                 token1 = token1.GetPreviousToken();
                 start = token1.Span.End;
+
+                // If token1, that was passed, is the first visible token of the tree then we want to
+                // the beginning of the span to start from the beginning of the tree
                 if (token1.RawKind == 0)
                 {
-                    start = token1.FullSpan.Start;
+                    start = 0;
                 }
             }
 
@@ -189,10 +194,24 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             {
                 token2 = token2.GetNextToken();
                 end = token2.Span.Start;
+
+                // If token2, that was passed, was the last visible token of the tree then we want the
+                // span to expand till the end of the tree
                 if (token2.RawKind == 0)
                 {
-                    end = token2.FullSpan.End;
+                    end = tree.Length;
                 }
+            }
+
+            if (token1.Equals(token2) && end < start)
+            {
+                // This can happen if `token1.Span` is larger than `span` on each end (due to trivia) and occurs when
+                // only a single token is projected into a buffer and the projection is sandwiched between two other
+                // projections into the same backing buffer.  An example of this is during broken code scenarios when
+                // typing certain Razor `@` directives.
+                var temp = end;
+                end = start;
+                start = temp;
             }
 
             return TextSpan.FromBounds(start, end);

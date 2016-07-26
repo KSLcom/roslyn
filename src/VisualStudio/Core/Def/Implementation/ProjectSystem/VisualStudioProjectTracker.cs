@@ -57,6 +57,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
             return this.Projects;
         }
 
+        void IVisualStudioHostProjectContainer.NotifyNonDocumentOpenedForProject(IVisualStudioHostProject project)
+        {
+            var abstractProject = (AbstractProject)project;
+            StartPushingToWorkspaceAndNotifyOfOpenDocuments(SpecializedCollections.SingletonEnumerable(abstractProject));
+        }
+
         private uint? _solutionEventsCookie;
 
         public VisualStudioProjectTracker(IServiceProvider serviceProvider)
@@ -133,7 +139,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
         {
             if (_workspaceHosts.Any(hostState => hostState.Host == host))
             {
-                throw new ArgumentException("The workspace host is already registered.", "host");
+                throw new ArgumentException("The workspace host is already registered.", nameof(host));
             }
 
             _workspaceHosts.Add(new WorkspaceHostState(this, host));
@@ -144,7 +150,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
             var hostData = _workspaceHosts.Find(s => s.Host == host);
             if (hostData == null)
             {
-                throw new ArgumentException("The workspace host not registered", "host");
+                throw new ArgumentException("The workspace host not registered", nameof(host));
             }
 
             // This method is idempotent.
@@ -209,9 +215,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
 
         internal void StartPushingToWorkspaceAndNotifyOfOpenDocuments(IEnumerable<AbstractProject> projects)
         {
-            foreach (var hostState in _workspaceHosts)
+            using (Dispatcher.CurrentDispatcher.DisableProcessing())
             {
-                hostState.StartPushingToWorkspaceAndNotifyOfOpenDocuments(projects);
+                foreach (var hostState in _workspaceHosts)
+                {
+                    hostState.StartPushingToWorkspaceAndNotifyOfOpenDocuments(projects);
+                }
             }
         }
 
@@ -259,7 +268,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
                 {
                     foreach (var projectToUpdate in _projectMap.Values)
                     {
-                        projectToUpdate.UndoProjectReferenceConversionForDissappearingOutputPath(path);
+                        projectToUpdate.UndoProjectReferenceConversionForDisappearingOutputPath(path);
                     }
                 }
             }

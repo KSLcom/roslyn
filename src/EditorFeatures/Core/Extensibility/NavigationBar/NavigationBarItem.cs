@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis.Text;
@@ -10,14 +9,14 @@ using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor
 {
-    internal class NavigationBarItem
+    internal abstract class NavigationBarItem
     {
-        public string Text { get; private set; }
-        public Glyph Glyph { get; private set; }
-        public bool Bolded { get; private set; }
-        public bool Grayed { get; private set; }
-        public int Indent { get; private set; }
-        public IList<NavigationBarItem> ChildItems { get; private set; }
+        public string Text { get; }
+        public Glyph Glyph { get; }
+        public bool Bolded { get; }
+        public bool Grayed { get; }
+        public int Indent { get; }
+        public IList<NavigationBarItem> ChildItems { get; }
 
         public IList<TextSpan> Spans { get; internal set; }
         internal IList<ITrackingSpan> TrackingSpans { get; set; }

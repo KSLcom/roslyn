@@ -1152,7 +1152,7 @@ class Test
 }
 ";
             // Note: This test is exercising a case that is 'Runtime Ambiguous'. In the generated IL, it is ambiguous which
-            // method is being overriden. As far as I can tell, the output won't change from build to build / machine to machine
+            // method is being overridden. As far as I can tell, the output won't change from build to build / machine to machine
             // although it may change from one version of the CLR to another (not sure). If it turns out that this makes
             // the test flaky, we can delete this test.
 
@@ -1161,7 +1161,7 @@ Derived.Method(ref, out)
 Base.Method(ref, out)
 Base.Method(ref)");
         }
-        [WorkItem(540214, "DevDiv")]
+        [WorkItem(540214, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540214")]
         [Fact]
 
         private void TestEmitSynthesizedSealedSetter()
@@ -1219,7 +1219,7 @@ Base.P.Set(2)",
                     Signature("Derived", "set_P", ".method public hidebysig specialname virtual final instance System.Void set_P(System.Int32 value) cil managed")
                 });
         }
-        [WorkItem(540214, "DevDiv")]
+        [WorkItem(540214, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540214")]
         [Fact]
 
         private void TestEmitSynthesizedSealedGetter()
@@ -1276,7 +1276,7 @@ Derived.P.Set(2)",
                     Signature("Derived", "get_P", ".method public hidebysig specialname virtual final instance System.Int32 get_P() cil managed")
                 });
         }
-        [WorkItem(540327, "DevDiv")]
+        [WorkItem(540327, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540327")]
         [Fact]
 
         private void TestOverrideWithSealedProperty()
@@ -1871,7 +1871,7 @@ class Derived2 : Base2
 
             comp.VerifyDiagnostics();
         }
-        [WorkItem(540341, "DevDiv")]
+        [WorkItem(540341, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540341")]
         [Fact]
 
         private void TestInternalMethods()
@@ -2015,7 +2015,7 @@ class Derived : Base2<int>
 
             comp.VerifyDiagnostics(); // No errors
         }
-        [WorkItem(540341, "DevDiv")]
+        [WorkItem(540341, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540341")]
         [Fact]
 
         private void TestInternalAccessors()
@@ -2151,7 +2151,7 @@ public class Derived2 : Base<int>
     public sealed override List<int> Property1 { protected set { } }
     public sealed override List<int> Property2 { protected get { return null; } }
 }";
-            var comp = CompileAndVerify(source2, new[] { new CSharpCompilationReference(compilation1) }, emitOptions: TestEmitters.RefEmitBug, expectedSignatures: new[]
+            var comp = CompileAndVerify(source2, new[] { new CSharpCompilationReference(compilation1) }, expectedSignatures: new[]
             {
                 Signature("Derived", "get_Property1", ".method public hidebysig specialname virtual final instance System.Collections.Generic.List`1[System.Int32] get_Property1() cil managed"),
                 Signature("Derived", "set_Property1", ".method family hidebysig specialname virtual final instance System.Void set_Property1(System.Collections.Generic.List`1[System.Int32] value) cil managed"),
@@ -2285,7 +2285,7 @@ class Derived : Base2<int>
         {
             // Tests:
             // Hide base virtual member with a virtual new / abstract new member 
-            // Test that we don’t override the hidden base member on further derived classes
+            // Test that we don't override the hidden base member on further derived classes
 
             var source = @"
 using System;
@@ -2357,7 +2357,7 @@ Derived.set_Property",
             comp.VerifyDiagnostics(); // No errors
         }
 
-        [WorkItem(528172, "DevDiv")]
+        [WorkItem(528172, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/528172")]
         [Fact]
         public void TestHideWithInaccessibleVirtualMember()
         {
@@ -2450,7 +2450,39 @@ public class Test
             // from assembly 'Dev10, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null'
             // is overriding a method that is not visible from that assembly.
 
-            Assert.Throws(typeof(PeVerifyException), () => CompileAndVerify(outerCompilation));
+            CompileAndVerify(outerCompilation, verify: false).VerifyIL("Test.Main", @"
+{
+  // Code size       65 (0x41)
+  .maxstack  4
+  .locals init (Base2<int> V_0, //b2
+                System.Collections.Generic.List<int> V_1) //x
+  IL_0000:  newobj     ""Derived..ctor()""
+  IL_0005:  newobj     ""Derived..ctor()""
+  IL_000a:  stloc.0
+  IL_000b:  dup
+  IL_000c:  ldc.i4.1
+  IL_000d:  callvirt   ""void Base<int>.Method<long>(int)""
+  IL_0012:  dup
+  IL_0013:  newobj     ""System.Collections.Generic.List<int>..ctor()""
+  IL_0018:  ldc.i4.1
+  IL_0019:  callvirt   ""void Base<int>.Method(System.Collections.Generic.List<int>, int)""
+  IL_001e:  ldnull
+  IL_001f:  stloc.1
+  IL_0020:  ldloc.1
+  IL_0021:  callvirt   ""void Base<int>.Property.set""
+  IL_0026:  ldloc.0
+  IL_0027:  ldc.i4.1
+  IL_0028:  callvirt   ""void Base<int>.Method<long>(int)""
+  IL_002d:  ldloc.0
+  IL_002e:  newobj     ""System.Collections.Generic.List<int>..ctor()""
+  IL_0033:  ldc.i4.1
+  IL_0034:  callvirt   ""void Base<int>.Method(System.Collections.Generic.List<int>, int)""
+  IL_0039:  ldloc.0
+  IL_003a:  ldloc.1
+  IL_003b:  callvirt   ""void Base<int>.Property.set""
+  IL_0040:  ret
+}
+");
         }
 
         [Fact]
@@ -2636,7 +2668,7 @@ Derived.get_Property");
             comp.VerifyDiagnostics(); // No errors
         }
 
-        [WorkItem(540431, "DevDiv")]
+        [WorkItem(540431, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540431")]
         [Fact]
         public void TestOverrideNewToVBVirtualOverloadsMetadata()
         {
@@ -2698,7 +2730,7 @@ class Test
             CompileAndVerify(comp, expectedOutput: @"CSS1_OV CSS1_OV VBS11_OL CSS1_OV CSF1_New VBF1_V VBF11 VBF1_V");
         }
 
-        [WorkItem(540431, "DevDiv")]
+        [WorkItem(540431, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540431")]
         [Fact]
         public void TestOverrideNewToVBVirtualPropMetadata()
         {
@@ -2855,8 +2887,8 @@ class Test
             CompileAndVerify(comp2, expectedOutput: @"TwoThreeOneZero");
         }
 
-        [WorkItem(540452, "DevDiv")]
-        [WorkItem(540453, "DevDiv")]
+        [WorkItem(540452, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540452")]
+        [WorkItem(540453, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540453")]
         [Fact]
         public void TestGenericDDerivedImplWithBaseInMetadata()
         {
@@ -3082,7 +3114,7 @@ partial class Test
                 new string[] { text1, text2 },
                 references: new[] { asm01, asm02 },
                 options: TestOptions.ReleaseExe,
-                assemblyName: "OHI_BridgeMethodFomrBaseVB007");
+                assemblyName: "OHI_BridgeMethodFromBaseVB007");
 
             var verifier = CompileAndVerify(
                 comp,
@@ -3388,23 +3420,22 @@ namespace Metadata
                 text,
                 new[] { TestReferences.SymbolsTests.CustomModifiers.Modifiers.dll },
                 expectedOutput: @"Hello 3",
-                emitOptions: TestEmitters.RefEmitUnsupported_646023,
                 expectedSignatures: new[]
                 {
-                // The ILDASM output is following,and Roslyn handles it correctly. 
-                // Verifier tool gives different output due to the limitation of Reflection
-                // @".method public hidebysig virtual instance System.Void Method<X>(" +
-                // @"System.String modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) x," +
-                // @"UInt64 modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) y," +
-                // @"!!X modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) z) cil managed")
-                Signature("Metadata.GD", "Method",
-                        @".method public hidebysig virtual instance System.Void Method<X>(" +
-                        @"modopt(System.Runtime.CompilerServices.IsConst) System.String[] x, " +
-                        @"modopt(System.Runtime.CompilerServices.IsConst) System.UInt64[] y, modopt(System.Runtime.CompilerServices.IsConst) X[] z) cil managed"),
+                    // The ILDASM output is following,and Roslyn handles it correctly. 
+                    // Verifier tool gives different output due to the limitation of Reflection
+                    // @".method public hidebysig virtual instance System.Void Method<X>(" +
+                    // @"System.String modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) x," +
+                    // @"UInt64 modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) y," +
+                    // @"!!X modopt([mscorlib]System.Runtime.CompilerServices.IsConst)[] modopt([mscorlib]System.Runtime.CompilerServices.IsConst) z) cil managed")
+                    Signature("Metadata.GD", "Method",
+                              @".method public hidebysig virtual instance System.Void Method<X>(" +
+                              @"modopt(System.Runtime.CompilerServices.IsConst) System.String[] x, " +
+                              @"modopt(System.Runtime.CompilerServices.IsConst) System.UInt64[] y, modopt(System.Runtime.CompilerServices.IsConst) X[] z) cil managed"),
                 });
         }
 
-        [WorkItem(540516, "DevDiv")]
+        [WorkItem(540516, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540516")]
         [Fact]
         public void TestCallMethodsWithLeastCustomModifiers()
         {
@@ -3424,7 +3455,7 @@ public class Program
                 expectedOutput: "51");
         }
 
-        [WorkItem(540517, "DevDiv")]
+        [WorkItem(540517, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540517")]
         [Fact]
         public void TestOverrideMethodsWithCustomModifiers()
         {
@@ -3573,7 +3604,7 @@ class Test
                 });
         }
 
-        [WorkItem(541834, "DevDiv")]
+        [WorkItem(541834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541834")]
         [Fact]
         public void AccessorMethodAccessorOverridingExecution()
         {
@@ -3612,7 +3643,7 @@ class Program
             CompileAndVerify(text, expectedOutput: "C1");
         }
 
-        [WorkItem(541834, "DevDiv")]
+        [WorkItem(541834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541834")]
         [Fact]
         public void AccessorMethodAccessorOverridingRoundTrip()
         {
@@ -3656,7 +3687,7 @@ public class C : B
             CompileAndVerify(text, sourceSymbolValidator: validator, symbolValidator: validator);
         }
 
-        [WorkItem(541834, "DevDiv")]
+        [WorkItem(541834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541834")]
         [Fact]
         public void MethodAccessorMethodOverridingRoundTrip()
         {
@@ -3708,7 +3739,7 @@ public class C : B
         /// will be true, but OverriddenMethod will return null.
         /// This test just checks that nothing blows up in such cases.
         /// </summary>
-        [WorkItem(541834, "DevDiv")]
+        [WorkItem(541834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541834")]
         [Fact]
         public void ExplicitOverrideWithoutCSharpOverride()
         {
@@ -3789,7 +3820,7 @@ public class Invoke
             });
         }
 
-        [WorkItem(542828, "DevDiv")]
+        [WorkItem(542828, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542828")]
         [Fact]
         public void MetadataOverrideVirtualHiddenByNonVirtual()
         {
@@ -3900,7 +3931,7 @@ DerivedNonVirtual
 ");
         }
 
-        [WorkItem(543158, "DevDiv")]
+        [WorkItem(543158, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543158")]
         [Fact()]
         public void NoDefaultForParams_Dev10781558()
         {
@@ -3958,10 +3989,10 @@ class B : A
                 }
             };
 
-            var verifier = CompileAndVerify(source, emitOptions: TestEmitters.CCI, symbolValidator: validator(false), sourceSymbolValidator: validator(true), expectedOutput: @"System.Int32[]");
+            var verifier = CompileAndVerify(source, symbolValidator: validator(false), sourceSymbolValidator: validator(true), expectedOutput: @"System.Int32[]");
         }
 
-        [WorkItem(543158, "DevDiv")]
+        [WorkItem(543158, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543158")]
         [Fact]
         public void XNoDefaultForParams_Dev10781558()
         {
@@ -4011,7 +4042,7 @@ public abstract class C2 : C1
 }",
                 compilationOptions: TestOptions.ReleaseDll,
                 referencedCompilations: new[] { vb1Compilation });
-            var cs1Verifier = CompileAndVerify(cs1Compilation, emitOptions: TestEmitters.RefEmitBug);
+            var cs1Verifier = CompileAndVerify(cs1Compilation);
             cs1Verifier.VerifyDiagnostics();
 
             var vb2Compilation = CreateVisualBasicCompilation("VB2",
@@ -4054,7 +4085,6 @@ public class Program
                 compilationOptions: TestOptions.ReleaseExe,
                 referencedCompilations: new Compilation[] { vb1Compilation, cs1Compilation, vb2Compilation });
             var cs2Verifier = CompileAndVerify(cs2Compilation,
-                emitOptions: TestEmitters.RefEmitBug,
                 expectedOutput: @"C3");
             cs2Verifier.VerifyDiagnostics();
         }
@@ -4081,7 +4111,7 @@ public abstract class C2 : C1
 }",
                 compilationOptions: TestOptions.ReleaseDll,
                 referencedCompilations: new[] { vb1Compilation });
-            var cs1Verifier = CompileAndVerify(cs1Compilation, emitOptions: TestEmitters.RefEmitBug);
+            var cs1Verifier = CompileAndVerify(cs1Compilation);
             cs1Verifier.VerifyDiagnostics();
 
             var vb2Compilation = CreateVisualBasicCompilation("VB2",
@@ -4126,8 +4156,7 @@ public class Program
 }",
                 compilationOptions: TestOptions.ReleaseExe,
                 referencedCompilations: new Compilation[] { vb1Compilation, cs1Compilation, vb2Compilation });
-            var cs2Verifier = CompileAndVerify(cs2Compilation,
-                emitOptions: TestEmitters.RefEmitBug, expectedOutput: @"C4
+            var cs2Verifier = CompileAndVerify(cs2Compilation, expectedOutput: @"C4
 C2");
             cs2Verifier.VerifyDiagnostics();
         }
@@ -4162,7 +4191,7 @@ public class Test
 Derived.M(y:2)");
         }
 
-        [WorkItem(531095, "DevDiv")]
+        [WorkItem(531095, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531095")]
         [Fact]
         public void MissingAssemblyReference01()
         {
@@ -4189,7 +4218,7 @@ Derived.M(y:2)");
                 );
         }
 
-        [WorkItem(531095, "DevDiv")]
+        [WorkItem(531095, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/531095")]
         [Fact]
         public void MissingAssemblyReference02()
         {

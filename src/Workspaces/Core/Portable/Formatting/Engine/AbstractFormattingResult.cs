@@ -1,10 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
@@ -62,15 +59,21 @@ namespace Microsoft.CodeAnalysis.Formatting
             using (Logger.LogBlock(FunctionId.Formatting_CreateTextChanges, cancellationToken))
             {
                 var data = this.TokenStream.GetTriviaDataWithTokenPair(cancellationToken);
-                var result = this.TaskExecutor
-                                 .Filter(data, d => d.Item2.ContainsChanges, d => d, cancellationToken)
-                                 .SelectMany(d => CreateTextChange(d.Item1.Item1, d.Item1.Item2, d.Item2));
 
-                return result.ToList();
+                var filtered = this.TaskExecutor
+                                 .Filter(data, d => d.Item2.ContainsChanges, d => d, cancellationToken);
+
+                var result = new List<TextChange>();
+                foreach (var f in filtered)
+                {
+                    AddTextChanges(result, f.Item1.Item1, f.Item1.Item2, f.Item2);
+                }
+
+                return result;
             }
         }
 
-        private IEnumerable<TextChange> CreateTextChange(SyntaxToken token1, SyntaxToken token2, TriviaData data)
+        private void AddTextChanges(List<TextChange> list, SyntaxToken token1, SyntaxToken token2, TriviaData data)
         {
             var span = TextSpan.FromBounds(token1.RawKind == 0 ? this.TreeInfo.StartPosition : token1.Span.End, token2.RawKind == 0 ? this.TreeInfo.EndPosition : token2.SpanStart);
             var originalString = this.TreeInfo.GetTextBetween(token1, token2);
@@ -78,7 +81,7 @@ namespace Microsoft.CodeAnalysis.Formatting
             foreach (var change in data.GetTextChanges(span))
             {
                 var oldText = (change.Span == span) ? originalString : originalString.Substring(change.Span.Start - span.Start, change.Span.Length);
-                yield return change.SimpleDiff(oldText);
+                list.Add(change.SimpleDiff(oldText));
             }
         }
 

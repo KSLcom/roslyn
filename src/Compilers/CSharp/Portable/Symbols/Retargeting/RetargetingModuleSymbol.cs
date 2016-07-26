@@ -46,7 +46,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Retargeting
         private struct DestinationData
         {
             public AssemblySymbol To;
-            public ConcurrentDictionary<NamedTypeSymbol, NamedTypeSymbol> SymbolMap;
+            private ConcurrentDictionary<NamedTypeSymbol, NamedTypeSymbol> _symbolMap;
+
+            public ConcurrentDictionary<NamedTypeSymbol, NamedTypeSymbol> SymbolMap => LazyInitializer.EnsureInitialized(ref _symbolMap);
         }
 
         internal readonly RetargetingSymbolTranslator RetargetingTranslator;
@@ -183,7 +185,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Retargeting
             ImmutableArray<AssemblySymbol> underlyingBoundReferences = _underlyingModule.GetReferencedAssemblySymbols();
             ImmutableArray<AssemblySymbol> referencedAssemblySymbols = moduleReferences.Symbols;
 
-            Debug.Assert(referencedAssemblySymbols.Length == moduleReferences.Names.Length);
+            Debug.Assert(referencedAssemblySymbols.Length == moduleReferences.Identities.Length);
             Debug.Assert(referencedAssemblySymbols.Length <= underlyingBoundReferences.Length); // Linked references are filtered out.
 
             int i, j;
@@ -201,8 +203,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Retargeting
                         new AssemblyIdentity(name: originatingSourceAssemblyDebugOnly.Name) :
                         referencedAssemblySymbols[i].Identity;
 
-                Debug.Assert(identityComparer.Compare(moduleReferences.Names[i], definitionIdentity) != AssemblyIdentityComparer.ComparisonResult.NotEquivalent);
-                Debug.Assert(identityComparer.Compare(moduleReferences.Names[i], underlyingBoundReferences[j].Identity) != AssemblyIdentityComparer.ComparisonResult.NotEquivalent);
+                Debug.Assert(identityComparer.Compare(moduleReferences.Identities[i], definitionIdentity) != AssemblyIdentityComparer.ComparisonResult.NotEquivalent);
+                Debug.Assert(identityComparer.Compare(moduleReferences.Identities[i], underlyingBoundReferences[j].Identity) != AssemblyIdentityComparer.ComparisonResult.NotEquivalent);
 #endif
 
                 if (!ReferenceEquals(referencedAssemblySymbols[i], underlyingBoundReferences[j]))
@@ -211,10 +213,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Retargeting
 
                     if (!_retargetingAssemblyMap.TryGetValue(underlyingBoundReferences[j], out destinationData))
                     {
-                        var symbolMap = new ConcurrentDictionary<NamedTypeSymbol, NamedTypeSymbol>();
-
                         _retargetingAssemblyMap.Add(underlyingBoundReferences[j],
-                            new DestinationData { To = referencedAssemblySymbols[i], SymbolMap = symbolMap });
+                            new DestinationData { To = referencedAssemblySymbols[i] });
                     }
                     else
                     {
@@ -282,5 +282,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Retargeting
         {
             get { return null; }
         }
+
+        public override ModuleMetadata GetMetadata() => _underlyingModule.GetMetadata();
     }
 }

@@ -47,8 +47,11 @@ namespace Microsoft.CodeAnalysis.CSharp
         // Returns deterministically ordered list of variables that ought to be hoisted.
         public static OrderedSet<Symbol> Analyze(CSharpCompilation compilation, MethodSymbol method, BoundNode node, DiagnosticBag diagnostics)
         {
-            var initiallyAssignedVariables = UnassignedVariablesWalker.Analyze(compilation, method, node);
+            var initiallyAssignedVariables = UnassignedVariablesWalker.Analyze(compilation, method, node, convertInsufficientExecutionStackExceptionToCancelledByStackGuardException: true);
             var walker = new IteratorAndAsyncCaptureWalker(compilation, method, node, new NeverEmptyStructTypeCache(), initiallyAssignedVariables);
+
+            walker._convertInsufficientExecutionStackExceptionToCancelledByStackGuardException = true;
+
             bool badRegion = false;
             walker.Analyze(ref badRegion);
             Debug.Assert(!badRegion);
@@ -130,17 +133,32 @@ namespace Microsoft.CodeAnalysis.CSharp
             for (int i = 0; i < nextVariableSlot; i++)
             {
                 var symbol = variableBySlot[i].Symbol;
-                var local = symbol as LocalSymbol;
-                if ((object)local != null && !local.IsConst)
-                {
-                    SetSlotState(i, false);
-                    continue;
-                }
 
-                var parameter = symbol as ParameterSymbol;
-                if ((object)parameter != null)
+                if ((object)symbol != null)
                 {
-                    SetSlotState(i, false);
+                    switch (symbol.Kind)
+                    {
+                        case SymbolKind.Local:
+                            if (!((LocalSymbol)symbol).IsConst)
+                            {
+                                SetSlotState(i, false);
+                            }
+                            break;
+
+                        case SymbolKind.Parameter:
+                            SetSlotState(i, false);
+                            break;
+
+                        case SymbolKind.Field:
+                            if (!((FieldSymbol)symbol).IsConst)
+                            {
+                                SetSlotState(i, false);
+                            }
+                            break;
+
+                        default:
+                            throw ExceptionUtilities.UnexpectedValue(symbol.Kind);
+                    }
                 }
             }
         }
@@ -194,7 +212,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         protected override void EnterParameter(ParameterSymbol parameter)
         {
-            // parameters are NOT intitially assigned here - if that is a problem, then
+            // parameters are NOT initially assigned here - if that is a problem, then
             // the parameters must be captured.
             GetOrCreateSlot(parameter);
         }
@@ -277,23 +295,31 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 // Locals cannot be used to communicate between the finally block and the rest of the method.
                 // So we just capture any outside variables that are used inside.
-                new OutsideVariablesUsedInside(this, this.topLevelMethod).Visit(finallyBlock);
+                new OutsideVariablesUsedInside(this, this.topLevelMethod, this).Visit(finallyBlock);
             }
 
             base.VisitFinallyBlock(finallyBlock, ref unsetInFinally);
         }
 
-        private sealed class OutsideVariablesUsedInside : BoundTreeWalker
+        private sealed class OutsideVariablesUsedInside : BoundTreeWalkerWithStackGuardWithoutRecursionOnTheLeftOfBinaryOperator
         {
             private readonly HashSet<Symbol> _localsInScope;
             private readonly IteratorAndAsyncCaptureWalker _analyzer;
             private readonly MethodSymbol _topLevelMethod;
+            private readonly IteratorAndAsyncCaptureWalker _parent;
 
-            public OutsideVariablesUsedInside(IteratorAndAsyncCaptureWalker analyzer, MethodSymbol topLevelMethod)
+            public OutsideVariablesUsedInside(IteratorAndAsyncCaptureWalker analyzer, MethodSymbol topLevelMethod, IteratorAndAsyncCaptureWalker parent)
+                : base(parent._recursionDepth)
             {
                 _analyzer = analyzer;
                 _topLevelMethod = topLevelMethod;
                 _localsInScope = new HashSet<Symbol>();
+                _parent = parent;
+            }
+
+            protected override bool ConvertInsufficientExecutionStackExceptionToCancelledByStackGuardException()
+            {
+                return _parent.ConvertInsufficientExecutionStackExceptionToCancelledByStackGuardException();
             }
 
             public override BoundNode VisitBlock(BoundBlock node)
@@ -312,7 +338,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             public override BoundNode VisitCatchBlock(BoundCatchBlock node)
             {
-                AddVariable(node.LocalOpt);
+                AddVariables(node.Locals);
                 return base.VisitCatchBlock(node);
             }
 

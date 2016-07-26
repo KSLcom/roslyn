@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
@@ -106,7 +106,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             return new TypeListItem(projectId, namedTypeSymbol, displayText, fullNameText, searchText, hidden);
         }
 
-        protected TypeListItem CreateFullyQualifedTypeListItem(INamedTypeSymbol namedTypeSymbol, ProjectId projectId, bool hidden)
+        protected TypeListItem CreateFullyQualifiedTypeListItem(INamedTypeSymbol namedTypeSymbol, ProjectId projectId, bool hidden)
         {
             var displayText = namedTypeSymbol.SpecialType.ToPredefinedType() != PredefinedType.None
                 ? namedTypeSymbol.ToDisplayString(s_predefinedTypeDisplay)
@@ -266,7 +266,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             var parentProjectItem = parentListItem as ProjectListItem;
             if (parentProjectItem != null)
             {
-                builder.Add(new FolderListItem(parentListItem.ProjectId, ServicesVSResources.Library_ProjectReferences));
+                builder.Add(new FolderListItem(parentListItem.ProjectId, ServicesVSResources.Project_References));
             }
 
             var parentTypeItem = parentListItem as TypeListItem;
@@ -291,7 +291,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
 
                 if (addBaseTypes)
                 {
-                    builder.Add(new FolderListItem(parentListItem.ProjectId, ServicesVSResources.Library_BaseTypes));
+                    builder.Add(new FolderListItem(parentListItem.ProjectId, ServicesVSResources.Base_Types));
                 }
             }
 
@@ -626,28 +626,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                         assemblyIdentitySet = new HashSet<AssemblyIdentity>();
                     }
 
-                    var compilation = project.GetCompilationAsync(cancellationToken).WaitAndGetResult(cancellationToken);
-
-                    foreach (var reference in compilation.References)
+                    foreach (var reference in project.MetadataReferences)
                     {
-                        if (reference is CompilationReference)
+                        var portableExecutableReference = reference as PortableExecutableReference;
+                        if (portableExecutableReference != null)
                         {
-                            continue;
-                        }
+                            var assemblyIdentity = AssemblyIdentityUtils.TryGetAssemblyIdentity(portableExecutableReference.FilePath);
+                            if (assemblyIdentity != null && !assemblyIdentitySet.Contains(assemblyIdentity))
+                            {
+                                assemblyIdentitySet.Add(assemblyIdentity);
 
-                        var assemblySymbol = compilation.GetAssemblyOrModuleSymbol(reference) as IAssemblySymbol;
-                        if (assemblySymbol == null)
-                        {
-                            continue;
+                                var referenceListItem = new ReferenceListItem(projectId, assemblyIdentity.Name, reference);
+                                referenceListItemBuilder.Add(referenceListItem);
+                            }
                         }
-
-                        if (assemblyIdentitySet.Contains(assemblySymbol.Identity))
-                        {
-                            continue;
-                        }
-
-                        assemblyIdentitySet.Add(assemblySymbol.Identity);
-                        referenceListItemBuilder.Add(new ReferenceListItem(projectId, assemblySymbol.Name, reference));
                     }
                 }
             }
@@ -668,7 +660,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                 return ImmutableArray<ObjectListItem>.Empty;
             }
 
-            var builder = ImmutableArray.CreateBuilder<ObjectListItem>();
+            var builder = ArrayBuilder<ObjectListItem>.GetInstance();
 
             foreach (var reference in compilation.References)
             {
@@ -680,7 +672,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
                 }
             }
 
-            return builder.ToImmutable();
+            return builder.ToImmutableAndFree();
         }
 
         private ImmutableArray<INamedTypeSymbol> GetAccessibleTypes(INamespaceSymbol namespaceSymbol, Compilation compilation)
@@ -719,7 +711,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             var types = GetAccessibleTypes(namespaceSymbol, compilation);
 
             var listItems = fullyQualified
-                ? CreateListItemsFromSymbols(types, compilation, projectId, CreateFullyQualifedTypeListItem)
+                ? CreateListItemsFromSymbols(types, compilation, projectId, CreateFullyQualifiedTypeListItem)
                 : CreateListItemsFromSymbols(types, compilation, projectId, CreateSimpleTypeListItem);
 
             if (searchString == null)
@@ -776,21 +768,17 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             while (stack.Count > 0)
             {
                 var namespaceSymbol = stack.Pop();
+                var typeListItems = GetTypeListItems(namespaceSymbol, compilation, projectId, searchString, fullyQualified: true);
 
-                if (!namespaceSymbol.IsGlobalNamespace)
+                foreach (var typeListItem in typeListItems)
                 {
-                    var typeListItems = GetTypeListItems(namespaceSymbol, compilation, projectId, searchString, fullyQualified: true);
-
-                    foreach (var typeListItem in typeListItems)
+                    if (searchString == null)
                     {
-                        if (searchString == null)
-                        {
-                            builder.Add(typeListItem);
-                        }
-                        else if (typeListItem.SearchText.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            builder.Add(typeListItem);
-                        }
+                        builder.Add(typeListItem);
+                    }
+                    else if (typeListItem.SearchText.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        builder.Add(typeListItem);
                     }
                 }
 
@@ -813,24 +801,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectB
             while (namespaceStack.Count > 0)
             {
                 var namespaceSymbol = namespaceStack.Pop();
+                var types = GetAccessibleTypes(namespaceSymbol, compilation);
 
-                if (!namespaceSymbol.IsGlobalNamespace)
+                foreach (var type in types)
                 {
-                    var types = GetAccessibleTypes(namespaceSymbol, compilation);
-
-                    foreach (var type in types)
+                    var memberListItems = GetMemberListItems(type, compilation, projectId, fullyQualified: true);
+                    foreach (var memberListItem in memberListItems)
                     {
-                        var memberListItems = GetMemberListItems(type, compilation, projectId, fullyQualified: true);
-                        foreach (var memberListItem in memberListItems)
+                        if (searchString == null)
                         {
-                            if (searchString == null)
-                            {
-                                builder.Add(memberListItem);
-                            }
-                            else if (memberListItem.SearchText.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                builder.Add(memberListItem);
-                            }
+                            builder.Add(memberListItem);
+                        }
+                        else if (memberListItem.SearchText.IndexOf(searchString, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            builder.Add(memberListItem);
                         }
                     }
                 }

@@ -340,7 +340,7 @@ class C
             Assert.Same(eventSymbol.RemoveMethod, model.GetDeclaredSymbol(accessorList[1]));
         }
 
-        [WorkItem(543494, "DevDiv")]
+        [WorkItem(543494, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543494")]
         [Fact()]
         public void TestGetDeclaredSymbolFromFieldLikeEvent()
         {
@@ -362,7 +362,7 @@ class C
             Assert.IsType<SourceFieldLikeEventSymbol>(eventSymbol);
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfEventDeclarationSyntaxAsBasePropertyDeclarationSyntax()
         {
@@ -375,7 +375,7 @@ public class Test
 ");
             var tree = compilation.SyntaxTrees[0];
             var root = tree.GetCompilationUnitRoot();
-            var node = root.FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("public event D Iter3")).Parent as BasePropertyDeclarationSyntax;
+            var node = root.FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("public event D Iter3", StringComparison.Ordinal)).Parent as BasePropertyDeclarationSyntax;
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(node);
 
@@ -383,7 +383,7 @@ public class Test
             Assert.Equal("Iter3", symbol.Name);
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfPropertyDeclarationSyntaxAsBasePropertyDeclarationSyntax()
         {
@@ -405,7 +405,7 @@ public class Test
             Assert.Equal("Prop", symbol.Name);
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfIndexerDeclarationSyntaxAsBasePropertyDeclarationSyntax()
         {
@@ -430,7 +430,7 @@ public class Test
             Assert.Equal("System.Object Test.this[System.Int32 x, System.Int32 y] { get; }", symbol.ToTestDisplayString());
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfEventDeclarationSyntax()
         {
@@ -452,7 +452,7 @@ public class Test
             Assert.Equal("Iter3", symbol.Name);
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfPropertyDeclarationSyntax()
         {
@@ -474,7 +474,7 @@ public class Test
             Assert.Equal("Prop", symbol.Name);
         }
 
-        [WorkItem(543574, "DevDiv")]
+        [WorkItem(543574, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543574")]
         [Fact()]
         public void GetDeclaredSymbolOfIndexerDeclarationSyntax()
         {
@@ -522,7 +522,7 @@ class C
         }
 
         [Fact]
-        public void TestGetDeclaredSymbolFromMutipleLocalDeclarators()
+        public void TestGetDeclaredSymbolFromMultipleLocalDeclarators()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 class C 
@@ -548,7 +548,7 @@ class C
         }
 
         [Fact]
-        public void TestGetDeclaredSymbolFromMutipleLabelDeclarators()
+        public void TestGetDeclaredSymbolFromMultipleLabelDeclarators()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 class C 
@@ -577,7 +577,7 @@ class C
         }
 
         [Fact]
-        public void TestGetDeclaredSymbolFromAnonymousTypePropertyInitialzier()
+        public void TestGetDeclaredSymbolFromAnonymousTypePropertyInitializer()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 class C 
@@ -602,7 +602,7 @@ class C
         }
 
         [Fact]
-        public void TestGetDeclaredSymbolFromAnonymousTypePropertyInitialzier_WithErrors()
+        public void TestGetDeclaredSymbolFromAnonymousTypePropertyInitializer_WithErrors()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 class C 
@@ -677,7 +677,7 @@ class C
         }
 
         [Fact]
-        public void TestGetDeclaredSymbolFromSwitchDefaultabel()
+        public void TestGetDeclaredSymbolFromSwitchDefaultLabel()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 class C 
@@ -776,7 +776,7 @@ class C
             Assert.Equal("x", symbol.Name);
         }
 
-        [WorkItem(540108, "DevDiv")]
+        [WorkItem(540108, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540108")]
         [Fact]
         public void TestGetDeclaredSymbolFromDelegateParameter()
         {
@@ -939,7 +939,30 @@ namespace N1.N2
             Assert.Equal("p1", psym.Name);
         }
 
-        [WorkItem(537230, "DevDiv")]
+        [Fact]
+        [WorkItem(7213, "https://github.com/dotnet/roslyn/issues/7213")]
+        public void TestGetDeclaredSymbolWithIncompleteDeclaration()
+        {
+            var compilation = CreateCompilationWithMscorlib(@"
+class C0 { }
+
+class 
+
+class C1 { }
+");
+            var tree = compilation.SyntaxTrees[0];
+            var root = tree.GetCompilationUnitRoot();
+            var typeDecl = (ClassDeclarationSyntax)root.Members[1];
+            var model = compilation.GetSemanticModel(tree);
+
+            var symbol = model.GetDeclaredSymbol(typeDecl);
+
+            Assert.NotNull(symbol);
+            Assert.Equal(string.Empty, symbol.ToTestDisplayString());
+            Assert.Equal(TypeKind.Class, symbol.TypeKind);
+        }
+
+        [WorkItem(537230, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537230")]
         [Fact]
         public void TestLookupUnresolvableNamespaceUsing()
         {
@@ -1762,7 +1785,7 @@ static class S
                 "void object.E<T, U>(T t, U u)");
         }
 
-        [WorkItem(541125, "DevDiv")]
+        [WorkItem(541125, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541125")]
         [Fact]
         public void TestLookupSymbolsMoreGenericExtensionMethods()
         {
@@ -1830,7 +1853,7 @@ static class S
                 "void A<int>.E7<int>(Action<A<int>> f)");
         }
 
-        [WorkItem(544933, "DevDiv")]
+        [WorkItem(544933, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544933")]
         [Fact]
         public void TestLookupSymbolsGenericExtensionMethodWithConstraints()
         {
@@ -1853,7 +1876,7 @@ static class E
 
             var tree = compilation.SyntaxTrees.Single();
             var model = compilation.GetSemanticModel(tree);
-            var position = source.IndexOf("a.F()");
+            var position = source.IndexOf("a.F()", StringComparison.Ordinal);
             var method = compilation.GlobalNamespace.GetMember<NamedTypeSymbol>("E").GetMember<MethodSymbol>("M");
 
             // No type.
@@ -1892,7 +1915,7 @@ static class E
 
             tree = compilation.SyntaxTrees.Single();
             model = compilation.GetSemanticModel(tree);
-            position = source.IndexOf("a.F()");
+            position = source.IndexOf("a.F()", StringComparison.Ordinal);
             method = compilation.GlobalNamespace.GetMember<NamedTypeSymbol>("C").GetMember<MethodSymbol>("M");
 
             // No type.
@@ -1999,10 +2022,10 @@ class C
             var compilation = CreateCompilationWithMscorlib(text);
             var tree = compilation.SyntaxTrees.Single();
             var model = compilation.GetSemanticModel(tree);
-            var position = text.IndexOf("{", text.IndexOf("a)"));
+            var position = text.IndexOf('{', text.IndexOf("a)", StringComparison.Ordinal));
             var symbols = model.LookupSymbols(position, name: "a");
             Assert.Equal(1, symbols.Length);
-            position = text.IndexOf("{", text.IndexOf("b)"));
+            position = text.IndexOf('{', text.IndexOf("b)", StringComparison.Ordinal));
             symbols = model.LookupSymbols(position, name: "b");
             Assert.Equal(1, symbols.Length);
         }
@@ -2107,28 +2130,28 @@ class Bar { }
             Func<int, string, bool, ImmutableArray<ISymbol>> lookupAttributeType = (pos, name, isVerbatim) =>
                 lookupAttributeTypeWithQualifier(pos, null, name, isVerbatim);
 
-            var position = text.IndexOf("Description(null)", 0);
+            var position = text.IndexOf("Description(null)", 0, StringComparison.Ordinal);
             var symbols = lookupAttributeType(position, "Description", false);
             Assert.Equal(2, symbols.Length);
 
             symbols = lookupAttributeType(position, "Description", true);
             Assert.Equal(0, symbols.Length);
 
-            position = text.IndexOf("X()", 0);
+            position = text.IndexOf("X()", 0, StringComparison.Ordinal);
             symbols = lookupAttributeType(position, "X", false);
             Assert.Equal(2, symbols.Length);
 
             symbols = lookupAttributeType(position, "X", true);
             Assert.Equal(1, symbols.Length);
 
-            position = text.IndexOf("Y(null)", 0);
+            position = text.IndexOf("Y(null)", 0, StringComparison.Ordinal);
             symbols = lookupAttributeType(position, "Y", false);
             Assert.Equal(1, symbols.Length);
 
             symbols = lookupAttributeType(position, "Y", true);
             Assert.Equal(0, symbols.Length);
 
-            var position2 = text.IndexOf("namespace InvalidWithoutSuffix", 0);
+            var position2 = text.IndexOf("namespace InvalidWithoutSuffix", 0, StringComparison.Ordinal);
             var qnSymbols = model.LookupNamespacesAndTypes(position2, name: "InvalidWithoutSuffix");
             Assert.Equal(1, qnSymbols.Length);
             var qnInvalidWithoutSuffix = (NamespaceOrTypeSymbol)qnSymbols[0];
@@ -2142,7 +2165,7 @@ class Bar { }
             symbols = lookupAttributeTypeWithQualifier(position, qnInvalidWithoutSuffix, "Y", true);
             Assert.Equal(0, symbols.Length);
 
-            position = text.IndexOf("Foo()", 0);
+            position = text.IndexOf("Foo()", 0, StringComparison.Ordinal);
             symbols = lookupAttributeType(position, "Foo", false);
             Assert.Equal(1, symbols.Length);
 
@@ -2685,7 +2708,7 @@ namespace A
             Assert.NotNull(info.Symbol);
         }
 
-        [WorkItem(537932, "DevDiv")]
+        [WorkItem(537932, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537932")]
         [Fact]
         public void GetDeclaredSymbolDupAliasNameErr()
         {
@@ -2715,7 +2738,7 @@ namespace NS {
             Assert.Equal(typeB, classB);
         }
 
-        [WorkItem(537624, "DevDiv")]
+        [WorkItem(537624, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537624")]
         [Fact]
         public void GetDeclaredSymbolForUsingDirective()
         {
@@ -2808,7 +2831,7 @@ class C : I
             Assert.Same(explicitPropertySymbol.SetMethod, explicitPropertySetterSymbol);
         }
 
-        [WorkItem(527284, "DevDiv")]
+        [WorkItem(527284, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/527284")]
         [Fact]
         public void GetDeclaredSymbolDottedNSAPI()
         {
@@ -2841,7 +2864,7 @@ namespace N1 {
             Assert.Equal(n3, dn23);
         }
 
-        [WorkItem(527285, "DevDiv")]
+        [WorkItem(527285, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/527285")]
         [Fact]
         public void GetDeclaredSymbolGlobalSystemNSErr()
         {
@@ -2863,7 +2886,7 @@ class Test { }
             Assert.Equal(compSym, declsym);
         }
 
-        [WorkItem(527286, "DevDiv")]
+        [WorkItem(527286, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/527286")]
         [Fact]
         public void GetDeclaredSymbolInvalidOverloadsErr()
         {
@@ -2921,7 +2944,7 @@ class CFoo
             Assert.Same(mems2[2], dsymc3);
         }
 
-        [WorkItem(537953, "DevDiv")]
+        [WorkItem(537953, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537953")]
         [Fact]
         public void GetDeclaredSymbolNoTypeSymbolWithErr()
         {
@@ -2945,7 +2968,7 @@ namespace NS
             Assert.Equal(srcSym, declSym);
         }
 
-        [WorkItem(537954, "DevDiv")]
+        [WorkItem(537954, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537954")]
         [Fact]
         public void GetDeclaredSymbolExtraForDupTypesErr()
         {
@@ -2974,7 +2997,7 @@ namespace NS
             Assert.Equal(dsym1, dsym2);
         }
 
-        [WorkItem(537955, "DevDiv")]
+        [WorkItem(537955, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537955")]
         [Fact]
         public void GetDeclaredSymbolSameNameMethodsDiffNSs()
         {
@@ -3041,7 +3064,7 @@ namespace NS1 {
             Assert.Equal(ns2, dsym2);
         }
 
-        [WorkItem(538953, "DevDiv")]
+        [WorkItem(538953, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538953")]
         [Fact]
         public void GetDeclaredSymbolAccessorErrs1()
         {
@@ -3079,7 +3102,7 @@ namespace NS1 {
             Assert.Null(dsym);
         }
 
-        [WorkItem(538953, "DevDiv")]
+        [WorkItem(538953, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538953")]
         [Fact]
         public void GetDeclaredSymbolAccessorErrs2()
         {
@@ -3099,7 +3122,7 @@ public sealed class ErrorProp
             Assert.Null(model.GetDeclaredSymbol(accessorDecl));
         }
 
-        [WorkItem(538148, "DevDiv")]
+        [WorkItem(538148, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538148")]
         [Fact]
         public void TestOverloadsInImplementedInterfaceMethods()
         {
@@ -3212,8 +3235,8 @@ class C
         }
 
         // named and optional parameters
-        [WorkItem(539346, "DevDiv")]
-        [WorkItem(540792, "DevDiv")]
+        [WorkItem(539346, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539346")]
+        [WorkItem(540792, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540792")]
         [Fact]
         public void TestGetDeclaredSymbolForParamInLambdaExprPrecededByExplicitKeyword()
         {
@@ -3232,7 +3255,7 @@ class Program
             var root = tree.GetCompilationUnitRoot();
 
             // Get the parameter node from the SyntaxTree for the lambda parameter "param1"
-            var paramNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("param1")).Parent;
+            var paramNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("param1", StringComparison.Ordinal)).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(paramNode);
@@ -3241,8 +3264,8 @@ class Program
         }
 
         //named and optional parameters
-        [WorkItem(539346, "DevDiv")]
-        [WorkItem(540792, "DevDiv")]
+        [WorkItem(539346, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539346")]
+        [WorkItem(540792, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540792")]
         [Fact]
         public void TestGetDeclaredSymbolForLambdaInDefaultValue1()
         {
@@ -3259,7 +3282,7 @@ class Program
 
             // Get the parameter node from the SyntaxTree for the lambda parameter "param1"
             var root = tree.GetCompilationUnitRoot();
-            var paramNode = root.FindToken(root.ToFullString().IndexOf("x")).Parent;
+            var paramNode = root.FindToken(root.ToFullString().IndexOf('x')).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(paramNode);
@@ -3267,8 +3290,8 @@ class Program
             Assert.NotNull(symbol);
         }
 
-        [WorkItem(540792, "DevDiv")]
-        [WorkItem(539346, "DevDiv")]
+        [WorkItem(540792, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540792")]
+        [WorkItem(539346, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/539346")]
         [Fact]
         public void TestGetDeclaredSymbolForLambdaInDefaultValue2()
         {
@@ -3285,7 +3308,7 @@ class Program
 
             // Get the parameter node from the SyntaxTree for the lambda parameter "param1"
             var root = tree.GetCompilationUnitRoot();
-            var paramNode = root.FindToken(root.ToFullString().IndexOf("x")).Parent;
+            var paramNode = root.FindToken(root.ToFullString().IndexOf('x')).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(paramNode);
@@ -3293,7 +3316,7 @@ class Program
             Assert.NotNull(symbol);
         }
 
-        [WorkItem(540834, "DevDiv")]
+        [WorkItem(540834, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540834")]
         [Fact]
         public void TestGetDeclaredSymbolForIncompleteMemberNode()
         {
@@ -3326,7 +3349,7 @@ class Test
             var root = tree.GetCompilationUnitRoot();
 
             // Get the foreach syntax node from the SyntaxTree
-            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("foreach")).Parent;
+            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("foreach", StringComparison.Ordinal)).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(foreachNode);
@@ -3334,7 +3357,7 @@ class Test
             Assert.NotNull(symbol);
         }
 
-        [WorkItem(541057, "DevDiv")]
+        [WorkItem(541057, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541057")]
         [Fact]
         public void TestGetDeclaredSymbolConstDelegateDecl()
         {
@@ -3347,7 +3370,7 @@ public class Test
             var root = tree.GetCompilationUnitRoot();
 
             // Get the delegate declaration syntax node from the SyntaxTree
-            var delegateNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("delegate")).Parent;
+            var delegateNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("delegate", StringComparison.Ordinal)).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(delegateNode);
@@ -3355,7 +3378,7 @@ public class Test
             Assert.NotNull(symbol);
         }
 
-        [WorkItem(541084, "DevDiv")]
+        [WorkItem(541084, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541084")]
         [Fact]
         public void TestIncompleteUsingDirectiveSyntax()
         {
@@ -3366,7 +3389,7 @@ using myType1 =
             var root = tree.GetCompilationUnitRoot();
 
             // Get the using directive syntax node from the SyntaxTree
-            var usingNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("using")).Parent;
+            var usingNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("using", StringComparison.Ordinal)).Parent;
 
             var model = compilation.GetSemanticModel(tree);
             var symbol = model.GetDeclaredSymbol(usingNode);
@@ -3375,7 +3398,7 @@ using myType1 =
             Assert.Equal(SymbolKind.Alias, symbol.Kind);
         }
 
-        [WorkItem(541225, "DevDiv")]
+        [WorkItem(541225, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541225")]
         [Fact]
         public void TestGetDeclaredSymbolForeachStmt()
         {
@@ -3395,7 +3418,7 @@ class C
             var tree = compilation.SyntaxTrees[0];
 
             // Get the foreach syntax node from the SyntaxTree
-            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa")).Parent;
+            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.ForEachStatement, foreachNode.Kind());
 
             var model = compilation.GetSemanticModel(tree);
@@ -3403,7 +3426,7 @@ class C
             Assert.Equal("aaa", symbol.Name);
         }
 
-        [WorkItem(541225, "DevDiv")]
+        [WorkItem(541225, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541225")]
         [Fact]
         public void TestGetDeclaredSymbolForeachStmtError1()
         {
@@ -3419,14 +3442,14 @@ class C
             var model = compilation.GetSemanticModel(tree);
 
             // Get the foreach syntax node from the SyntaxTree
-            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa")).Parent;
+            var foreachNode = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.ForEachStatement, foreachNode.Kind());
 
             var symbol = model.GetDeclaredSymbol(foreachNode);
             Assert.Equal("aaa", symbol.Name);
         }
 
-        [WorkItem(541225, "DevDiv")]
+        [WorkItem(541225, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541225")]
         [Fact]
         public void TestGetDeclaredSymbolForeachStmtError2()
         {
@@ -3446,20 +3469,20 @@ namespace N
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
 
-            var foreachNode1 = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa")).Parent;
+            var foreachNode1 = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.ForEachStatement, foreachNode1.Kind());
 
             var symbol1 = model.GetDeclaredSymbol(foreachNode1);
             Assert.Equal("aaa", symbol1.Name);
 
-            var foreachNode2 = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("bbb")).Parent;
+            var foreachNode2 = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("bbb", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.ForEachStatement, foreachNode2.Kind());
 
             var symbol2 = model.GetDeclaredSymbol(foreachNode2);
             Assert.Equal("bbb", symbol2.Name);
         }
 
-        [WorkItem(541225, "DevDiv")]
+        [WorkItem(541225, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541225")]
         [Fact]
         public void TestGetDeclaredSymbolCatchClause()
         {
@@ -3483,14 +3506,14 @@ class C
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
 
-            var catchDeclaration = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa")).Parent;
+            var catchDeclaration = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("aaa", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.CatchDeclaration, catchDeclaration.Kind());
 
             var symbol = model.GetDeclaredSymbol(catchDeclaration);
             Assert.Equal("aaa", symbol.Name);
         }
 
-        [WorkItem(541214, "DevDiv")]
+        [WorkItem(541214, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541214")]
         [Fact]
         public void TestGetDeclaredSymbolTopLevelMethod()
         {
@@ -3504,7 +3527,7 @@ class void Foo()
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
 
-            var methodDecl = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Foo")).Parent;
+            var methodDecl = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Foo", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.MethodDeclaration, methodDecl.Kind());
 
             var symbol = model.GetDeclaredSymbol(methodDecl);
@@ -3512,7 +3535,7 @@ class void Foo()
             Assert.Equal("Foo", symbol.Name);
         }
 
-        [WorkItem(541214, "DevDiv")]
+        [WorkItem(541214, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541214")]
         [Fact]
         public void TestGetDeclaredSymbolNamespaceLevelMethod()
         {
@@ -3529,7 +3552,7 @@ namespace N
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
 
-            var methodDecl = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Foo")).Parent;
+            var methodDecl = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Foo", StringComparison.Ordinal)).Parent;
             Assert.Equal(SyntaxKind.MethodDeclaration, methodDecl.Kind());
 
             var symbol = model.GetDeclaredSymbol(methodDecl);
@@ -3537,7 +3560,7 @@ namespace N
             Assert.Equal("Foo", symbol.Name);
         }
 
-        [WorkItem(543238, "DevDiv")]
+        [WorkItem(543238, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543238")]
         [Fact]
         public void TestGetDeclaredSymbolEnumMemberDeclarationSyntax()
         {
@@ -3586,7 +3609,7 @@ class Program
 }");
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
-            dynamic methodDecl = (MethodDeclarationSyntax)tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Main")).Parent;
+            dynamic methodDecl = (MethodDeclarationSyntax)tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("Main", StringComparison.Ordinal)).Parent;
             IdentifierNameSyntax x = methodDecl.Body.Statements[0].Declaration.Variables[0].Initializer.Value.Body;
             var info = model.GetSemanticInfoSummary(x);
             Assert.Equal(SymbolKind.Parameter, info.Symbol.Kind);
@@ -3595,23 +3618,23 @@ class Program
             Assert.Equal(SpecialType.System_Int32, parameter.Type.SpecialType);
         }
 
-        [WorkItem(541800, "DevDiv")]
+        [WorkItem(541800, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/541800")]
         [Fact]
-        public void GetDeclaredSymbolOnGlobalStmtParseOptionInteractive()
+        public void GetDeclaredSymbolOnGlobalStmtParseOptionScript()
         {
-            var parseOptions = TestOptions.Interactive;
+            var parseOptions = TestOptions.Script;
             var compilation = CreateCompilationWithMscorlib(@"/", parseOptions: parseOptions);
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
 
-            var globalStmt = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf("/")).Parent.AncestorsAndSelf().Where(x => x.IsKind(SyntaxKind.GlobalStatement)).Single();
+            var globalStmt = tree.GetCompilationUnitRoot().FindToken(tree.GetCompilationUnitRoot().ToFullString().IndexOf('/')).Parent.AncestorsAndSelf().Single(x => x.IsKind(SyntaxKind.GlobalStatement));
 
             var symbol = model.GetDeclaredSymbol(globalStmt);
 
             Assert.Null(symbol);
         }
 
-        [WorkItem(542102, "DevDiv")]
+        [WorkItem(542102, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542102")]
         [Fact]
         public void GetSymbolInGoto()
         {
@@ -3634,7 +3657,7 @@ class Program
             Assert.Equal(SymbolKind.Label, symbol.Kind);
         }
 
-        [WorkItem(542342, "DevDiv")]
+        [WorkItem(542342, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542342")]
         [Fact]
         public void SourceNamespaceSymbolMergeWithMetadata()
         {
@@ -3677,9 +3700,9 @@ class Program
             Assert.Same(declSymbol, memSymbol);
         }
 
-        [WorkItem(542459, "DevDiv")]
+        [WorkItem(542459, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542459")]
         [Fact]
-        public void StructKeywordInsideSwitchWithInteractiveParseOption()
+        public void StructKeywordInsideSwitchWithScriptParseOption()
         {
             var compilation = CreateCompilationWithMscorlib(@"
 using System;
@@ -3701,7 +3724,7 @@ class Test
         }
     }
 }
-", parseOptions: TestOptions.Interactive
+", parseOptions: TestOptions.Script
  );
 
             var tree = compilation.SyntaxTrees[0];
@@ -3711,7 +3734,7 @@ class Test
             Assert.NotEmpty(diagnostics);
         }
 
-        [WorkItem(542459, "DevDiv")]
+        [WorkItem(542459, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542459")]
         [Fact]
         public void Bug9728_SmallerReproCase()
         {
@@ -3720,7 +3743,7 @@ using System;
 struct break;
 ";
 
-            var compilation = CreateCompilationWithMscorlib(code, parseOptions: TestOptions.Interactive);
+            var compilation = CreateCompilationWithMscorlib(code, parseOptions: TestOptions.Script);
 
             var tree = compilation.SyntaxTrees[0];
             var model = compilation.GetSemanticModel(tree);
@@ -3729,7 +3752,7 @@ struct break;
             Assert.NotEmpty(diagnostics);
         }
 
-        [WorkItem(542483, "DevDiv")]
+        [WorkItem(542483, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542483")]
         [Fact]
         public void IncompleteStructDeclWithSpace()
         {
@@ -3748,9 +3771,9 @@ namespace N1
             Assert.NotEmpty(diagnostics);
         }
 
-        [WorkItem(542583, "DevDiv")]
+        [WorkItem(542583, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542583")]
         [Fact]
-        public void LambdaExpressionInFieldInitReferencingAnotherFieldWithInteractiveParseOption()
+        public void LambdaExpressionInFieldInitReferencingAnotherFieldWithScriptParseOption()
         {
             string sourceCode = @"
 using System.Linq;
@@ -3761,7 +3784,7 @@ class P
     double one = 1;
     public Func<int, int> z = (x => x + one);
 }";
-            var compilation = CreateCompilationWithMscorlibAndSystemCore(sourceCode, parseOptions: TestOptions.Interactive);
+            var compilation = CreateCompilationWithMscorlibAndSystemCore(sourceCode, parseOptions: TestOptions.Script);
             var tree = compilation.SyntaxTrees[0];
             var semanticModel = compilation.GetSemanticModel(tree);
             var queryExpr = tree.GetCompilationUnitRoot().DescendantNodes().OfType<ParenthesizedExpressionSyntax>().First();
@@ -3769,8 +3792,8 @@ class P
             Assert.Equal(SymbolKind.Method, symbolInfo.Symbol.Kind);
         }
 
-        [WorkItem(542495, "DevDiv")]
-        [Fact]
+        [WorkItem(542495, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542495")]
+        [ClrOnlyFact(ClrOnlyReason.Unknown)]
         public void AliasSymbolEquality()
         {
             string text = @"
@@ -3802,7 +3825,7 @@ class C
             Assert.NotSame(alias1, alias2);
         }
 
-        [WorkItem(542475, "DevDiv")]
+        [WorkItem(542475, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542475")]
         [Fact]
         public void PartialMethods()
         {
@@ -3827,7 +3850,7 @@ partial class program
             Assert.Equal(param.Identifier.Span, symbol.Locations[0].SourceSpan);
         }
 
-        [WorkItem(542217, "DevDiv")]
+        [WorkItem(542217, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542217")]
         [Fact]
         public void ConflictingAliases()
         {
@@ -3867,7 +3890,7 @@ class C
             Assert.Equal(alias2, alias2b);
         }
 
-        [WorkItem(542902, "DevDiv")]
+        [WorkItem(542902, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542902")]
         [Fact]
         public void InaccessibleDefaultAttributeConstructor()
         {
@@ -3894,7 +3917,7 @@ public class X { }
             Assert.Equal(CandidateReason.NotAnAttributeType, symbolInfo.CandidateReason);
         }
 
-        [WorkItem(543024, "DevDiv")]
+        [WorkItem(543024, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543024")]
         [Fact]
         public void BindUnboundGenericType()
         {
@@ -4011,7 +4034,7 @@ class M {
             var tree = compilation.SyntaxTrees.Single();
             var model = compilation.GetSemanticModel(tree);
 
-            var position1 = tree.GetText().ToString().IndexOf("WriteLine");
+            var position1 = tree.GetText().ToString().IndexOf("WriteLine", StringComparison.Ordinal);
             var expression = SyntaxFactory.ParseExpression("B");
 
             var semanticInfoExpression = model.GetSpeculativeSemanticInfoSummary(position1, expression, SpeculativeBindingOption.BindAsExpression);
@@ -4032,7 +4055,7 @@ class M {
             return SyntaxFactory.ParseCompilationUnit(source + " class X {}").Members.First().AsTypeDeclarationSyntax().AttributeLists.First().Attributes.First();
         }
 
-        [WorkItem(653957, "DevDiv")]
+        [WorkItem(653957, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/653957")]
         [Fact]
         public void MissingExtensionMethodNullDereference()
         {
@@ -4092,7 +4115,7 @@ class C {
             var tree = compilation.SyntaxTrees.Single();
             var model = compilation.GetSemanticModel(tree);
 
-            var position = tree.GetText().ToString().IndexOf("class C {");
+            var position = tree.GetText().ToString().IndexOf("class C {", StringComparison.Ordinal);
             var attr1 = BindAttributeSyntax("[Obsolete]");
 
             var symbolInfo = model.GetSpeculativeSymbolInfo(position, attr1);
@@ -4135,7 +4158,7 @@ class C {
             Assert.Equal("C.DAttribute..ctor()", symbolInfo.Symbol.ToTestDisplayString());
 
             var attr6 = BindAttributeSyntax(@"[O(""hello"")]");
-            var position2 = tree.GetText().ToString().IndexOf("C foo<O>");
+            var position2 = tree.GetText().ToString().IndexOf("C foo<O>", StringComparison.Ordinal);
 
             symbolInfo = model.GetSpeculativeSymbolInfo(position2, attr6);
             Assert.NotNull(symbolInfo.Symbol);
@@ -4144,7 +4167,7 @@ class C {
             Assert.Equal("System.ObsoleteAttribute..ctor(System.String message)", symbolInfo.Symbol.ToTestDisplayString());
 
             var attr7 = BindAttributeSyntax(@"[O(""hello"")]");
-            var position3 = tree.GetText().ToString().IndexOf("Serializable");
+            var position3 = tree.GetText().ToString().IndexOf("Serializable", StringComparison.Ordinal);
 
             symbolInfo = model.GetSpeculativeSymbolInfo(position3, attr7);
             Assert.NotNull(symbolInfo.Symbol);
@@ -4170,7 +4193,7 @@ class C {
             var tree = compilation.SyntaxTrees.Single();
             var parentModel = compilation.GetSemanticModel(tree);
 
-            var position = tree.GetText().ToString().IndexOf("class C {");
+            var position = tree.GetText().ToString().IndexOf("class C {", StringComparison.Ordinal);
 
             var attr1 = BindAttributeSyntax("[Obsolete]");
 
@@ -4247,7 +4270,7 @@ class C {
             Assert.Equal("C.DAttribute..ctor()", symbolInfo.Symbol.ToTestDisplayString());
 
             var attr6 = BindAttributeSyntax(@"[O(""hello"")]");
-            var position2 = tree.GetText().ToString().IndexOf("C foo<O>");
+            var position2 = tree.GetText().ToString().IndexOf("C foo<O>", StringComparison.Ordinal);
 
             success = parentModel.TryGetSpeculativeSemanticModel(position, attr6, out speculativeModel);
             Assert.True(success);
@@ -4270,7 +4293,7 @@ class C {
             Assert.Equal("ObsoleteAttribute", aliasSymbol.Target.Name);
 
             var attr7 = BindAttributeSyntax(@"[O(""hello"")]");
-            var position3 = tree.GetText().ToString().IndexOf("Serializable");
+            var position3 = tree.GetText().ToString().IndexOf("Serializable", StringComparison.Ordinal);
 
             success = parentModel.TryGetSpeculativeSemanticModel(position3, attr7, out speculativeModel);
             Assert.True(success);
@@ -4435,7 +4458,7 @@ class C
             Assert.Equal(declaredSymbol, lookupSymbols.Single()); //operators can't be referenced by name, but the user asked for it specifically
         }
 
-        [WorkItem(543415, "DevDiv")]
+        [WorkItem(543415, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543415")]
         [Fact]
         public void AliasRace1()
         {
@@ -4459,7 +4482,7 @@ class C { }
             var tree = compilation.SyntaxTrees.Single();
             var model = compilation.GetSemanticModel(tree);
 
-            int position = text.IndexOf("Obsolete");
+            int position = text.IndexOf("Obsolete", StringComparison.Ordinal);
 
             var result = Parallel.For(0, 100, i =>
             {
@@ -4472,7 +4495,7 @@ class C { }
             Assert.True(result.IsCompleted);
         }
 
-        [WorkItem(543415, "DevDiv")]
+        [WorkItem(543415, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543415")]
         [Fact]
         public void AliasRace2()
         {
@@ -4495,7 +4518,7 @@ class C { }
 
             var tree = compilation.SyntaxTrees.Single();
 
-            int position = text.IndexOf("Obsolete");
+            int position = text.IndexOf("Obsolete", StringComparison.Ordinal);
 
             var result = Parallel.For(0, 100, i =>
             {
@@ -4509,7 +4532,7 @@ class C { }
             Assert.True(result.IsCompleted);
         }
 
-        [WorkItem(544100, "DevDiv")]
+        [WorkItem(544100, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544100")]
         [Fact]
         public void NoLocalScopeBinder()
         {
@@ -4531,7 +4554,7 @@ class C
             model.GetSemanticInfoSummary(node.Type);
         }
 
-        [WorkItem(543868, "DevDiv")]
+        [WorkItem(543868, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543868")]
         [Fact]
         public void IsEventUsableAsField()
         {
@@ -4586,13 +4609,13 @@ class Other
             var fieldLikeEvent = declaringType.GetMember<EventSymbol>("E");
             var customEvent = declaringType.GetMember<EventSymbol>("F");
 
-            int enclosingTypePosition = text.IndexOf("AAA");
+            int enclosingTypePosition = text.IndexOf("AAA", StringComparison.Ordinal);
             Assert.InRange(enclosingTypePosition, 0, text.Length);
-            int declaringTypePosition = text.IndexOf("BBB");
+            int declaringTypePosition = text.IndexOf("BBB", StringComparison.Ordinal);
             Assert.InRange(declaringTypePosition, 0, text.Length);
-            int nestedTypePosition = text.IndexOf("CCC");
+            int nestedTypePosition = text.IndexOf("CCC", StringComparison.Ordinal);
             Assert.InRange(nestedTypePosition, 0, text.Length);
-            int otherTypePosition = text.IndexOf("DDD");
+            int otherTypePosition = text.IndexOf("DDD", StringComparison.Ordinal);
             Assert.InRange(otherTypePosition, 0, text.Length);
 
             Assert.False(model.IsEventUsableAsField(enclosingTypePosition, fieldLikeEvent));
@@ -4651,7 +4674,7 @@ class C : A<>.B<> { }";
             Assert.Equal(type.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), "A<?>.B<?>");
         }
 
-        [WorkItem(563572, "DevDiv")]
+        [WorkItem(563572, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/563572")]
         [Fact]
         public void InvalidEnumDeclaration()
         {
@@ -4679,7 +4702,7 @@ public class C
             Assert.Equal(SymbolKind.Event, eventSymbol.Kind);
         }
 
-        [WorkItem(563572, "DevDiv")]
+        [WorkItem(563572, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/563572")]
         [Fact]
         public void TypeMembersWithoutNames()
         {

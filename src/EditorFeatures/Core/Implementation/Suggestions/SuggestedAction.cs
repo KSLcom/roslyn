@@ -2,40 +2,50 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media;
 using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Editor.Host;
-using Microsoft.CodeAnalysis.Editor.Shared.Options;
+using Microsoft.CodeAnalysis.Editor.Shared;
+using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
+using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Extensions;
-using Microsoft.CodeAnalysis.Options;
+using Microsoft.CodeAnalysis.Shared.TestHooks;
+using Microsoft.CodeAnalysis.Shared.Utilities;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Text;
 using Roslyn.Utilities;
-using Microsoft.CodeAnalysis.Notification;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
 {
     /// <summary>
     /// Base class for all Roslyn light bulb menu items.
     /// </summary>
-    internal partial class SuggestedAction : ISuggestedAction, IEquatable<ISuggestedAction>
+    internal partial class SuggestedAction : ForegroundThreadAffinitizedObject, ISuggestedAction, IEquatable<ISuggestedAction>
     {
+        protected readonly IAsynchronousOperationListener OperationListener;
         protected readonly Workspace Workspace;
         protected readonly ITextBuffer SubjectBuffer;
         protected readonly ICodeActionEditHandlerService EditHandler;
 
         protected readonly object Provider;
-        protected readonly CodeAction CodeAction;
+        internal readonly CodeAction CodeAction;
+        private readonly ImmutableArray<SuggestedActionSet> _actionSets;
+        protected readonly IWaitIndicator WaitIndicator;
 
-        protected SuggestedAction(
+        internal SuggestedAction(
             Workspace workspace,
             ITextBuffer subjectBuffer,
             ICodeActionEditHandlerService editHandler,
+            IWaitIndicator waitIndicator,
             CodeAction codeAction,
-            object provider)
+            object provider,
+            IAsynchronousOperationListener operationListener,
+            IEnumerable<SuggestedActionSet> actionSets = null)
         {
             Contract.ThrowIfTrue(provider == null);
 
@@ -43,8 +53,13 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
             this.SubjectBuffer = subjectBuffer;
             this.CodeAction = codeAction;
             this.EditHandler = editHandler;
+            this.WaitIndicator = waitIndicator;
             this.Provider = provider;
+            OperationListener = operationListener;
+            _actionSets = actionSets.AsImmutableOrEmpty();
         }
+
+        internal virtual CodeActionPriority Priority => CodeAction?.Priority ?? CodeActionPriority.Medium;
 
         public bool TryGetTelemetryId(out Guid telemetryId)
         {
@@ -60,42 +75,123 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
             return true;
         }
 
-        public virtual void Invoke(CancellationToken cancellationToken)
+        // NOTE: We want to avoid computing the operations on the UI thread. So we use Task.Run() to do this work on the background thread.
+        protected Task<ImmutableArray<CodeActionOperation>> GetOperationsAsync(
+            IProgressTracker progressTracker, CancellationToken cancellationToken)
         {
+            return Task.Run(
+                async () => await CodeAction.GetOperationsAsync(progressTracker, cancellationToken).ConfigureAwait(false), cancellationToken);
+        }
+
+        protected Task<IEnumerable<CodeActionOperation>> GetOperationsAsync(CodeActionWithOptions actionWithOptions, object options, CancellationToken cancellationToken)
+        {
+            return Task.Run(
+                async () => await actionWithOptions.GetOperationsAsync(options, cancellationToken).ConfigureAwait(false), cancellationToken);
+        }
+
+        protected Task<ImmutableArray<CodeActionOperation>> GetPreviewOperationsAsync(CancellationToken cancellationToken)
+        {
+            return Task.Run(
+                async () => await CodeAction.GetPreviewOperationsAsync(cancellationToken).ConfigureAwait(false), cancellationToken);
+        }
+
+        public void Invoke(CancellationToken cancellationToken)
+        {
+            this.AssertIsForeground();
+            
+            // Create a task to do the actual async invocation of this action.
+            // For testing purposes mark that we still have an outstanding async 
+            // operation so that we don't try to validate things too soon.
+            var asyncToken = OperationListener.BeginAsyncOperation(GetType().Name + "." + nameof(Invoke));
+            var task = YieldThenInvokeAsync(cancellationToken);
+            task.CompletesAsyncOperation(asyncToken);
+        }
+
+        private async Task YieldThenInvokeAsync(CancellationToken cancellationToken)
+        {
+            this.AssertIsForeground();
+
+            // Yield the UI thread so that the light bulb can be dismissed.  This is necessary
+            // as some code actions may be long running, and we don't want the light bulb to
+            // stay on screen.
+            await Task.Yield();
+
+            // Always wrap whatever we're doing in a threaded wait dialog.
+            using (var context = this.WaitIndicator.StartWait(CodeAction.Title, CodeAction.Message, allowCancel: true, showProgress: true))
+            using (var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, context.CancellationToken))
+            {
+                this.AssertIsForeground();
+
+                // Then proceed and actually do the invoke.
+                await InvokeAsync(context.ProgressTracker, linkedSource.Token).ConfigureAwait(true);
+            }
+        }
+
+        protected virtual async Task InvokeAsync( 
+            IProgressTracker progressTracker, CancellationToken cancellationToken)
+        {
+            this.AssertIsForeground();
+
             var snapshot = this.SubjectBuffer.CurrentSnapshot;
 
             using (new CaretPositionRestorer(this.SubjectBuffer, this.EditHandler.AssociatedViewService))
             {
-                var extensionManager = this.Workspace.Services.GetService<IExtensionManager>();
-                extensionManager.PerformAction(Provider, () =>
+                Func<Document> getFromDocument = () => this.SubjectBuffer.CurrentSnapshot.GetOpenDocumentInCurrentContextWithChanges();
+                await InvokeCoreAsync(getFromDocument, progressTracker, cancellationToken).ConfigureAwait(true);
+            }
+        }
+
+        protected async Task InvokeCoreAsync(
+            Func<Document> getFromDocument, IProgressTracker progressTracker, CancellationToken cancellationToken)
+        {
+            this.AssertIsForeground();
+
+            var extensionManager = this.Workspace.Services.GetService<IExtensionManager>();
+            await extensionManager.PerformActionAsync(Provider, async () =>
+            {
+                await InvokeWorkerAsync(getFromDocument, progressTracker, cancellationToken).ConfigureAwait(false);
+            }).ConfigureAwait(true);
+        }
+
+        private async Task InvokeWorkerAsync(
+            Func<Document> getFromDocument, IProgressTracker progressTracker, CancellationToken cancellationToken)
+        {
+            this.AssertIsForeground();
+            IEnumerable<CodeActionOperation> operations = null;
+
+            // NOTE: As mentioned above, we want to avoid computing the operations on the UI thread.
+            // However, for CodeActionWithOptions, GetOptions() might involve spinning up a dialog
+            // to compute the options and must be done on the UI thread.
+            var actionWithOptions = this.CodeAction as CodeActionWithOptions;
+            if (actionWithOptions != null)
+            {
+                var options = actionWithOptions.GetOptions(cancellationToken);
+                if (options != null)
                 {
-                    IEnumerable<CodeActionOperation> operations = null;
+                    // ConfigureAwait(true) so we come back to the same thread as 
+                    // we do all application on the UI thread.
+                    operations = await GetOperationsAsync(actionWithOptions, options, cancellationToken).ConfigureAwait(true);
+                    this.AssertIsForeground();
+                }
+            }
+            else
+            {
+                // ConfigureAwait(true) so we come back to the same thread as 
+                // we do all application on the UI thread.
+                operations = await GetOperationsAsync(progressTracker, cancellationToken).ConfigureAwait(true);
+                this.AssertIsForeground();
+            }
 
-                    // NOTE: We want to avoid computing the operations on the UI thread, so we will kick off a task to GetOperations.
-                    // However, for CodeActionWithOptions, GetOptions might involve spinning up a dialog to compute the options and must be done on the UI thread.
-                    // Hence we need the below if-else statement instead of just invoking CodeAction.GetOperationsAsync()
-                    var actionWithOptions = this.CodeAction as CodeActionWithOptions;
-                    if (actionWithOptions != null)
-                    {
-                        var options = actionWithOptions.GetOptions(cancellationToken);
-                        if (options != null)
-                        {
-                            operations = Task.Run(
-                                async () => await actionWithOptions.GetOperationsAsync(options, cancellationToken).ConfigureAwait(false), cancellationToken).WaitAndGetResult(cancellationToken);
-                        }
-                    }
-                    else
-                    {
-                        operations = Task.Run(
-                            async () => await this.CodeAction.GetOperationsAsync(cancellationToken).ConfigureAwait(false), cancellationToken).WaitAndGetResult(cancellationToken);
-                    }
+            if (operations != null)
+            {
+                // Clear the progress we showed while computing the action.
+                // We'll now show progress as we apply the action.
+                progressTracker.Clear();
 
-                    if (operations != null)
-                    {
-                        var document = this.SubjectBuffer.CurrentSnapshot.GetOpenDocumentInCurrentContextWithChanges();
-                        EditHandler.Apply(Workspace, document, operations, CodeAction.Title, cancellationToken);
-                    }
-                });
+                // ConfigureAwait(true) so we come back to the same thread as 
+                // we do all application on the UI thread.
+                await EditHandler.ApplyAsync(Workspace, getFromDocument(), operations, CodeAction.Title, 
+                    progressTracker, cancellationToken).ConfigureAwait(true);
             }
         }
 
@@ -106,91 +202,126 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
                 // Underscores will become an accelerator in the VS smart tag.  So we double all
                 // underscores so they actually get represented as an underscore in the UI.
                 var extensionManager = this.Workspace.Services.GetService<IExtensionManager>();
-                var text = extensionManager.PerformFunction(Provider, () => CodeAction.Title, string.Empty);
+                var text = extensionManager.PerformFunction(Provider, () => CodeAction.Title, defaultValue: string.Empty);
                 return text.Replace("_", "__");
             }
         }
 
-        private IEnumerable<CodeActionOperation> _operations;
-        protected SolutionPreviewResult GetPreviewResult(CancellationToken cancellationToken)
+        protected async Task<SolutionPreviewResult> GetPreviewResultAsync(CancellationToken cancellationToken)
         {
-            if (_operations == null)
-            {
-                _operations = Task.Run(
-                    async () => await this.CodeAction.GetPreviewOperationsAsync(cancellationToken).ConfigureAwait(false), cancellationToken).WaitAndGetResult(cancellationToken);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
-            return EditHandler.GetPreviews(Workspace, _operations, cancellationToken);
+            // We will always invoke this from the UI thread.
+            AssertIsForeground();
+
+            // We use ConfigureAwait(true) to stay on the UI thread.
+            var operations = await GetPreviewOperationsAsync(cancellationToken).ConfigureAwait(true);
+
+            return EditHandler.GetPreviews(Workspace, operations, cancellationToken);
         }
 
-        public virtual object GetPreview(CancellationToken cancellationToken)
+        public virtual bool HasPreview
         {
-            var extensionManager = this.Workspace.Services.GetService<IExtensionManager>();
-            var previewContent = extensionManager.PerformFunction(Provider, () =>
+            get
             {
-                var previewResult = GetPreviewResult(cancellationToken);
+                // HasPreview is called synchronously on the UI thread. In order to avoid blocking the UI thread,
+                // we need to provide a 'quick' answer here as opposed to the 'right' answer. Providing the 'right'
+                // answer is expensive (because we will need to call CodeAction.GetPreviewOperationsAsync() for this
+                // and this will involve computing the changed solution for the ApplyChangesOperation for the fix /
+                // refactoring). So we always return 'true' here (so that platform will call GetActionSetsAsync()
+                // below). Platform guarantees that nothing bad will happen if we return 'true' here and later return
+                // 'null' / empty collection from within GetPreviewAsync().
+
+                return true;
+            }
+        }
+
+        public virtual async Task<object> GetPreviewAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Light bulb will always invoke this function on the UI thread.
+            AssertIsForeground();
+
+            var previewPaneService = Workspace.Services.GetService<IPreviewPaneService>();
+            if (previewPaneService == null)
+            {
+                return null;
+            }
+
+            // after this point, this method should only return at GetPreviewPane. otherwise, DifferenceViewer will leak
+            // since there is no one to close the viewer
+            var preferredDocumentId = Workspace.GetDocumentIdInCurrentContext(SubjectBuffer.AsTextContainer());
+            var preferredProjectId = preferredDocumentId?.ProjectId;
+
+            var extensionManager = this.Workspace.Services.GetService<IExtensionManager>();
+            var previewContents = await extensionManager.PerformFunctionAsync(Provider, async () =>
+            {
+                // We need to stay on UI thread after GetPreviewResultAsync() so that TakeNextPreviewAsync()
+                // below can execute on UI thread. We use ConfigureAwait(true) to stay on the UI thread.
+                var previewResult = await GetPreviewResultAsync(cancellationToken).ConfigureAwait(true);
                 if (previewResult == null)
                 {
                     return null;
                 }
                 else
                 {
-                    var preferredDocumentId = Workspace.GetDocumentIdInCurrentContext(SubjectBuffer.AsTextContainer());
-                    var preferredProjectid = preferredDocumentId == null ? null : preferredDocumentId.ProjectId;
-
-                    return previewResult.TakeNextPreview(preferredDocumentId, preferredProjectid);
+                    // TakeNextPreviewAsync() needs to run on UI thread.
+                    AssertIsForeground();
+                    return await previewResult.GetPreviewsAsync(preferredDocumentId, preferredProjectId, cancellationToken).ConfigureAwait(true);
                 }
-            });
 
-            var optionService = Workspace.Services.GetService<IOptionService>();
-            if (optionService == null || !optionService.GetOption(InternalFeatureOnOffOptions.EnhancedPreviewPane))
-            {
-                return previewContent;
-            }
+                // GetPreviewPane() below needs to run on UI thread. We use ConfigureAwait(true) to stay on the UI thread.
+            }, defaultValue: null).ConfigureAwait(true);
 
-            var previewPaneService = Workspace.Services.GetService<IPreviewPaneService>();
-            if (previewPaneService == null)
-            {
-                return previewContent;
-            }
+            // GetPreviewPane() needs to run on the UI thread.
+            AssertIsForeground();
 
-            return previewPaneService.GetPreviewPane(GetDiagnostic(), previewContent);
+            string language;
+            string projectType;
+            Workspace.GetLanguageAndProjectType(preferredProjectId, out language, out projectType);
+
+            return previewPaneService.GetPreviewPane(GetDiagnostic(), language, projectType, previewContents);
         }
 
-        protected virtual Diagnostic GetDiagnostic()
+        protected virtual DiagnosticData GetDiagnostic()
         {
             return null;
         }
 
+        public virtual bool HasActionSets => _actionSets.Length > 0;
+
+        public virtual Task<IEnumerable<SuggestedActionSet>> GetActionSetsAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IEnumerable<SuggestedActionSet>>(GetActionSets());
+        }
+
+        internal ImmutableArray<SuggestedActionSet> GetActionSets()
+        {
+            return _actionSets;
+        }
+
         #region not supported
+
         void IDisposable.Dispose()
         {
             // do nothing
         }
 
-        public virtual IEnumerable<SuggestedActionSet> ActionSets
-        {
-            get
-            {
-                return null;
-            }
-        }
+        // same as display text
+        string ISuggestedAction.IconAutomationText => DisplayText;
 
-        string ISuggestedAction.IconAutomationText
+        ImageMoniker ISuggestedAction.IconMoniker
         {
             get
             {
-                // same as display text
-                return DisplayText;
-            }
-        }
+                if (CodeAction.Glyph.HasValue)
+                {
+                    var imageService = Workspace.Services.GetService<IImageMonikerService>();
+                    return imageService.GetImageMoniker((Glyph)CodeAction.Glyph.Value);
+                }
 
-        ImageSource ISuggestedAction.IconSource
-        {
-            get
-            {
-                // no icon support
-                return null;
+                return default(ImageMoniker);
             }
         }
 
@@ -202,9 +333,11 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
                 return null;
             }
         }
+
         #endregion
 
         #region IEquatable<ISuggestedAction>
+
         public bool Equals(ISuggestedAction other)
         {
             return Equals(other as SuggestedAction);
@@ -215,7 +348,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
             return Equals(obj as SuggestedAction);
         }
 
-        public bool Equals(SuggestedAction otherSuggestedAction)
+        internal bool Equals(SuggestedAction otherSuggestedAction)
         {
             if (otherSuggestedAction == null)
             {
@@ -250,6 +383,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Suggestions
 
             return Hash.Combine(Provider.GetHashCode(), CodeAction.EquivalenceKey.GetHashCode());
         }
+
         #endregion
     }
 }

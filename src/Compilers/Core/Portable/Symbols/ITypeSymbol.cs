@@ -4,6 +4,13 @@ using System.Collections.Immutable;
 
 namespace Microsoft.CodeAnalysis
 {
+    /// <summary>
+    /// Represents a type.
+    /// </summary>
+    /// <remarks>
+    /// This interface is reserved for implementation by its associated APIs. We reserve the right to
+    /// change it in the future.
+    /// </remarks>
     public interface ITypeSymbol : INamespaceOrTypeSymbol
     {
         /// <summary>
@@ -56,6 +63,11 @@ namespace Microsoft.CodeAnalysis
         /// Is this a symbol for an anonymous type (including anonymous VB delegate).
         /// </summary>
         bool IsAnonymousType { get; }
+
+        /// <summary>
+        /// Is this a symbol for a tuple .
+        /// </summary>
+        bool IsTupleType { get; }
 
         /// <summary>
         /// The original definition of this symbol. If this symbol is constructed from another

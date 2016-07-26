@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp
 {
@@ -115,23 +116,26 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         public static string OperatorNameFromDeclaration(Syntax.InternalSyntax.OperatorDeclarationSyntax declaration)
         {
-            if (SyntaxFacts.IsBinaryExpressionOperatorToken(declaration.OperatorToken.Kind))
+            var opTokenKind = declaration.OperatorToken.Kind;
+
+            if (SyntaxFacts.IsBinaryExpressionOperatorToken(opTokenKind))
             {
                 // Some tokens may be either unary or binary operators (e.g. +, -).
-                if (SyntaxFacts.IsPrefixUnaryExpressionOperatorToken(declaration.OperatorToken.Kind) &&
+                if (SyntaxFacts.IsPrefixUnaryExpressionOperatorToken(opTokenKind) &&
                     declaration.ParameterList.Parameters.Count == 1)
                 {
-                    return OperatorFacts.UnaryOperatorNameFromSyntaxKind(declaration.OperatorToken.Kind);
+                    return OperatorFacts.UnaryOperatorNameFromSyntaxKind(opTokenKind);
                 }
 
-                return OperatorFacts.BinaryOperatorNameFromSyntaxKind(declaration.OperatorToken.Kind);
+                return OperatorFacts.BinaryOperatorNameFromSyntaxKind(opTokenKind);
             }
-            else if (SyntaxFacts.IsUnaryOperatorDeclarationToken(declaration.OperatorToken.Kind))
+            else if (SyntaxFacts.IsUnaryOperatorDeclarationToken(opTokenKind))
             {
-                return OperatorFacts.UnaryOperatorNameFromSyntaxKind(declaration.OperatorToken.Kind);
+                return OperatorFacts.UnaryOperatorNameFromSyntaxKind(opTokenKind);
             }
             else
             {
+                // fallback for error recovery
                 return WellKnownMemberNames.UnaryPlusOperatorName;
             }
         }
@@ -151,8 +155,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case UnaryOperatorKind.True: return WellKnownMemberNames.TrueOperatorName;
                 case UnaryOperatorKind.False: return WellKnownMemberNames.FalseOperatorName;
                 default:
-                    Debug.Assert(false, "Unexpected postfix operator kind for user-defined unary operator");
-                    return WellKnownMemberNames.UnaryPlusOperatorName;
+                    throw ExceptionUtilities.UnexpectedValue(kind & UnaryOperatorKind.OpMask);
             }
         }
 
@@ -177,8 +180,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.Subtraction: return WellKnownMemberNames.SubtractionOperatorName;
                 case BinaryOperatorKind.Xor: return WellKnownMemberNames.ExclusiveOrOperatorName;
                 default:
-                    Debug.Assert(false, "Unexpected postfix operator kind for user-defined binary operator");
-                    return WellKnownMemberNames.AdditionOperatorName;
+                    throw ExceptionUtilities.UnexpectedValue(kind & BinaryOperatorKind.OpMask);
             }
         }
     }

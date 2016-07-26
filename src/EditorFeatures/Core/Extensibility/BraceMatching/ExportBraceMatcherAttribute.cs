@@ -9,14 +9,14 @@ namespace Microsoft.CodeAnalysis.Editor
     [AttributeUsage(AttributeTargets.Class)]
     internal class ExportBraceMatcherAttribute : ExportAttribute
     {
-        public string Language { get; private set; }
+        public string Language { get; }
 
         public ExportBraceMatcherAttribute(string language)
             : base(typeof(IBraceMatcher))
         {
             if (language == null)
             {
-                throw new ArgumentNullException("language");
+                throw new ArgumentNullException(nameof(language));
             }
 
             this.Language = language;

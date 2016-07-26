@@ -3,6 +3,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.ComponentModel.Composition;
+using System.Globalization;
 using Microsoft.CodeAnalysis.Options;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
@@ -44,8 +45,8 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
                     continue;
                 }
 
-                var priority = 1;
-                if (!int.TryParse(pair[1], out priority))
+                int priority;
+                if (!int.TryParse(pair[1], NumberStyles.None, CultureInfo.InvariantCulture, out priority))
                 {
                     continue;
                 }
@@ -70,10 +71,9 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
 
         private TokenInfo _lastTokenInfo;
 
-        public ImmutableArray<TodoCommentDescriptor> GetTokens(Workspace workspace)
+        public ImmutableArray<TodoCommentDescriptor> GetTokens(Document document)
         {
-            var optionService = workspace.Services.GetService<IOptionService>();
-            var optionText = optionService.GetOption(TodoCommentOptions.TokenList);
+            var optionText = document.Options.GetOption(TodoCommentOptions.TokenList);
 
             var lastInfo = _lastTokenInfo;
             if (lastInfo != null && lastInfo.OptionText == optionText)

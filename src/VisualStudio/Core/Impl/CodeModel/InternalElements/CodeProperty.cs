@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.InternalElements
 {
     [ComVisible(true)]
-    [ComDefaultInterface(typeof(EnvDTE.CodeProperty))]
+    [ComDefaultInterface(typeof(EnvDTE80.CodeProperty2))]
     public sealed partial class CodeProperty : AbstractCodeMember, ICodeElementContainer<CodeParameter>, ICodeElementContainer<CodeAttribute>, EnvDTE.CodeProperty, EnvDTE80.CodeProperty2
     {
         internal static EnvDTE.CodeProperty Create(
@@ -22,7 +22,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
             var element = new CodeProperty(state, fileCodeModel, nodeKey, nodeKind);
             var result = (EnvDTE.CodeProperty)ComAggregate.CreateAggregatedObject(element);
 
-            fileCodeModel.OnElementCreated(nodeKey, (EnvDTE.CodeElement)result);
+            fileCodeModel.OnCodeElementCreated(nodeKey, (EnvDTE.CodeElement)result);
 
             return result;
         }
@@ -70,9 +70,9 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
             return this.Attributes;
         }
 
-        internal override ImmutableArray<IParameterSymbol> GetParameters()
+        internal override ImmutableArray<SyntaxNode> GetParameters()
         {
-            return PropertySymbol.Parameters;
+            return ImmutableArray.CreateRange(CodeModelService.GetParameterNodes(LookupNode()));
         }
 
         protected override object GetExtenderNames()
@@ -109,7 +109,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
                     throw Exceptions.ThrowEUnexpected();
                 }
 
-                return FileCodeModel.CreateCodeElement<EnvDTE.CodeElement>(containingTypeNode);
+                return FileCodeModel.GetOrCreateCodeElement<EnvDTE.CodeElement>(containingTypeNode);
             }
         }
 
@@ -194,11 +194,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
             set
             {
-                // The type is sometimes part of the node key, so we should be sure to reaquire
+                // The type is sometimes part of the node key, so we should be sure to reacquire
                 // it after updating it. Note that we pass trackKinds: false because it's possible
                 // that UpdateType might change the kind of a node (e.g. change a VB Sub to a Function).
 
-                UpdateNodeAndReaquireNodeKey(FileCodeModel.UpdateType, value, trackKinds: false);
+                UpdateNodeAndReacquireNodeKey(FileCodeModel.UpdateType, value, trackKinds: false);
             }
         }
 

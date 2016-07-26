@@ -14,7 +14,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
     {
         private readonly Cci.IMethodDefinition _parent;
 
-        private readonly byte[] _ilBits;
+        private readonly ImmutableArray<byte> _ilBits;
         private readonly ushort _maxStack;
         private readonly ImmutableArray<Cci.ILocalDefinition> _locals;
         private readonly ImmutableArray<Cci.ExceptionHandlerRegion> _exceptionHandlers;
@@ -30,7 +30,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private readonly Cci.AsyncMethodBodyDebugInfo _asyncMethodDebugInfo;
 
         // Debug information emitted to Debug PDBs supporting EnC:
-        private readonly int _methodOrdinal;
+        private readonly DebugId _methodId;
         private readonly ImmutableArray<EncHoistedLocalInfo> _stateMachineHoistedLocalSlots;
         private readonly ImmutableArray<LambdaDebugInfo> _lambdaDebugInfo;
         private readonly ImmutableArray<ClosureDebugInfo> _closureDebugInfo;
@@ -38,11 +38,14 @@ namespace Microsoft.CodeAnalysis.CodeGen
         // Data used when emitting EnC delta:
         private readonly ImmutableArray<Cci.ITypeReference> _stateMachineAwaiterSlots;
 
+        // Data used when emitting Dynamic Analysis resource:
+        private readonly DynamicAnalysisMethodBodyData _dynamicAnalysisDataOpt;
+
         public MethodBody(
-            byte[] ilBits,
+            ImmutableArray<byte> ilBits,
             ushort maxStack,
             Cci.IMethodDefinition parent,
-            int methodOrdinal,
+            DebugId methodId,
             ImmutableArray<Cci.ILocalDefinition> locals,
             SequencePointList sequencePoints,
             DebugDocumentProvider debugDocumentProvider,
@@ -56,7 +59,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
             ImmutableArray<Cci.StateMachineHoistedLocalScope> stateMachineHoistedLocalScopes,
             ImmutableArray<EncHoistedLocalInfo> stateMachineHoistedLocalSlots,
             ImmutableArray<Cci.ITypeReference> stateMachineAwaiterSlots,
-            Cci.AsyncMethodBodyDebugInfo asyncMethodDebugInfo)
+            Cci.AsyncMethodBodyDebugInfo asyncMethodDebugInfo,
+            DynamicAnalysisMethodBodyData dynamicAnalysisDataOpt)
         {
             Debug.Assert(!locals.IsDefault);
             Debug.Assert(!exceptionHandlers.IsDefault);
@@ -66,7 +70,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             _asyncMethodDebugInfo = asyncMethodDebugInfo;
             _maxStack = maxStack;
             _parent = parent;
-            _methodOrdinal = methodOrdinal;
+            _methodId = methodId;
             _locals = locals;
             _sequencePoints = sequencePoints;
             _debugDocumentProvider = debugDocumentProvider;
@@ -80,12 +84,15 @@ namespace Microsoft.CodeAnalysis.CodeGen
             _stateMachineHoistedLocalScopes = stateMachineHoistedLocalScopes;
             _stateMachineHoistedLocalSlots = stateMachineHoistedLocalSlots;
             _stateMachineAwaiterSlots = stateMachineAwaiterSlots;
+            _dynamicAnalysisDataOpt = dynamicAnalysisDataOpt;
         }
 
         void Cci.IMethodBody.Dispatch(Cci.MetadataVisitor visitor)
         {
             throw ExceptionUtilities.Unreachable;
         }
+
+        DynamicAnalysisMethodBodyData Cci.IMethodBody.DynamicAnalysisData => _dynamicAnalysisDataOpt;
 
         ImmutableArray<Cci.ExceptionHandlerRegion> Cci.IMethodBody.ExceptionRegions => _exceptionHandlers;
 
@@ -99,20 +106,18 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         ushort Cci.IMethodBody.MaxStack => _maxStack;
 
-        public byte[] IL => _ilBits;
+        public ImmutableArray<byte> IL => _ilBits;
 
-        public ImmutableArray<Cci.SequencePoint> GetSequencePoints()
+        public void GetSequencePoints(ArrayBuilder<Cci.SequencePoint> builder)
         {
-            return HasAnySequencePoints ?
-                _sequencePoints.GetSequencePoints(_debugDocumentProvider) :
-                ImmutableArray<Cci.SequencePoint>.Empty;
+            if (HasAnySequencePoints)
+            {
+                _sequencePoints.GetSequencePoints(_debugDocumentProvider, builder);
+            }
         }
 
         public bool HasAnySequencePoints
             => _sequencePoints != null && !_sequencePoints.IsEmpty;
-
-        public ImmutableArray<Cci.SequencePoint> GetLocations()
-            => GetSequencePoints();
 
         ImmutableArray<Cci.LocalScope> Cci.IMethodBody.LocalScopes => _localScopes;
 
@@ -134,7 +139,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         bool Cci.IMethodBody.HasDynamicLocalVariables => _hasDynamicLocalVariables;
 
-        public int MethodOrdinal => _methodOrdinal;
+        public DebugId MethodId => _methodId;
 
         public ImmutableArray<LambdaDebugInfo> LambdaDebugInfo => _lambdaDebugInfo;
 

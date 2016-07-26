@@ -7,15 +7,19 @@ Imports System.Reflection
 Imports System.Reflection.Metadata
 Imports System.Reflection.Metadata.Ecma335
 Imports System.Runtime.InteropServices
+Imports Microsoft.CodeAnalysis.CodeGen
 Imports Microsoft.CodeAnalysis.Collections
+Imports Microsoft.CodeAnalysis.Debugging
 Imports Microsoft.CodeAnalysis.Emit
 Imports Microsoft.CodeAnalysis.ExpressionEvaluator
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.Metadata.PE
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
+Imports Microsoft.DiaSymReader
+Imports Microsoft.VisualStudio.Debugger.Clr
 Imports Microsoft.VisualStudio.Debugger.Evaluation
 Imports Microsoft.VisualStudio.Debugger.Evaluation.ClrCompilation
-Imports Microsoft.VisualStudio.SymReaderInterop
+Imports Roslyn.Utilities
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
 
@@ -24,37 +28,30 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
 
         ' These names are arbitrary, so we'll just use the same names as
         ' the C# expression compiler.
-        Private Const TypeName = "<>x"
-        Private Const MethodName = "<>m0"
-        Friend Const IsLocalScopeEndInclusive = True
+        Private Const s_typeName = "<>x"
+        Private Const s_methodName = "<>m0"
 
-        Friend ReadOnly MetadataBlocks As ImmutableArray(Of MetadataBlock)
-        Friend ReadOnly MethodScope As MethodScope
+        Friend ReadOnly MethodContextReuseConstraints As MethodContextReuseConstraints?
         Friend ReadOnly Compilation As VisualBasicCompilation
 
-        Private ReadOnly _metadataDecoder As MetadataDecoder
         Private ReadOnly _currentFrame As MethodSymbol
         Private ReadOnly _locals As ImmutableArray(Of LocalSymbol)
-        Private ReadOnly _hoistedLocalFieldNames As ImmutableHashSet(Of String)
-        Private ReadOnly _methodDebugInfo As MethodDebugInfo
+        Private ReadOnly _inScopeHoistedLocals As InScopeHoistedLocals
+        Private ReadOnly _methodDebugInfo As MethodDebugInfo(Of TypeSymbol, LocalSymbol)
 
         Private Sub New(
-            metadataBlocks As ImmutableArray(Of MetadataBlock),
-            methodScope As MethodScope,
+            methodContextReuseConstraints As MethodContextReuseConstraints?,
             compilation As VisualBasicCompilation,
-            metadataDecoder As MetadataDecoder,
             currentFrame As MethodSymbol,
             locals As ImmutableArray(Of LocalSymbol),
-            hoistedLocalFieldNames As ImmutableHashSet(Of String),
-            methodDebugInfo As MethodDebugInfo)
+            inScopeHoistedLocals As InScopeHoistedLocals,
+            methodDebugInfo As MethodDebugInfo(Of TypeSymbol, LocalSymbol))
 
-            Me.MetadataBlocks = metadataBlocks
-            Me.MethodScope = methodScope
+            Me.MethodContextReuseConstraints = methodContextReuseConstraints
             Me.Compilation = compilation
-            _metadataDecoder = metadataDecoder
             _currentFrame = currentFrame
             _locals = locals
-            _hoistedLocalFieldNames = hoistedLocalFieldNames
+            _inScopeHoistedLocals = inScopeHoistedLocals
             _methodDebugInfo = methodDebugInfo
         End Sub
 
@@ -64,7 +61,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
         ''' <param name="previous">Previous context, if any, for possible re-use.</param>
         ''' <param name="metadataBlocks">Module metadata.</param>
         ''' <param name="moduleVersionId">Module containing type.</param>
-        ''' <param name="typeToken">Type metdata token.</param>
+        ''' <param name="typeToken">Type metadata token.</param>
         ''' <returns>Evaluation context.</returns>
         ''' <remarks>
         ''' No locals since locals are associated with methods, not types.
@@ -75,27 +72,32 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
             moduleVersionId As Guid,
             typeToken As Integer) As EvaluationContext
 
-            Debug.Assert(MetadataTokens.Handle(typeToken).Kind = HandleKind.TypeDefinition)
-
             ' Re-use the previous compilation if possible.
-            Dim compilation = If(metadataBlocks.HaveNotChanged(previous),
+            Dim compilation = If(previous.Matches(metadataBlocks),
                 previous.Compilation,
                 metadataBlocks.ToCompilation())
 
-            Dim metadataDecoder As MetadataDecoder = Nothing
-            Dim currentType = compilation.GetType(moduleVersionId, typeToken, metadataDecoder)
+            Return CreateTypeContext(compilation, moduleVersionId, typeToken)
+        End Function
+
+        Friend Shared Function CreateTypeContext(
+            compilation As VisualBasicCompilation,
+            moduleVersionId As Guid,
+            typeToken As Integer) As EvaluationContext
+
+            Debug.Assert(MetadataTokens.Handle(typeToken).Kind = HandleKind.TypeDefinition)
+
+            Dim currentType = compilation.GetType(moduleVersionId, typeToken)
             Debug.Assert(currentType IsNot Nothing)
 
             Dim currentFrame = New SynthesizedContextMethodSymbol(currentType)
             Return New EvaluationContext(
-                metadataBlocks,
                 Nothing,
                 compilation,
-                metadataDecoder,
                 currentFrame,
                 locals:=Nothing,
-                hoistedLocalFieldNames:=Nothing,
-                methodDebugInfo:=Nothing)
+                inScopeHoistedLocals:=Nothing,
+                methodDebugInfo:=MethodDebugInfo(Of TypeSymbol, LocalSymbol).None)
         End Function
 
         ''' <summary>
@@ -118,22 +120,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
             moduleVersionId As Guid,
             methodToken As Integer,
             methodVersion As Integer,
-            ilOffset As Integer,
+            ilOffset As UInteger,
             localSignatureToken As Integer) As EvaluationContext
 
-            Debug.Assert(MetadataTokens.Handle(methodToken).Kind = HandleKind.MethodDefinition)
-
-            Dim typedSymReader = DirectCast(symReader, ISymUnmanagedReader)
-            Dim scopes = ArrayBuilder(Of ISymUnmanagedScope).GetInstance()
-            typedSymReader.GetScopes(methodToken, methodVersion, ilOffset, IsLocalScopeEndInclusive, scopes)
-            Dim scope = scopes.GetMethodScope(methodToken, methodVersion)
+            Dim offset = NormalizeILOffset(ilOffset)
 
             ' Re-use the previous compilation if possible.
             Dim compilation As VisualBasicCompilation
-            If metadataBlocks.HaveNotChanged(previous) Then
+            If previous.Matches(metadataBlocks) Then
                 ' Re-use entire context if method scope has not changed.
                 Dim previousContext = previous.EvaluationContext
-                If (scope IsNot Nothing) AndAlso (previousContext IsNot Nothing) AndAlso scope.Equals(previousContext.MethodScope) Then
+                If previousContext IsNot Nothing AndAlso
+                    previousContext.MethodContextReuseConstraints.HasValue AndAlso
+                    previousContext.MethodContextReuseConstraints.GetValueOrDefault().AreSatisfied(moduleVersionId, methodToken, methodVersion, offset) Then
                     Return previousContext
                 End If
                 compilation = previous.Compilation
@@ -141,55 +140,99 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 compilation = metadataBlocks.ToCompilation()
             End If
 
-            Dim methodHandle = CType(MetadataTokens.Handle(methodToken), MethodDefinitionHandle)
-            Dim currentFrame = compilation.GetMethod(moduleVersionId, methodHandle)
-            Debug.Assert(currentFrame IsNot Nothing)
-            Dim metadataDecoder = New MetadataDecoder(DirectCast(currentFrame.ContainingModule, PEModuleSymbol), currentFrame)
-            Dim hoistedLocalFieldNames As ImmutableHashSet(Of String) = Nothing
-            Dim localNames = GetLocalNames(scopes, hoistedLocalFieldNames)
-            Dim localInfo = metadataDecoder.GetLocalInfo(localSignatureToken)
-            Dim localBuilder = ArrayBuilder(Of LocalSymbol).GetInstance()
-            GetLocals(localBuilder, currentFrame, localNames, localInfo)
-            GetStaticLocals(localBuilder, currentFrame, methodHandle, metadataDecoder)
-            GetConstants(localBuilder, currentFrame, scopes.GetConstantSignatures(), metadataDecoder)
-            scopes.Free()
-            Dim locals = localBuilder.ToImmutableAndFree()
-
-            Dim methodDebugInfo As MethodDebugInfo
-            If IsDteeEntryPoint(currentFrame) Then
-                methodDebugInfo = SynthesizeMethodDebugInfoForDtee(lazyAssemblyReaders.Value)
-            ElseIf typedSymReader IsNot Nothing Then
-                ' TODO (acasey): Switch on the type of typedSymReader and call the appropriate helper. (GH #702)
-                methodDebugInfo = typedSymReader.GetMethodDebugInfo(methodToken, methodVersion)
-            Else
-                methodDebugInfo = Nothing
-            End If
-
-            Return New EvaluationContext(
-                metadataBlocks,
-                scope,
+            Return CreateMethodContext(
                 compilation,
-                metadataDecoder,
-                currentFrame,
-                locals,
-                hoistedLocalFieldNames,
-                methodDebugInfo)
+                lazyAssemblyReaders,
+                symReader,
+                moduleVersionId,
+                methodToken,
+                methodVersion,
+                offset,
+                localSignatureToken)
         End Function
 
-        Private Shared Function GetLocalNames(scopes As ArrayBuilder(Of ISymUnmanagedScope), <Out> ByRef hoistedLocalFieldNames As ImmutableHashSet(Of String)) As ImmutableArray(Of String)
+        Friend Shared Function CreateMethodContext(
+            compilation As VisualBasicCompilation,
+            lazyAssemblyReaders As Lazy(Of ImmutableArray(Of AssemblyReaders)),
+            symReader As Object,
+            moduleVersionId As Guid,
+            methodToken As Integer,
+            methodVersion As Integer,
+            ilOffset As UInteger,
+            localSignatureToken As Integer) As EvaluationContext
+
+            Return CreateMethodContext(
+                compilation,
+                lazyAssemblyReaders,
+                symReader,
+                moduleVersionId,
+                methodToken,
+                methodVersion,
+                NormalizeILOffset(ilOffset),
+                localSignatureToken)
+        End Function
+
+        Private Shared Function CreateMethodContext(
+            compilation As VisualBasicCompilation,
+            lazyAssemblyReaders As Lazy(Of ImmutableArray(Of AssemblyReaders)),
+            symReader As Object,
+            moduleVersionId As Guid,
+            methodToken As Integer,
+            methodVersion As Integer,
+            ilOffset As Integer,
+            localSignatureToken As Integer) As EvaluationContext
+
+            Dim methodHandle = CType(MetadataTokens.Handle(methodToken), MethodDefinitionHandle)
+            Dim localSignatureHandle = If(localSignatureToken <> 0, CType(MetadataTokens.Handle(localSignatureToken), StandaloneSignatureHandle), Nothing)
+
+            Dim currentFrame = compilation.GetMethod(moduleVersionId, methodHandle)
+            Debug.Assert(currentFrame IsNot Nothing)
+            Dim symbolProvider = New VisualBasicEESymbolProvider(DirectCast(currentFrame.ContainingModule, PEModuleSymbol), currentFrame)
+
+            Dim metadataDecoder = New MetadataDecoder(DirectCast(currentFrame.ContainingModule, PEModuleSymbol), currentFrame)
+            Dim localInfo = metadataDecoder.GetLocalInfo(localSignatureHandle)
+
+            Dim typedSymReader = DirectCast(symReader, ISymUnmanagedReader3)
+            Dim debugInfo As MethodDebugInfo(Of TypeSymbol, LocalSymbol)
+
+            If IsDteeEntryPoint(currentFrame) Then
+                debugInfo = SynthesizeMethodDebugInfoForDtee(lazyAssemblyReaders.Value)
+            Else
+                debugInfo = MethodDebugInfo(Of TypeSymbol, LocalSymbol).ReadMethodDebugInfo(typedSymReader, symbolProvider, methodToken, methodVersion, ilOffset, isVisualBasicMethod:=True)
+            End If
+
+            Dim localsBuilder = ArrayBuilder(Of LocalSymbol).GetInstance()
+            Dim inScopeHoistedLocalNames As ImmutableHashSet(Of String) = Nothing
+            Dim localNames = GetActualLocalNames(debugInfo.LocalVariableNames, inScopeHoistedLocalNames)
+            MethodDebugInfo(Of TypeSymbol, LocalSymbol).GetLocals(localsBuilder, symbolProvider, localNames, localInfo, Nothing)
+            Dim inScopeHoistedLocals = New VisualBasicInScopeHoistedLocalsByName(inScopeHoistedLocalNames)
+
+            GetStaticLocals(localsBuilder, currentFrame, methodHandle, metadataDecoder)
+            localsBuilder.AddRange(debugInfo.LocalConstants)
+
+            Return New EvaluationContext(
+                New MethodContextReuseConstraints(moduleVersionId, methodToken, methodVersion, debugInfo.ReuseSpan),
+                compilation,
+                currentFrame,
+                localsBuilder.ToImmutableAndFree(),
+                inScopeHoistedLocals,
+                debugInfo)
+        End Function
+
+        Private Shared Function GetActualLocalNames(allLocalNames As ImmutableArray(Of String), <Out> ByRef inScopeHoistedLocalNames As ImmutableHashSet(Of String)) As ImmutableArray(Of String)
             Dim localNames = ArrayBuilder(Of String).GetInstance()
-            Dim hoistedLocalFieldNamesBuilder As ImmutableHashSet(Of String).Builder = Nothing
-            For Each localName In scopes.GetLocalNames()
+            Dim inScopeHoistedLocalsBuilder As ImmutableHashSet(Of String).Builder = Nothing
+            For Each localName In allLocalNames
                 If localName IsNot Nothing AndAlso localName.StartsWith(StringConstants.StateMachineHoistedUserVariablePrefix, StringComparison.Ordinal) Then
-                    If hoistedLocalFieldNamesBuilder Is Nothing Then
-                        hoistedLocalFieldNamesBuilder = ImmutableHashSet.CreateBuilder(Of String)()
+                    If inScopeHoistedLocalsBuilder Is Nothing Then
+                        inScopeHoistedLocalsBuilder = ImmutableHashSet.CreateBuilder(Of String)()
                     End If
-                    hoistedLocalFieldNamesBuilder.Add(localName)
+                    inScopeHoistedLocalsBuilder.Add(localName)
                 Else
                     localNames.Add(localName)
                 End If
             Next
-            hoistedLocalFieldNames = If(hoistedLocalFieldNamesBuilder Is Nothing, ImmutableHashSet(Of String).Empty, hoistedLocalFieldNamesBuilder.ToImmutable())
+            inScopeHoistedLocalNames = If(inScopeHoistedLocalsBuilder Is Nothing, ImmutableHashSet(Of String).Empty, inScopeHoistedLocalsBuilder.ToImmutable())
             Return localNames.ToImmutableAndFree()
         End Function
 
@@ -229,12 +272,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
         ''' </remarks>
         ''' <seealso cref="IsDteeEntryPoint"/>
         ''' <seealso cref="PENamedTypeSymbol.TypeKind"/>
-        Friend Shared Function SynthesizeMethodDebugInfoForDtee(assemblyReaders As ImmutableArray(Of AssemblyReaders)) As MethodDebugInfo
+        Friend Shared Function SynthesizeMethodDebugInfoForDtee(assemblyReaders As ImmutableArray(Of AssemblyReaders)) As MethodDebugInfo(Of TypeSymbol, LocalSymbol)
             Dim [imports] = PooledHashSet(Of String).GetInstance()
 
             For Each readers In assemblyReaders
                 Dim metadataReader = readers.MetadataReader
-                Dim symReader = DirectCast(readers.SymReader, ISymUnmanagedReader)
+                Dim symReader = DirectCast(readers.SymReader, ISymUnmanagedReader3)
 
                 ' Ignore assemblies for which we don't have PDBs.
                 If symReader Is Nothing Then Continue For
@@ -256,15 +299,21 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                     Next
 
                     For Each methodDefHandle In metadataReader.MethodDefinitions
+                        ' TODO: this can be done better
                         ' EnC can't change the default namespace of the assembly, so version 1 will suffice.
-                        Dim methodDefaultNamespaceName = symReader.GetMethodDebugInfo(metadataReader.GetToken(methodDefHandle), methodVersion:=1).DefaultNamespaceName
+                        Dim debugInfo = MethodDebugInfo(Of TypeSymbol, LocalSymbol).ReadMethodDebugInfo(symReader,
+                                                                                                        Nothing,
+                                                                                                        metadataReader.GetToken(methodDefHandle),
+                                                                                                        methodVersion:=1,
+                                                                                                        ilOffset:=0,
+                                                                                                        isVisualBasicMethod:=True)
 
                         ' Some methods aren't decorated with import custom debug info.
-                        If Not String.IsNullOrEmpty(methodDefaultNamespaceName) Then
+                        If Not String.IsNullOrEmpty(debugInfo.DefaultNamespaceName) Then
 
                             ' NOTE: We're adding it as a project-level import, not as the default namespace
                             ' (because there's one for each assembly and they can't all be the default).
-                            [imports].Add(methodDefaultNamespaceName)
+                            [imports].Add(debugInfo.DefaultNamespaceName)
 
                             ' The default namespace should be the same for all methods, so we only need to check one.
                             Exit For
@@ -277,165 +326,156 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 End Try
             Next
 
-            Dim projectLevelImportRecords = ImmutableArray.CreateRange([imports].Select(AddressOf NativeImportRecord.CreateFromVisualBasicDteeNamespace))
+            Dim projectLevelImportRecords = ImmutableArray.CreateRange([imports].Select(
+                Function(namespaceName) New ImportRecord(ImportTargetKind.Namespace,
+                                                         alias:=Nothing,
+                                                         targetType:=Nothing,
+                                                         targetString:=namespaceName,
+                                                         targetAssembly:=Nothing,
+                                                         targetAssemblyAlias:=Nothing)))
+
             [imports].Free()
             Dim fileLevelImportRecords = ImmutableArray(Of ImportRecord).Empty
 
-            Dim importRecordGroups = ImmutableArray.Create(projectLevelImportRecords, fileLevelImportRecords)
+            Dim importRecordGroups = ImmutableArray.Create(fileLevelImportRecords, projectLevelImportRecords)
 
-            Return New MethodDebugInfo(importRecordGroups, ImmutableArray(Of ExternAliasRecord).Empty, defaultNamespaceName:="")
+            Return New MethodDebugInfo(Of TypeSymbol, LocalSymbol)(
+                hoistedLocalScopeRecords:=ImmutableArray(Of HoistedLocalScopeRecord).Empty,
+                importRecordGroups:=importRecordGroups,
+                defaultNamespaceName:="",
+                externAliasRecords:=ImmutableArray(Of ExternAliasRecord).Empty,
+                dynamicLocalMap:=ImmutableDictionary(Of Integer, ImmutableArray(Of Boolean)).Empty,
+                localVariableNames:=ImmutableArray(Of String).Empty,
+                localConstants:=ImmutableArray(Of LocalSymbol).Empty,
+                reuseSpan:=Nothing)
         End Function
 
         Friend Function CreateCompilationContext(syntax As ExecutableStatementSyntax) As CompilationContext
             Return New CompilationContext(
                 Compilation,
-                _metadataDecoder,
                 _currentFrame,
                 _locals,
-                _hoistedLocalFieldNames,
+                _inScopeHoistedLocals,
                 _methodDebugInfo,
                 syntax)
         End Function
 
         Friend Overrides Function CompileExpression(
-            inspectionContext As InspectionContext,
             expr As String,
             compilationFlags As DkmEvaluationFlags,
-            formatter As DiagnosticFormatter,
+            aliases As ImmutableArray(Of [Alias]),
+            diagnostics As DiagnosticBag,
             <Out> ByRef resultProperties As ResultProperties,
-            <Out> ByRef errorMessage As String,
-            <Out> ByRef missingAssemblyIdentities As ImmutableArray(Of AssemblyIdentity),
-            preferredUICulture As Globalization.CultureInfo,
             testData As Microsoft.CodeAnalysis.CodeGen.CompilationTestData) As CompileResult
 
             resultProperties = Nothing
-            Dim diagnostics = DiagnosticBag.GetInstance()
-            Try
-                Dim formatSpecifiers As ReadOnlyCollection(Of String) = Nothing
-                Dim syntax = If((compilationFlags And DkmEvaluationFlags.TreatAsExpression) <> 0,
+            Dim formatSpecifiers As ReadOnlyCollection(Of String) = Nothing
+            Dim syntax = If((compilationFlags And DkmEvaluationFlags.TreatAsExpression) <> 0,
                     expr.ParseExpression(diagnostics, allowFormatSpecifiers:=True, formatSpecifiers:=formatSpecifiers),
                     expr.ParseStatement(diagnostics))
-                If syntax Is Nothing Then
-                    errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                    Return Nothing
-                End If
+            If syntax Is Nothing Then
+                Return Nothing
+            End If
 
-                If Not IsSupportedDebuggerStatement(syntax) Then
-                    errorMessage = String.Format(Resources.InvalidDebuggerStatement, syntax.Kind)
-                    Dim unused = GetErrorAndMissingAssemblyIdentities(diagnostics, missingAssemblyIdentities)
-                    Return Nothing
-                End If
+            If Not IsSupportedDebuggerStatement(syntax) Then
+                diagnostics.Add(New SimpleMessageDiagnostic(String.Format(Resources.InvalidDebuggerStatement, syntax.Kind)))
+                Return Nothing
+            End If
 
-                Dim context = Me.CreateCompilationContext(DirectCast(syntax, ExecutableStatementSyntax))
-                Dim properties As ResultProperties = Nothing
-                Dim moduleBuilder = context.Compile(inspectionContext, TypeName, MethodName, testData, diagnostics, properties)
-                If moduleBuilder Is Nothing Then
-                    errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                    Return Nothing
-                End If
+            Dim context = Me.CreateCompilationContext(DirectCast(syntax, ExecutableStatementSyntax))
+            Dim properties As ResultProperties = Nothing
+            Dim moduleBuilder = context.Compile(s_typeName, s_methodName, aliases, testData, diagnostics, properties)
+            If moduleBuilder Is Nothing Then
+                Return Nothing
+            End If
 
-                Using stream As New MemoryStream()
-                    Cci.PeWriter.WritePeToStream(
+            Using stream As New MemoryStream()
+                Cci.PeWriter.WritePeToStream(
                         New EmitContext(DirectCast(moduleBuilder, Cci.IModule), Nothing, diagnostics),
                         context.MessageProvider,
-                        stream,
+                        Function() stream,
+                        getPortablePdbStreamOpt:=Nothing,
                         nativePdbWriterOpt:=Nothing,
+                        pdbPathOpt:=Nothing,
                         allowMissingMethodBodies:=False,
-                        deterministic:=False,
+                        isDeterministic:=False,
                         cancellationToken:=Nothing)
 
-                    If diagnostics.HasAnyErrors() Then
-                        errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                        Return Nothing
-                    End If
+                If diagnostics.HasAnyErrors() Then
+                    Return Nothing
+                End If
 
-                    resultProperties = properties
-                    errorMessage = Nothing
-                    missingAssemblyIdentities = ImmutableArray(Of AssemblyIdentity).Empty
-                    Return New CompileResult(
+                resultProperties = properties
+                Return New VisualBasicCompileResult(
                         stream.ToArray(),
-                        TypeName,
-                        MethodName,
+                        s_typeName,
+                        s_methodName,
                         formatSpecifiers)
-                End Using
-            Finally
-                diagnostics.Free()
-            End Try
+            End Using
         End Function
 
         Friend Overrides Function CompileAssignment(
-            inspectionContext As InspectionContext,
             target As String,
             expr As String,
-            formatter As DiagnosticFormatter,
+            aliases As ImmutableArray(Of [Alias]),
+            diagnostics As DiagnosticBag,
             <Out> ByRef resultProperties As ResultProperties,
-            <Out> ByRef errorMessage As String,
-            <Out> ByRef missingAssemblyIdentities As ImmutableArray(Of AssemblyIdentity),
-            preferredUICulture As Globalization.CultureInfo,
             testData As Microsoft.CodeAnalysis.CodeGen.CompilationTestData) As CompileResult
 
-            resultProperties = Nothing
-            Dim diagnostics = DiagnosticBag.GetInstance()
-            Try
-                Dim assignment = target.ParseAssignment(expr, diagnostics)
-                If assignment Is Nothing Then
-                    errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                    Return Nothing
-                End If
+            Dim assignment = target.ParseAssignment(expr, diagnostics)
+            If assignment Is Nothing Then
+                Return Nothing
+            End If
 
-                Dim context = Me.CreateCompilationContext(assignment)
-                Dim properties As ResultProperties = Nothing
-                Dim modulebuilder = context.Compile(inspectionContext, TypeName, MethodName, testData, diagnostics, properties)
-                If modulebuilder Is Nothing Then
-                    errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                    Return Nothing
-                End If
+            Dim context = Me.CreateCompilationContext(assignment)
+            Dim properties As ResultProperties = Nothing
+            Dim modulebuilder = context.Compile(s_typeName, s_methodName, aliases, testData, diagnostics, properties)
+            If modulebuilder Is Nothing Then
+                Return Nothing
+            End If
 
-                Using stream As New MemoryStream()
-                    Cci.PeWriter.WritePeToStream(
+            Using stream As New MemoryStream()
+                Cci.PeWriter.WritePeToStream(
                         New EmitContext(DirectCast(modulebuilder, Cci.IModule), Nothing, diagnostics),
                         context.MessageProvider,
-                        stream,
+                        Function() stream,
+                        getPortablePdbStreamOpt:=Nothing,
                         nativePdbWriterOpt:=Nothing,
+                        pdbPathOpt:=Nothing,
                         allowMissingMethodBodies:=False,
-                        deterministic:=False,
+                        isDeterministic:=False,
                         cancellationToken:=Nothing)
 
-                    If diagnostics.HasAnyErrors() Then
-                        errorMessage = GetErrorMessageAndMissingAssemblyIdentities(diagnostics, formatter, preferredUICulture, missingAssemblyIdentities)
-                        Return Nothing
-                    End If
+                If diagnostics.HasAnyErrors() Then
+                    Return Nothing
+                End If
 
-                    resultProperties = New ResultProperties(
+                resultProperties = New ResultProperties(
                         properties.Flags Or DkmClrCompilationResultFlags.PotentialSideEffect,
                         properties.Category,
                         properties.AccessType,
                         properties.StorageType,
                         properties.ModifierFlags)
-                    errorMessage = Nothing
-                    missingAssemblyIdentities = ImmutableArray(Of AssemblyIdentity).Empty
-                    Return New CompileResult(
+                Return New VisualBasicCompileResult(
                         stream.ToArray(),
-                        TypeName,
-                        MethodName,
+                        s_typeName,
+                        s_methodName,
                         formatSpecifiers:=Nothing)
-                End Using
-            Finally
-                diagnostics.Free()
-            End Try
+            End Using
         End Function
 
-        Private Shared ReadOnly EmptyBytes As New ReadOnlyCollection(Of Byte)(New Byte() {})
+        Private Shared ReadOnly s_emptyBytes As New ReadOnlyCollection(Of Byte)(New Byte() {})
 
         Friend Overrides Function CompileGetLocals(
             locals As ArrayBuilder(Of LocalAndMethod),
             argumentsOnly As Boolean,
+            aliases As ImmutableArray(Of [Alias]),
+            diagnostics As DiagnosticBag,
             <Out> ByRef typeName As String,
-            testData As Microsoft.CodeAnalysis.CodeGen.CompilationTestData) As ReadOnlyCollection(Of Byte)
+            testData As CompilationTestData) As ReadOnlyCollection(Of Byte)
 
-            Dim diagnostics = DiagnosticBag.GetInstance()
             Dim context = Me.CreateCompilationContext(Nothing)
-            Dim modulebuilder = context.CompileGetLocals(EvaluationContext.TypeName, locals, argumentsOnly, testData, diagnostics)
+            Dim modulebuilder = context.CompileGetLocals(s_typeName, locals, argumentsOnly, aliases, testData, diagnostics)
             Dim assembly As ReadOnlyCollection(Of Byte) = Nothing
 
             If modulebuilder IsNot Nothing AndAlso locals.Count > 0 Then
@@ -443,10 +483,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                     Cci.PeWriter.WritePeToStream(
                         New EmitContext(DirectCast(modulebuilder, Cci.IModule), Nothing, diagnostics),
                         context.MessageProvider,
-                        stream,
+                        Function() stream,
+                        getPortablePdbStreamOpt:=Nothing,
                         nativePdbWriterOpt:=Nothing,
+                        pdbPathOpt:=Nothing,
                         allowMissingMethodBodies:=False,
-                        deterministic:=False,
+                        isDeterministic:=False,
                         cancellationToken:=Nothing)
 
                     If Not diagnostics.HasAnyErrors() Then
@@ -455,56 +497,14 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 End Using
             End If
 
-            diagnostics.Free()
-
             If assembly Is Nothing Then
                 locals.Clear()
-                assembly = EmptyBytes
+                assembly = s_emptyBytes
             End If
 
-            typeName = EvaluationContext.TypeName
+            typeName = EvaluationContext.s_typeName
             Return assembly
         End Function
-
-        ''' <summary>
-        ''' Returns symbols for the locals emitted in the original method,
-        ''' based on the local signatures from the IL and the names and
-        ''' slots from the PDB. The actual locals are needed to ensure the
-        ''' local slots in the generated method match the original.
-        ''' </summary>
-        Private Shared Sub GetLocals(
-            builder As ArrayBuilder(Of LocalSymbol),
-            method As MethodSymbol,
-            names As ImmutableArray(Of String),
-            localInfo As ImmutableArray(Of LocalInfo(Of TypeSymbol)))
-
-            Dim locations = EELocalSymbol.NoLocations
-            Dim n = localInfo.Length
-
-            If n = 0 Then
-                ' When debugging a .dmp without a heap, localInfo will be empty although
-                ' names may be non-empty if there is a PDB. Since there's no type info, the
-                ' locals are dropped. Note this means the local signature of any generated
-                ' method will not match the original signature, so new locals will overlap
-                ' original locals. That is ok since there is no live process for the debugger
-                ' to update (any modified values exist in the debugger only).
-                Return
-            End If
-
-            Dim m = names.Length
-            Debug.Assert(n >= m)
-
-            For i = 0 To n - 1
-                Dim name = If(i < m, names(i), Nothing)
-                Dim info = localInfo(i)
-
-                ' Custom modifiers can be dropped since binding ignores custom
-                ' modifiers from locals and since we only need to preserve
-                ' the type of the original local in the generated method.
-                Dim kind = If(name = method.Name, LocalDeclarationKind.FunctionValue, LocalDeclarationKind.Variable)
-                builder.Add(New EELocalSymbol(method, locations, name, i, kind, info.Type, info.IsByRef, info.IsPinned, canScheduleToStack:=False))
-            Next
-        End Sub
 
         ''' <summary>
         ''' Include static locals for the given method. Static locals
@@ -530,8 +530,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 Dim methodSignature As String = Nothing
                 Dim localName As String = Nothing
                 If GeneratedNames.TryParseStaticLocalFieldName(member.Name, methodName, methodSignature, localName) AndAlso
-                        String.Equals(methodName, method.Name, StringComparison.Ordinal) AndAlso
-                        String.Equals(methodSignature, GetMethodSignatureString(metadataDecoder, methodHandle), StringComparison.Ordinal) Then
+                    String.Equals(methodName, method.Name, StringComparison.Ordinal) AndAlso
+                    String.Equals(methodSignature, GetMethodSignatureString(metadataDecoder, methodHandle), StringComparison.Ordinal) Then
                     builder.Add(New EEStaticLocalSymbol(method, DirectCast(member, FieldSymbol), localName))
                 End If
             Next
@@ -545,34 +545,34 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
             Return GeneratedNames.MakeSignatureString(signature)
         End Function
 
-        Private Shared Sub GetConstants(
-            builder As ArrayBuilder(Of LocalSymbol),
-            method As MethodSymbol,
-            constants As ImmutableArray(Of NamedLocalConstant),
-            metadataDecoder As MetadataDecoder)
+        Friend Overrides Function HasDuplicateTypesOrAssemblies(diagnostic As Diagnostic) As Boolean
+            Select Case CType(diagnostic.Code, ERRID)
+                Case ERRID.ERR_DuplicateReference2,
+                     ERRID.ERR_DuplicateReferenceStrong,
+                     ERRID.ERR_AmbiguousInUnnamedNamespace1,
+                     ERRID.ERR_AmbiguousInNamespace2,
+                     ERRID.ERR_NoMostSpecificOverload2,
+                     ERRID.ERR_AmbiguousInModules2
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
 
-            For Each constant In constants
-                Dim info = metadataDecoder.GetLocalInfo(constant.Signature)
-                Debug.Assert(Not info.IsByRef)
-                Debug.Assert(Not info.IsPinned)
-                Dim type As TypeSymbol = info.Type
-                Dim constantValue = ReinterpretConstantValue(constant.Value, type.SpecialType)
-                builder.Add(New EELocalConstantSymbol(method, constant.Name, type, constantValue))
-            Next
-        End Sub
-
-        Friend Overrides Function GetMissingAssemblyIdentities(diagnostic As Diagnostic) As ImmutableArray(Of AssemblyIdentity)
-            Return GetMissingAssemblyIdentitiesHelper(CType(diagnostic.Code, ERRID), diagnostic.Arguments)
+        Friend Overrides Function GetMissingAssemblyIdentities(diagnostic As Diagnostic, linqLibrary As AssemblyIdentity) As ImmutableArray(Of AssemblyIdentity)
+            Return GetMissingAssemblyIdentitiesHelper(CType(diagnostic.Code, ERRID), diagnostic.Arguments, Me.Compilation.GlobalNamespace, linqLibrary)
         End Function
 
         ''' <remarks>
         ''' Friend for testing.
         ''' </remarks>
-        Friend Shared Function GetMissingAssemblyIdentitiesHelper(code As ERRID, arguments As IReadOnlyList(Of Object)) As ImmutableArray(Of AssemblyIdentity)
-			Select Case code
+        Friend Shared Function GetMissingAssemblyIdentitiesHelper(code As ERRID, arguments As IReadOnlyList(Of Object), globalNamespace As NamespaceSymbol, linqLibrary As AssemblyIdentity) As ImmutableArray(Of AssemblyIdentity)
+            Debug.Assert(linqLibrary IsNot Nothing)
+
+            Select Case code
                 Case ERRID.ERR_UnreferencedAssemblyEvent3, ERRID.ERR_UnreferencedAssembly3
                     For Each argument As Object In arguments
-						Dim identity = If(TryCast(argument, AssemblyIdentity), TryCast(argument, AssemblySymbol)?.Identity)
+                        Dim identity = If(TryCast(argument, AssemblyIdentity), TryCast(argument, AssemblySymbol)?.Identity)
                         If IsValidMissingAssemblyIdentity(identity) Then
                             Return ImmutableArray.Create(identity)
                         End If
@@ -584,13 +584,63 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                             Return ImmutableArray.Create(identity)
                         End If
                     End If
+                Case ERRID.ERR_NameNotMember2
+                    If arguments.Count = 2 Then
+                        Dim namespaceName = TryCast(arguments(0), String)
+                        Dim containingNamespace = TryCast(arguments(1), NamespaceSymbol)
+                        If namespaceName IsNot Nothing AndAlso containingNamespace IsNot Nothing AndAlso HasConstituentFromWindowsAssembly(containingNamespace) Then
+                            ' This is just a heuristic, but it has the advantage of being portable, particularly
+                            ' across different versions of (desktop) windows.
+                            Dim identity = New AssemblyIdentity($"{containingNamespace.ToDisplayString}.{namespaceName}", contentType:=AssemblyContentType.WindowsRuntime)
+                            Return ImmutableArray.Create(identity)
+                        Else
+                            ' Maybe it's a missing LINQ extension method.  Let's try adding the "LINQ library" to see if that helps.
+                            Return ImmutableArray.Create(linqLibrary)
+                        End If
+                    End If
+                Case ERRID.ERR_UndefinedType1
+                    If arguments.Count = 1 Then
+                        Dim qualifiedName = TryCast(arguments(0), String)
+                        If Not String.IsNullOrEmpty(qualifiedName) Then
+                            Dim nameParts = qualifiedName.Split("."c)
+                            Dim numParts = nameParts.Length
+                            Dim pos = 0
+                            If CaseInsensitiveComparison.Comparer.Equals(nameParts(0), "global") Then
+                                pos = 1
+                                Debug.Assert(pos < numParts)
+                            End If
+                            Dim currNamespace = globalNamespace
+                            While pos < numParts
+                                Dim nextNamespace = currNamespace.GetMembers(nameParts(pos)).OfType(Of NamespaceSymbol).SingleOrDefault()
+                                If nextNamespace Is Nothing Then
+                                    Exit While
+                                End If
+                                pos += 1
+                                currNamespace = nextNamespace
+                            End While
+
+                            If currNamespace IsNot globalNamespace AndAlso HasConstituentFromWindowsAssembly(currNamespace) AndAlso pos < numParts Then
+                                Dim nextNamePart = nameParts(pos)
+                                If nextNamePart.All(AddressOf SyntaxFacts.IsIdentifierPartCharacter) Then
+                                    ' This is just a heuristic, but it has the advantage of being portable, particularly
+                                    ' across different versions of (desktop) windows.
+                                    Dim identity = New AssemblyIdentity($"{currNamespace.ToDisplayString}.{nameParts(pos)}", contentType:=AssemblyContentType.WindowsRuntime)
+                                    Return ImmutableArray.Create(identity)
+                                End If
+                            End If
+                        End If
+                    End If
                 Case ERRID.ERR_XmlFeaturesNotAvailable
-                    Return ImmutableArray.Create(SystemIdentity, SystemCoreIdentity, SystemXmlIdentity, SystemXmlLinqIdentity)
+                    Return ImmutableArray.Create(SystemIdentity, linqLibrary, SystemXmlIdentity, SystemXmlLinqIdentity)
                 Case ERRID.ERR_MissingRuntimeHelper
                     Return ImmutableArray.Create(MicrosoftVisualBasicIdentity)
             End Select
 
             Return Nothing
+        End Function
+
+        Private Shared Function HasConstituentFromWindowsAssembly(namespaceSymbol As NamespaceSymbol) As Boolean
+            Return namespaceSymbol.ConstituentNamespaces.Any(Function(n) n.ContainingAssembly.Identity.IsWindowsAssemblyIdentity)
         End Function
 
         Private Shared Function IsValidMissingAssemblyIdentity(identity As AssemblyIdentity) As Boolean

@@ -21,12 +21,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation
         {
             if (projectId == null)
             {
-                throw new ArgumentNullException("projectId");
+                throw new ArgumentNullException(nameof(projectId));
             }
 
             if (assemblyIdentity == null)
             {
-                throw new ArgumentNullException("assemblyIdentity");
+                throw new ArgumentNullException(nameof(assemblyIdentity));
             }
 
             return new AddMetadataReferenceOperation(projectId, assemblyIdentity);
@@ -70,7 +70,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation
             {
                 get
                 {
-                    return string.Format(ServicesVSResources.AddAReference, _assemblyIdentity.GetDisplayName());
+                    return string.Format(ServicesVSResources.Add_a_reference_to_0, _assemblyIdentity.GetDisplayName());
                 }
             }
         }

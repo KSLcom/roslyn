@@ -6,7 +6,6 @@ Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Editor.Implementation.EndConstructGeneration
 Imports Microsoft.CodeAnalysis.Editor.Shared.Utilities
 Imports Microsoft.CodeAnalysis.Internal.Log
-Imports Microsoft.CodeAnalysis.Host
 Imports Microsoft.CodeAnalysis.Host.Mef
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
@@ -148,7 +147,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
                 Return Nothing
             End If
 
-            Dim tree = document.GetVisualBasicSyntaxTreeAsync(cancellationToken).WaitAndGetResult(cancellationToken)
+            Dim tree = document.GetSyntaxTreeSynchronously(cancellationToken)
 
             Dim tokenToLeft = tree.FindTokenOnLeftOfPosition(caretPosition.Value, cancellationToken, includeDirectives:=True, includeDocumentationComments:=True)
             If tokenToLeft.Kind = SyntaxKind.None Then
@@ -158,14 +157,14 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
             Dim bufferOptions = _editorOptionsFactoryService.GetOptions(subjectBuffer)
 
             Return New EndConstructState(
-                caretPosition.Value, New Lazy(Of SemanticModel)(Function() document.GetVisualBasicSemanticModelAsync(cancellationToken).WaitAndGetResult(cancellationToken)), tree, tokenToLeft, bufferOptions.GetNewLineCharacter())
+                caretPosition.Value, New Lazy(Of SemanticModel)(Function() document.GetSemanticModelAsync(cancellationToken).WaitAndGetResult(cancellationToken)), tree, tokenToLeft, bufferOptions.GetNewLineCharacter())
         End Function
 
         Friend Overridable Function TryDoEndConstructForEnterKey(textView As ITextView,
                                                                  subjectBuffer As ITextBuffer,
                                                                  cancellationToken As CancellationToken) As Boolean
             Using Logger.LogBlock(FunctionId.EndConstruct_DoStatement, cancellationToken)
-                Using transaction = New CaretPreservingEditTransaction(VBEditorResources.EndConstruct, textView, _undoHistoryRegistry, _editorOperationsFactoryService)
+                Using transaction = New CaretPreservingEditTransaction(VBEditorResources.End_Construct, textView, _undoHistoryRegistry, _editorOperationsFactoryService)
                     transaction.MergePolicy = AutomaticCodeChangeMergePolicy.Instance
 
                     ' The user may have some text selected. In this scenario, we want to guarantee

@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.Debugger.Evaluation;
 using Roslyn.Test.Utilities;
 using Xunit;
 
-namespace Microsoft.CodeAnalysis.CSharp.UnitTests
+namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator.UnitTests
 {
     public class ArrayExpansionTests : CSharpResultProviderTestBase
     {
@@ -151,7 +151,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests
                 EvalResult("[1]", "2", "int", "((int[])(new C()).o)[1]"));
         }
 
-        [WorkItem(933845)]
+        [WorkItem(933845, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/933845")]
         [Fact]
         public void BaseElementType()
         {
@@ -184,8 +184,8 @@ class B : A
                 EvalResult("P", "2", "object {int}", "((B)o[1]).P", DkmEvaluationResultFlags.ReadOnly));
         }
 
-        [WorkItem(1022157)]
-        [Fact(Skip = "1022157")]
+        [WorkItem(1022157, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1022157")]
+        [Fact]
         public void Covariance()
         {
             var source =
@@ -214,19 +214,19 @@ class C
                 EvalResult("H", "{B[1]}", "I[] {B[]}", "o.H", DkmEvaluationResultFlags.Expandable));
             var moreChildren = GetChildren(children[0]);
             Verify(moreChildren,
-                EvalResult("[0]", "{A}", "object {A}", "o.F[0]", DkmEvaluationResultFlags.Expandable));
+                EvalResult("[0]", "{A}", "object {A}", "((A[])o.F)[0]", DkmEvaluationResultFlags.Expandable));
             moreChildren = GetChildren(moreChildren[0]);
             Verify(moreChildren,
-                EvalResult("F", "1", "object {int}", "((A)o.F[0]).F"));
+                EvalResult("F", "1", "object {int}", "((A)((A[])o.F)[0]).F"));
             moreChildren = GetChildren(children[1]);
             Verify(moreChildren,
-                EvalResult("[0]", "{B}", "A {B}", "o.G[0]", DkmEvaluationResultFlags.Expandable));
+                EvalResult("[0]", "{B}", "A {B}", "((B[])o.G)[0]", DkmEvaluationResultFlags.Expandable));
             moreChildren = GetChildren(children[2]);
             Verify(moreChildren,
-                EvalResult("[0]", "{B}", "I {B}", "o.H[0]", DkmEvaluationResultFlags.Expandable));
+                EvalResult("[0]", "{B}", "I {B}", "((B[])o.H)[0]", DkmEvaluationResultFlags.Expandable));
         }
 
-        [WorkItem(1001844)]
+        [WorkItem(1001844, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1001844")]
         [Fact]
         public void Interface()
         {

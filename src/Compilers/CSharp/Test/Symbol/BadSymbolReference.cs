@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
@@ -739,7 +739,7 @@ public interface CL3_I1 : CL2_I1
         }
 
         [Fact]
-        [WorkItem(612417, "DevDiv")]
+        [WorkItem(612417, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/612417")]
         public void Repro612417()
         {
             var libSource = @"
@@ -798,7 +798,7 @@ class D : C, I { }
             }
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void MissingTypeInTypeArgumentsOfImplementedInterface()
         {
             var lib1 = CreateCompilationWithMscorlib(@"
@@ -1275,7 +1275,7 @@ namespace ErrorTest
                 );
         }
 
-        [Fact()]
+        [ClrOnlyFact]
         public void MissingBaseClass()
         {
             var lib1 = CreateCompilationWithMscorlib(@"

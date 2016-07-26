@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis.EditAndContinue;
 using Roslyn.Test.Utilities;
 using Xunit;
 
@@ -8,7 +7,7 @@ namespace Microsoft.CodeAnalysis.CSharp.EditAndContinue.UnitTests
 {
     public class ActiveStatementTrackingServiceTests : RudeEditTestBase
     {
-        [Fact, WorkItem(846042)]
+        [Fact, WorkItem(846042, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/846042")]
         public void MovedOutsideOfMethod1()
         {
             string src1 = @"
@@ -28,7 +27,7 @@ class C
 
     static void Foo()
     {
-        // tracking span moves to another method as the user types aound it
+        // tracking span moves to another method as the user types around it
         <TS:0>Foo(1);</TS:0>
     }
 }
@@ -94,8 +93,7 @@ class C
             var edits = GetTopEdits(src1, src2);
             var active = GetActiveStatements(src1, src2);
 
-            edits.VerifyRudeDiagnostics(active,
-                Diagnostic(RudeEditKind.RUDE_EDIT_LAMBDA_EXPRESSION, "()", "method"));
+            edits.VerifyRudeDiagnostics(active);
         }
 
         [Fact]

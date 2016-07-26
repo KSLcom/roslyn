@@ -4,12 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Shared.Extensions;
-using Microsoft.CodeAnalysis.Text;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editing
 {
@@ -35,7 +33,15 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public static SyntaxGenerator GetGenerator(Document document)
         {
-            return document.Project.LanguageServices.GetService<SyntaxGenerator>();
+            return GetGenerator(document.Project);
+        }
+
+        /// <summary>
+        /// Gets the <see cref="SyntaxGenerator"/> for the language corresponding to the project.
+        /// </summary>
+        public static SyntaxGenerator GetGenerator(Project project)
+        {
+            return project.LanguageServices.GetService<SyntaxGenerator>();
         }
 
         #region Declarations
@@ -129,10 +135,15 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public SyntaxNode MethodDeclaration(IMethodSymbol method, IEnumerable<SyntaxNode> statements = null)
         {
+            return MethodDeclaration(method, method.Name, statements);
+        }
+
+        internal SyntaxNode MethodDeclaration(IMethodSymbol method, string name, IEnumerable<SyntaxNode> statements = null)
+        {
             var decl = MethodDeclaration(
-                method.Name,
+                name,
                 parameters: method.Parameters.Select(p => ParameterDeclaration(p)),
-                returnType: TypeExpression(method.ReturnType),
+                returnType: method.ReturnType.IsSystemVoid() ? null : TypeExpression(method.ReturnType),
                 accessibility: method.DeclaredAccessibility,
                 modifiers: DeclarationModifiers.From(method),
                 statements: statements);
@@ -143,6 +154,76 @@ namespace Microsoft.CodeAnalysis.Editing
             }
 
             return decl;
+        }
+
+        /// <summary>
+        /// Creates a method declaration.
+        /// </summary>
+        public virtual SyntaxNode OperatorDeclaration(
+            OperatorKind kind,
+            IEnumerable<SyntaxNode> parameters = null,
+            SyntaxNode returnType = null,
+            Accessibility accessibility = Accessibility.NotApplicable,
+            DeclarationModifiers modifiers = default(DeclarationModifiers),
+            IEnumerable<SyntaxNode> statements = null)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Creates a method declaration matching an existing method symbol.
+        /// </summary>
+        public SyntaxNode OperatorDeclaration(IMethodSymbol method, IEnumerable<SyntaxNode> statements = null)
+        {
+            if (method.MethodKind != MethodKind.UserDefinedOperator)
+            {
+                throw new ArgumentException("Method is not an operator.");
+            }
+
+            var decl = OperatorDeclaration(
+                GetOperatorKind(method),
+                parameters: method.Parameters.Select(p => ParameterDeclaration(p)),
+                returnType: method.ReturnType.IsSystemVoid() ? null : TypeExpression(method.ReturnType),
+                accessibility: method.DeclaredAccessibility,
+                modifiers: DeclarationModifiers.From(method),
+                statements: statements);
+
+            return decl;
+        }
+
+        private OperatorKind GetOperatorKind(IMethodSymbol method)
+        {
+            switch (method.Name)
+            {
+                case WellKnownMemberNames.ImplicitConversionName: return OperatorKind.ImplicitConversion;
+                case WellKnownMemberNames.ExplicitConversionName: return OperatorKind.ExplicitConversion;
+                case WellKnownMemberNames.AdditionOperatorName: return OperatorKind.Addition;
+                case WellKnownMemberNames.BitwiseAndOperatorName: return OperatorKind.BitwiseAnd;
+                case WellKnownMemberNames.BitwiseOrOperatorName: return OperatorKind.BitwiseOr;
+                case WellKnownMemberNames.DecrementOperatorName: return OperatorKind.Decrement;
+                case WellKnownMemberNames.DivisionOperatorName: return OperatorKind.Division;
+                case WellKnownMemberNames.EqualityOperatorName: return OperatorKind.Equality;
+                case WellKnownMemberNames.ExclusiveOrOperatorName: return OperatorKind.ExclusiveOr;
+                case WellKnownMemberNames.FalseOperatorName: return OperatorKind.False;
+                case WellKnownMemberNames.GreaterThanOperatorName: return OperatorKind.GreaterThan;
+                case WellKnownMemberNames.GreaterThanOrEqualOperatorName: return OperatorKind.GreaterThanOrEqual;
+                case WellKnownMemberNames.IncrementOperatorName: return OperatorKind.Increment;
+                case WellKnownMemberNames.InequalityOperatorName: return OperatorKind.Inequality;
+                case WellKnownMemberNames.LeftShiftOperatorName: return OperatorKind.LeftShift;
+                case WellKnownMemberNames.LessThanOperatorName: return OperatorKind.LessThan;
+                case WellKnownMemberNames.LessThanOrEqualOperatorName: return OperatorKind.LessThanOrEqual;
+                case WellKnownMemberNames.LogicalNotOperatorName: return OperatorKind.LogicalNot;
+                case WellKnownMemberNames.ModulusOperatorName: return OperatorKind.Modulus;
+                case WellKnownMemberNames.MultiplyOperatorName: return OperatorKind.Multiply;
+                case WellKnownMemberNames.OnesComplementOperatorName: return OperatorKind.OnesComplement;
+                case WellKnownMemberNames.RightShiftOperatorName: return OperatorKind.RightShift;
+                case WellKnownMemberNames.SubtractionOperatorName: return OperatorKind.Subtraction;
+                case WellKnownMemberNames.TrueOperatorName: return OperatorKind.True;
+                case WellKnownMemberNames.UnaryNegationOperatorName: return OperatorKind.UnaryNegation;
+                case WellKnownMemberNames.UnaryPlusOperatorName: return OperatorKind.UnaryPlus;
+                default:
+                    throw new ArgumentException("Unknown operator kind.");
+            }
         }
 
         /// <summary>
@@ -308,13 +389,31 @@ namespace Microsoft.CodeAnalysis.Editing
         /// Converts method, property and indexer declarations into public interface implementations.
         /// This is equivalent to an implicit C# interface implementation (you can access it via the interface or directly via the named member.)
         /// </summary>
-        public abstract SyntaxNode AsPublicInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType);
+        public SyntaxNode AsPublicInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType)
+        {
+            return this.AsPublicInterfaceImplementation(declaration, interfaceType, null);
+        }
+
+        /// <summary>
+        /// Converts method, property and indexer declarations into public interface implementations.
+        /// This is equivalent to an implicit C# interface implementation (you can access it via the interface or directly via the named member.)
+        /// </summary>
+        public abstract SyntaxNode AsPublicInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType, string interfaceMemberName);
 
         /// <summary>
         /// Converts method, property and indexer declarations into private interface implementations.
         /// This is equivalent to a C# explicit interface implementation (you can declare it for access via the interface, but cannot call it directly).
         /// </summary>
-        public abstract SyntaxNode AsPrivateInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType);
+        public SyntaxNode AsPrivateInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType)
+        {
+            return this.AsPrivateInterfaceImplementation(declaration, interfaceType, null);
+        }
+
+        /// <summary>
+        /// Converts method, property and indexer declarations into private interface implementations.
+        /// This is equivalent to a C# explicit interface implementation (you can declare it for access via the interface, but cannot call it directly).
+        /// </summary>
+        public abstract SyntaxNode AsPrivateInterfaceImplementation(SyntaxNode declaration, SyntaxNode interfaceType, string interfaceMemberName);
 
         /// <summary>
         /// Creates a class declaration.
@@ -397,14 +496,7 @@ namespace Microsoft.CodeAnalysis.Editing
 
                 case SymbolKind.Event:
                     var ev = (IEventSymbol)symbol;
-                    if (ev.IsAbstract || ev.IsVirtual || ev.AddMethod != null || ev.RemoveMethod != null)
-                    {
-                        return CustomEventDeclaration(ev);
-                    }
-                    else
-                    {
-                        return EventDeclaration(ev);
-                    }
+                    return EventDeclaration(ev);
 
                 case SymbolKind.Method:
                     var method = (IMethodSymbol)symbol;
@@ -416,8 +508,10 @@ namespace Microsoft.CodeAnalysis.Editing
 
                         case MethodKind.Ordinary:
                             return MethodDeclaration(method);
-                    }
 
+                        case MethodKind.UserDefinedOperator:
+                            return OperatorDeclaration(method);
+                    }
                     break;
 
                 case SymbolKind.Parameter:
@@ -436,7 +530,7 @@ namespace Microsoft.CodeAnalysis.Editing
                                 modifiers: DeclarationModifiers.From(type),
                                 baseType: TypeExpression(type.BaseType),
                                 interfaceTypes: type.Interfaces != null ? type.Interfaces.Select(i => TypeExpression(i)) : null,
-                                members: type.GetMembers().Select(m => Declaration(m)));
+                                members: type.GetMembers().Where(CanBeDeclared).Select(m => Declaration(m)));
                             break;
                         case TypeKind.Struct:
                             declaration = StructDeclaration(
@@ -444,20 +538,20 @@ namespace Microsoft.CodeAnalysis.Editing
                                 accessibility: type.DeclaredAccessibility,
                                 modifiers: DeclarationModifiers.From(type),
                                 interfaceTypes: type.Interfaces != null ? type.Interfaces.Select(i => TypeExpression(i)) : null,
-                                members: type.GetMembers().Select(m => Declaration(m)));
+                                members: type.GetMembers().Where(CanBeDeclared).Select(m => Declaration(m)));
                             break;
                         case TypeKind.Interface:
                             declaration = InterfaceDeclaration(
                                 type.Name,
                                 accessibility: type.DeclaredAccessibility,
                                 interfaceTypes: type.Interfaces != null ? type.Interfaces.Select(i => TypeExpression(i)) : null,
-                                members: type.GetMembers().Select(m => Declaration(m)));
+                                members: type.GetMembers().Where(CanBeDeclared).Select(m => Declaration(m)));
                             break;
                         case TypeKind.Enum:
                             declaration = EnumDeclaration(
                                 type.Name,
                                 accessibility: type.DeclaredAccessibility,
-                                members: type.GetMembers().Select(m => Declaration(m)));
+                                members: type.GetMembers().Where(CanBeDeclared).Select(m => Declaration(m)));
                             break;
                         case TypeKind.Delegate:
                             var invoke = type.GetMembers("Invoke").First() as IMethodSymbol;
@@ -480,6 +574,44 @@ namespace Microsoft.CodeAnalysis.Editing
             }
 
             throw new ArgumentException("Symbol cannot be converted to a declaration");
+        }
+
+        private static bool CanBeDeclared(ISymbol symbol)
+        {
+            switch (symbol.Kind)
+            {
+                case SymbolKind.Field:
+                case SymbolKind.Property:
+                case SymbolKind.Event:
+                case SymbolKind.Parameter:
+                    return true;
+
+                case SymbolKind.Method:
+                    var method = (IMethodSymbol)symbol;
+                    switch (method.MethodKind)
+                    {
+                        case MethodKind.Constructor:
+                        case MethodKind.SharedConstructor:
+                        case MethodKind.Ordinary:
+                            return true;
+                    }
+                    break;
+
+                case SymbolKind.NamedType:
+                    var type = (INamedTypeSymbol)symbol;
+                    switch (type.TypeKind)
+                    {
+                        case TypeKind.Class:
+                        case TypeKind.Struct:
+                        case TypeKind.Interface:
+                        case TypeKind.Enum:
+                        case TypeKind.Delegate:
+                            return true;
+                    }
+                    break;
+            }
+
+            return false;
         }
 
         private SyntaxNode WithTypeParametersAndConstraints(SyntaxNode declaration, ImmutableArray<ITypeParameterSymbol> typeParameters)
@@ -631,11 +763,13 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public SyntaxNode Attribute(AttributeData attribute)
         {
+            var args = attribute.ConstructorArguments.Select(a => this.AttributeArgument(this.TypedConstantExpression(a)))
+                    .Concat(attribute.NamedArguments.Select(n => this.AttributeArgument(n.Key, this.TypedConstantExpression(n.Value))))
+                    .ToImmutableReadOnlyListOrEmpty();
+
             return Attribute(
-                name: TypeExpression(attribute.AttributeClass),
-                attributeArguments:
-                    attribute.ConstructorArguments.Select(a => this.AttributeArgument(this.LiteralExpression(a.Value)))
-                    .Concat(attribute.NamedArguments.Select(n => this.AttributeArgument(n.Key, this.LiteralExpression(n.Value.Value)))));
+                name: this.TypeExpression(attribute.AttributeClass),
+                attributeArguments: args.Count > 0 ? args : null);
         }
 
         private IEnumerable<SyntaxNode> GetSymbolAttributes(ISymbol symbol)
@@ -882,6 +1016,24 @@ namespace Microsoft.CodeAnalysis.Editing
         }
 
         /// <summary>
+        /// Gets the list of switch sections for the statement.
+        /// </summary>
+        public abstract IReadOnlyList<SyntaxNode> GetSwitchSections(SyntaxNode switchStatement);
+
+        /// <summary>
+        /// Inserts the switch sections at the specified index into the statement.
+        /// </summary>
+        public abstract SyntaxNode InsertSwitchSections(SyntaxNode switchStatement, int index, IEnumerable<SyntaxNode> switchSections);
+
+        /// <summary>
+        /// Adds the switch sections to the statement.
+        /// </summary>
+        public SyntaxNode AddSwitchSections(SyntaxNode switchStatement, IEnumerable<SyntaxNode> switchSections)
+        {
+            return this.InsertSwitchSections(switchStatement, this.GetSwitchSections(switchStatement).Count, switchSections);
+        }
+
+        /// <summary>
         /// Gets the expression associated with the declaration.
         /// </summary>
         public abstract SyntaxNode GetExpression(SyntaxNode declaration);
@@ -900,6 +1052,32 @@ namespace Microsoft.CodeAnalysis.Editing
         /// Changes the statements for the body of the declaration.
         /// </summary>
         public abstract SyntaxNode WithStatements(SyntaxNode declaration, IEnumerable<SyntaxNode> statements);
+
+        /// <summary>
+        /// Gets the accessors for the declaration.
+        /// </summary>
+        public abstract IReadOnlyList<SyntaxNode> GetAccessors(SyntaxNode declaration);
+
+        /// <summary>
+        /// Gets the accessor of the specified kind for the declaration.
+        /// </summary>
+        public SyntaxNode GetAccessor(SyntaxNode declaration, DeclarationKind kind)
+        {
+            return this.GetAccessors(declaration).FirstOrDefault(a => GetDeclarationKind(a) == kind);
+        }
+
+        /// <summary>
+        /// Creates a new instance of the declaration with the accessors inserted.
+        /// </summary>
+        public abstract SyntaxNode InsertAccessors(SyntaxNode declaration, int index, IEnumerable<SyntaxNode> accessors);
+
+        /// <summary>
+        /// Creates a new instance of the declaration with the accessors added.
+        /// </summary>
+        public SyntaxNode AddAccessors(SyntaxNode declaration, IEnumerable<SyntaxNode> accessors)
+        {
+            return this.InsertAccessors(declaration, this.GetAccessors(declaration).Count, accessors);
+        }
 
         /// <summary>
         /// Gets the statements for the body of the get-accessor of the declaration.
@@ -935,6 +1113,8 @@ namespace Microsoft.CodeAnalysis.Editing
         /// Adds an interface type to the declaration
         /// </summary>
         public abstract SyntaxNode AddInterfaceType(SyntaxNode declaration, SyntaxNode interfaceType);
+
+        internal abstract SyntaxNode AsInterfaceMember(SyntaxNode member);
 
         #endregion
 
@@ -975,7 +1155,15 @@ namespace Microsoft.CodeAnalysis.Editing
         /// </summary>
         public virtual SyntaxNode RemoveNode(SyntaxNode root, SyntaxNode node)
         {
-            return root.RemoveNode(node, DefaultRemoveOptions);
+            return RemoveNode(root, node, DefaultRemoveOptions);
+        }
+
+        /// <summary>
+        /// Removes the node from the sub tree starting at the root.
+        /// </summary>
+        public virtual SyntaxNode RemoveNode(SyntaxNode root, SyntaxNode node, SyntaxRemoveOptions options)
+        {
+            return root.RemoveNode(node, options);
         }
 
         /// <summary>
@@ -998,6 +1186,11 @@ namespace Microsoft.CodeAnalysis.Editing
 
         protected static SyntaxNode PreserveTrivia<TNode>(TNode node, Func<TNode, SyntaxNode> nodeChanger) where TNode : SyntaxNode
         {
+            if (node == null)
+            {
+                return node;
+            }
+
             var nodeWithoutTrivia = node.WithoutLeadingTrivia().WithoutTrailingTrivia();
 
             var changedNode = nodeChanger(nodeWithoutTrivia);
@@ -1038,12 +1231,10 @@ namespace Microsoft.CodeAnalysis.Editing
             return root.ReplaceToken(original, combinedTriviaReplacement);
         }
 
-        protected IEnumerable<TNode> ClearTrivia<TNode>(IEnumerable<TNode> nodes) where TNode : SyntaxNode
-        {
-            return nodes != null ? nodes.Select(n => ClearTrivia(n)) : null;
-        }
-
-        protected abstract TNode ClearTrivia<TNode>(TNode node) where TNode : SyntaxNode;
+        /// <summary>
+        /// Creates a new instance of the node with the leading and trailing trivia removed and replaced with elastic markers.
+        /// </summary>
+        public abstract TNode ClearTrivia<TNode>(TNode node) where TNode : SyntaxNode;
 
         protected int IndexOf<T>(IReadOnlyList<T> list, T element)
         {
@@ -1106,7 +1297,7 @@ namespace Microsoft.CodeAnalysis.Editing
         public abstract SyntaxNode ReturnStatement(SyntaxNode expression = null);
 
         /// <summary>
-        /// Creates a statement that can be used to throw and exception.
+        /// Creates a statement that can be used to throw an exception.
         /// </summary>
         /// <param name="expression">An optional expression that can be thrown.</param>
         public abstract SyntaxNode ThrowStatement(SyntaxNode expression = null);
@@ -1234,9 +1425,9 @@ namespace Microsoft.CodeAnalysis.Editing
         /// <summary>
         /// Creates a catch-clause.
         /// </summary>
-        public SyntaxNode CatchClause(ITypeSymbol type, string identifer, IEnumerable<SyntaxNode> statements)
+        public SyntaxNode CatchClause(ITypeSymbol type, string identifier, IEnumerable<SyntaxNode> statements)
         {
-            return CatchClause(TypeExpression(type), identifer, statements);
+            return CatchClause(TypeExpression(type), identifier, statements);
         }
 
         /// <summary>
@@ -1270,6 +1461,11 @@ namespace Microsoft.CodeAnalysis.Editing
         public abstract SyntaxNode LiteralExpression(object value);
 
         /// <summary>
+        /// Creates an expression for a typed constant.
+        /// </summary>
+        public abstract SyntaxNode TypedConstantExpression(TypedConstant value);
+
+        /// <summary>
         /// Creates an expression that denotes the boolean false literal.
         /// </summary>
         public SyntaxNode FalseLiteralExpression()
@@ -1299,6 +1495,10 @@ namespace Microsoft.CodeAnalysis.Editing
         /// <param name="identifier"></param>
         /// <returns></returns>
         public abstract SyntaxNode IdentifierName(string identifier);
+
+        internal abstract SyntaxNode IdentifierName(SyntaxToken identifier);
+        internal abstract SyntaxToken Identifier(string identifier);
+        internal abstract SyntaxNode NamedAnonymousObjectMemberDeclarator(SyntaxNode identifier, SyntaxNode expression);
 
         /// <summary>
         /// Creates an expression that denotes a generic identifier name.
@@ -1358,7 +1558,7 @@ namespace Microsoft.CodeAnalysis.Editing
         {
             if (dottedName == null)
             {
-                throw new ArgumentNullException("dottedName");
+                throw new ArgumentNullException(nameof(dottedName));
             }
 
             var parts = dottedName.Split(s_dotSeparator);
@@ -1519,7 +1719,13 @@ namespace Microsoft.CodeAnalysis.Editing
         /// <summary>
         /// Creates a member access expression.
         /// </summary>
-        public abstract SyntaxNode MemberAccessExpression(SyntaxNode expression, SyntaxNode memberName);
+        public virtual SyntaxNode MemberAccessExpression(SyntaxNode expression, SyntaxNode memberName)
+        {
+            return MemberAccessExpressionWorker(expression, memberName)
+                .WithAdditionalAnnotations(Simplification.Simplifier.Annotation);
+        }
+
+        internal abstract SyntaxNode MemberAccessExpressionWorker(SyntaxNode expression, SyntaxNode memberName);
 
         /// <summary>
         /// Creates a member access expression.
@@ -1528,6 +1734,16 @@ namespace Microsoft.CodeAnalysis.Editing
         {
             return MemberAccessExpression(expression, IdentifierName(memberName));
         }
+
+        /// <summary>
+        /// Creates an array creation expression for a single dimensional array of specified size.
+        /// </summary>
+        public abstract SyntaxNode ArrayCreationExpression(SyntaxNode elementType, SyntaxNode size);
+
+        /// <summary>
+        /// Creates an array creation expression for a single dimensional array with specified initial element values.
+        /// </summary>
+        public abstract SyntaxNode ArrayCreationExpression(SyntaxNode elementType, IEnumerable<SyntaxNode> elements);
 
         /// <summary>
         /// Creates an object creation expression.
@@ -1604,6 +1820,11 @@ namespace Microsoft.CodeAnalysis.Editing
         {
             return ElementAccessExpression(expression, (IEnumerable<SyntaxNode>)arguments);
         }
+
+        /// <summary>
+        /// Creates an expression that evaluates to the type at runtime.
+        /// </summary>
+        public abstract SyntaxNode TypeOfExpression(SyntaxNode type);
 
         /// <summary>
         /// Creates an expression that denotes an is-type-check operation.
@@ -1753,6 +1974,17 @@ namespace Microsoft.CodeAnalysis.Editing
         {
             return LambdaParameter(identifier, TypeExpression(type));
         }
+
+        /// <summary>
+        /// Creates an await expression.
+        /// </summary>
+        public abstract SyntaxNode AwaitExpression(SyntaxNode expression);
+
+        /// <summary>
+        /// Creates an nameof expression.
+        /// </summary>
+        public abstract SyntaxNode NameOfExpression(SyntaxNode expression);
+
         #endregion
     }
 }

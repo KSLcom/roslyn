@@ -22,8 +22,21 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
                 return true;
             }
 
+            // (x); -> x;
+            if (node.IsParentKind(SyntaxKind.ExpressionStatement))
+            {
+                return true;
+            }
+
+            // Don't change (x?.Count).GetValueOrDefault() to x?.Count.GetValueOrDefault()
+            if (expression.IsKind(SyntaxKind.ConditionalAccessExpression) && parentExpression is MemberAccessExpressionSyntax)
+            {
+                return false;
+            }
+
             // Easy statement-level cases:
             //   var y = (x);           -> var y = x;
+            //   var (y, z) = (x);      -> var (y, z) = x;
             //   if ((x))               -> if (x)
             //   return (x);            -> return x;
             //   yield return (x);      -> yield return x;
@@ -37,6 +50,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
             //   using ((x))            -> using (x)
             //   catch when ((x))       -> catch when (x)
             if ((node.IsParentKind(SyntaxKind.EqualsValueClause) && ((EqualsValueClauseSyntax)node.Parent).Value == node) ||
+                (node.IsParentKind(SyntaxKind.VariableDeconstructionDeclarator) && ((VariableDeconstructionDeclaratorSyntax)node.Parent).Value == node) ||
                 (node.IsParentKind(SyntaxKind.IfStatement) && ((IfStatementSyntax)node.Parent).Condition == node) ||
                 (node.IsParentKind(SyntaxKind.ReturnStatement) && ((ReturnStatementSyntax)node.Parent).Expression == node) ||
                 (node.IsParentKind(SyntaxKind.YieldReturnStatement) && ((YieldStatementSyntax)node.Parent).Expression == node) ||
@@ -71,6 +85,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Extensions
             // Cases:
             //   $"{(x)}" -> $"{x}"
             if (node.IsParentKind(SyntaxKind.Interpolation))
+            {
+                return true;
+            }
+
+            // Cases:
+            //   ($"{x}") -> $"{x}"
+            if (expression.IsKind(SyntaxKind.InterpolatedStringExpression))
             {
                 return true;
             }

@@ -3,6 +3,7 @@
 // References\Debugger\v2.0\Microsoft.VisualStudio.Debugger.Engine.dll
 
 #endregion
+
 using System;
 
 namespace Microsoft.VisualStudio.Debugger.Evaluation
@@ -20,8 +21,8 @@ namespace Microsoft.VisualStudio.Debugger.Evaluation
             this.EnumContext = EnumContext;
         }
 
-        public DkmEvaluationResultEnumContext EnumContext { get; private set; }
-        public DkmEvaluationResult[] InitialChildren { get; private set; }
+        public DkmEvaluationResultEnumContext EnumContext { get; }
+        public DkmEvaluationResult[] InitialChildren { get; }
 
         internal Exception Exception { get; set; }
 

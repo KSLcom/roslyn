@@ -2,25 +2,20 @@
 
 using System;
 using System.Threading.Tasks;
-using Microsoft.VisualStudio.Text;
-using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Utilities;
 
 namespace Microsoft.VisualStudio.InteractiveWindow.UnitTests
 {
-    public class TestInteractiveEngine : IInteractiveEvaluator
+    public sealed class TestInteractiveEngine : IInteractiveEvaluator
     {
+        internal event EventHandler<string> OnExecute;
+
         private readonly IContentType _contentType;
         private IInteractiveWindow _currentWindow;
 
         public TestInteractiveEngine(IContentTypeRegistryService contentTypeRegistryService)
         {
             _contentType = contentTypeRegistryService.GetContentType(TestContentTypeDefinition.ContentTypeName);
-        }
-
-        public IContentType ContentType
-        {
-            get { return _contentType; }
         }
 
         public IInteractiveWindow CurrentWindow
@@ -50,22 +45,23 @@ namespace Microsoft.VisualStudio.InteractiveWindow.UnitTests
             return Task.FromResult(ExecutionResult.Success);
         }
 
-        public bool CanExecuteText(string text)
+        public bool CanExecuteCode(string text)
         {
             return true;
         }
 
-        public Task<ExecutionResult> ExecuteTextAsync(string text)
+        public Task<ExecutionResult> ExecuteCodeAsync(string text)
         {
+            OnExecute?.Invoke(this, text);
             return Task.FromResult(ExecutionResult.Success);
         }
 
         public string FormatClipboard()
         {
-            return "";
+            return null;
         }
 
-        public void AbortCommand()
+        public void AbortExecution()
         {
         }
 

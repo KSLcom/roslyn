@@ -17,7 +17,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             Debug.Assert(originalVariable != null);
             Debug.Assert(type != null);
             Debug.Assert(containingSymbol != null);
-                
+
             _originalVariable = originalVariable;
             _type = type;
             _containingSymbol = containingSymbol;
@@ -96,6 +96,16 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         internal override ImmutableArray<Diagnostic> GetConstantValueDiagnostics(BoundExpression boundInitValue)
         {
             return _originalVariable.GetConstantValueDiagnostics(boundInitValue);
+        }
+
+        internal override LocalSymbol WithSynthesizedLocalKindAndSyntax(SynthesizedLocalKind kind, SyntaxNode syntax)
+        {
+            var origSynthesized = (SynthesizedLocal)_originalVariable;
+            return new TypeSubstitutedLocalSymbol(
+                    origSynthesized.WithSynthesizedLocalKindAndSyntax(kind, syntax),
+                    _type,
+                    _containingSymbol
+                );
         }
     }
 }

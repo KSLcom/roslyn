@@ -272,11 +272,17 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
                         // build argument
                         arguments[i] = F.Convert(manager.System_Object,
-                                                 new BoundConditionalAccess(F.Syntax,
+                                                 new BoundLoweredConditionalAccess(F.Syntax,
                                                                             F.Field(F.This(), property.BackingField),
-                                                                            F.Call(new BoundConditionalReceiver(F.Syntax, property.BackingField.Type), manager.System_Object__ToString),
-                                                                            manager.System_String),
-                                                 ConversionKind.ImplicitReference);
+                                                                            null,
+                                                                            F.Call(new BoundConditionalReceiver(
+                                                                                F.Syntax,
+                                                                                id: i,
+                                                                                type: property.BackingField.Type), manager.System_Object__ToString),
+                                                                            null,
+                                                                            id: i,
+                                                                            type: manager.System_String),
+                                                 Conversion.ImplicitReference);
                     }
                     formatString.Builder.Append(" }}");
 
@@ -286,7 +292,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     //  Generate expression for return statement
                     //      retExpression <= System.String.Format(args)
                     var formatMethod = manager.System_String__Format_IFormatProvider;
-                    retExpression = F.StaticCall(manager.System_String, formatMethod, F.Null(formatMethod.Parameters[0].Type), format, F.Array(manager.System_Object, arguments));
+                    retExpression = F.StaticCall(manager.System_String, formatMethod, F.Null(formatMethod.Parameters[0].Type), format, F.ArrayOrEmpty(manager.System_Object, arguments));
                 }
                 else
                 {

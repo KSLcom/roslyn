@@ -3,6 +3,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis.ChangeSignature;
 using Microsoft.CodeAnalysis.CSharp;
@@ -20,21 +21,25 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
     internal sealed class ChangeSignatureTestState : IDisposable
     {
         private TestHostDocument _testDocument;
-        public TestWorkspace Workspace { get; private set; }
-        public Document InvocationDocument { get; private set; }
-        public AbstractChangeSignatureService ChangeSignatureService { get; private set; }
+        public TestWorkspace Workspace { get; }
+        public Document InvocationDocument { get; }
+        public AbstractChangeSignatureService ChangeSignatureService { get; }
         public string ErrorMessage { get; private set; }
         public NotificationSeverity ErrorSeverity { get; private set; }
 
-        public ChangeSignatureTestState(string markup, string languageName, ParseOptions parseOptions = null)
-            : this(languageName == LanguageNames.CSharp
-                  ? CSharpWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider: s_exportProvider, parseOptions: (CSharpParseOptions)parseOptions)
-                  : VisualBasicWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider: s_exportProvider, parseOptions: parseOptions, compilationOptions: new VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary)))
+        public static async Task<ChangeSignatureTestState> CreateAsync(string markup, string languageName, ParseOptions parseOptions = null)
         {
+            var workspace = languageName == LanguageNames.CSharp
+                  ? await TestWorkspace.CreateCSharpAsync(markup, exportProvider: s_exportProvider, parseOptions: (CSharpParseOptions)parseOptions)
+                  : await TestWorkspace.CreateVisualBasicAsync(markup, exportProvider: s_exportProvider, parseOptions: parseOptions, compilationOptions: new VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            return new ChangeSignatureTestState(workspace);
         }
 
-        public ChangeSignatureTestState(XElement workspaceXml) : this(TestWorkspaceFactory.CreateWorkspace(workspaceXml))
+        public static async Task<ChangeSignatureTestState> CreateAsync(XElement workspaceXml)
         {
+            var workspace = await TestWorkspace.CreateAsync(workspaceXml);
+            return new ChangeSignatureTestState(workspace);
         }
 
         public ChangeSignatureTestState(TestWorkspace workspace)
@@ -44,7 +49,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
 
             if (_testDocument == null)
             {
-                throw new ArgumentException("markup does not contain a cursor position", "workspace");
+                throw new ArgumentException("markup does not contain a cursor position", nameof(workspace));
             }
 
             InvocationDocument = Workspace.CurrentSolution.GetDocument(_testDocument.Id);
@@ -61,6 +66,8 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ChangeSignature
 
         public ChangeSignatureResult ChangeSignature()
         {
+            Roslyn.Test.Utilities.WpfTestCase.RequireWpfFact($"{nameof(AbstractChangeSignatureService.ChangeSignature)} currently needs to run on a WPF Fact because it's factored in a way that tries popping up UI in some cases.");
+
             return ChangeSignatureService.ChangeSignature(
                 InvocationDocument,
                 _testDocument.CursorPosition.Value,

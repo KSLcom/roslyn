@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeGeneration;
-using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.InternalElements;
+using Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Interop;
 using Microsoft.VisualStudio.Text;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel
@@ -48,11 +47,22 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel
         IEnumerable<SyntaxNode> GetImplementsNodes(SyntaxNode parent);
 
         /// <summary>
-        /// Retrieves the logical members of a given node, flattening the declarators
-        /// in field declarations. For example, if a class contains the field "int foo, bar", 
-        /// two nodes are returned -- one for "foo" and one for "bar".
+        /// Retrieves the members of a specified <paramref name="container"/> node. The members that are
+        /// returned can be controlled by passing various parameters.
         /// </summary>
-        IEnumerable<SyntaxNode> GetFlattenedMemberNodes(SyntaxNode parent);
+        /// <param name="container">The <see cref="SyntaxNode"/> from which to retrieve members.</param>
+        /// <param name="includeSelf">If true, the container is returned as well.</param>
+        /// <param name="recursive">If true, members are recursed to return descendant members as well
+        /// as immediate children. For example, a namespace would return the namespaces and types within.
+        /// However, if <paramref name="recursive"/> is true, members with the namespaces and types would
+        /// also be returned.</param>
+        /// <param name="logicalFields">If true, field declarations are broken into their respective declarators.
+        /// For example, the field "int x, y" would return two declarators, one for x and one for y in place
+        /// of the field.</param>
+        /// <param name="onlySupportedNodes">If true, only members supported by Code Model are returned.</param>
+        IEnumerable<SyntaxNode> GetMemberNodes(SyntaxNode container, bool includeSelf, bool recursive, bool logicalFields, bool onlySupportedNodes);
+
+        IEnumerable<SyntaxNode> GetLogicalSupportedMemberNodes(SyntaxNode container);
 
         SyntaxNodeKey GetNodeKey(SyntaxNode node);
         SyntaxNodeKey TryGetNodeKey(SyntaxNode node);
@@ -64,6 +74,9 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel
         string Language { get; }
         string AssemblyAttributeString { get; }
 
+        /// <summary>
+        /// Do not use this method directly! Instead, go through <see cref="FileCodeModel.GetOrCreateCodeElement{T}(SyntaxNode)"/>
+        /// </summary>
         EnvDTE.CodeElement CreateInternalCodeElement(CodeModelState state, FileCodeModel fileCodeModel, SyntaxNode node);
         EnvDTE.CodeElement CreateExternalCodeElement(CodeModelState state, ProjectId projectId, ISymbol symbol);
         EnvDTE.CodeElement CreateUnknownCodeElement(CodeModelState state, FileCodeModel fileCodeModel, SyntaxNode node);
@@ -103,16 +116,26 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel
         string GetFullName(SyntaxNode node, SemanticModel semanticModel);
 
         /// <summary>
-        /// Retrieves the value to be returned from the EnvDTE.CodeElement.FullName property for external code elements
-        /// </summary>
-        string GetFullName(ISymbol symbol);
-
-        /// <summary>
         /// Given a name, attempts to convert it to a fully qualified name.
         /// </summary>
         string GetFullyQualifiedName(string name, int position, SemanticModel semanticModel);
 
         void Rename(ISymbol symbol, string newName, Solution solution);
+
+        /// <summary>
+        /// Returns true if the given <paramref name="symbol"/> can be used to create an external code element; otherwise, false.
+        /// </summary>
+        bool IsValidExternalSymbol(ISymbol symbol);
+
+        /// <summary>
+        /// Returns the value to be returned from <see cref="EnvDTE.CodeElement.Name"/> for external code elements.
+        /// </summary>
+        string GetExternalSymbolName(ISymbol symbol);
+
+        /// <summary>
+        /// Retrieves the value to be returned from <see cref="EnvDTE.CodeElement.FullName"/> for external code elements.
+        /// </summary>
+        string GetExternalSymbolFullName(ISymbol symbol);
 
         SyntaxNode GetNodeWithModifiers(SyntaxNode node);
         SyntaxNode GetNodeWithType(SyntaxNode node);
@@ -175,6 +198,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel
         string GetParameterFullName(SyntaxNode node);
         EnvDTE80.vsCMParameterKind GetParameterKind(SyntaxNode node);
         SyntaxNode SetParameterKind(SyntaxNode node, EnvDTE80.vsCMParameterKind kind);
+        IEnumerable<SyntaxNode> GetParameterNodes(SyntaxNode parent);
+        EnvDTE80.vsCMParameterKind UpdateParameterKind(EnvDTE80.vsCMParameterKind parameterKind, PARAMETER_PASSING_MODE passingMode);
 
         EnvDTE.vsCMFunction ValidateFunctionKind(SyntaxNode containerNode, EnvDTE.vsCMFunction kind, string name);
 

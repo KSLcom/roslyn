@@ -23,17 +23,16 @@ namespace Microsoft.CodeAnalysis.CodeGen
     {
         // Note: Dev11 uses the source method token as the prefix, rather than a fixed token
         // value, and data field offsets are unique within the method, not across all methods.
-        private const string MemberNamePrefix = "$$method0x6000001-";
-        internal const string SynthesizedStringHashFunctionName = MemberNamePrefix + "ComputeStringHash";
+        internal const string SynthesizedStringHashFunctionName = "ComputeStringHash";
 
-        private readonly Cci.IModule _module;                     //parent unit
-        private readonly Cci.ITypeReference _systemObject;        //base type
-        private readonly Cci.ITypeReference _systemValueType;     //base for nested structs
+        private readonly Cci.IModule _moduleBuilder;                 //the module builder
+        private readonly Cci.ITypeReference _systemObject;           //base type
+        private readonly Cci.ITypeReference _systemValueType;        //base for nested structs
 
-        private readonly Cci.ITypeReference _systemInt8Type;         //for metadata init of short arrays
+        private readonly Cci.ITypeReference _systemInt8Type;         //for metadata init of byte arrays
         private readonly Cci.ITypeReference _systemInt16Type;        //for metadata init of short arrays
-        private readonly Cci.ITypeReference _systemInt32Type;        //for metadata init of short arrays
-        private readonly Cci.ITypeReference _systemInt64Type;        //for metadata init of short arrays
+        private readonly Cci.ITypeReference _systemInt32Type;        //for metadata init of int arrays
+        private readonly Cci.ITypeReference _systemInt64Type;        //for metadata init of long arrays
 
         private readonly Cci.ICustomAttribute _compilerGeneratedAttribute;
 
@@ -43,9 +42,13 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private int _frozen;
 
         // fields mapped to metadata blocks
-        private ImmutableArray<MappedField> _orderedMappedFields;
+        private ImmutableArray<SynthesizedStaticField> _orderedSynthesizedFields;
         private readonly ConcurrentDictionary<ImmutableArray<byte>, MappedField> _mappedFields =
             new ConcurrentDictionary<ImmutableArray<byte>, MappedField>(ByteSequenceComparer.Instance);
+
+        private ModuleVersionIdField _mvidField;
+        // Dictionary that maps from analysis kind to instrumentation payload field.
+        private readonly ConcurrentDictionary<int, InstrumentationPayloadRootField> _instrumentationPayloadRootFields = new ConcurrentDictionary<int, InstrumentationPayloadRootField>();
 
         // synthesized methods
         private ImmutableArray<Cci.IMethodDefinition> _orderedSynthesizedMethods;
@@ -57,7 +60,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private readonly ConcurrentDictionary<uint, Cci.ITypeReference> _proxyTypes = new ConcurrentDictionary<uint, Cci.ITypeReference>();
 
         internal PrivateImplementationDetails(
-            Cci.IModule module,
+            Cci.IModule moduleBuilder,
+            string moduleName,
             int submissionSlotIndex,
             Cci.ITypeReference systemObject,
             Cci.ITypeReference systemValueType,
@@ -67,11 +71,10 @@ namespace Microsoft.CodeAnalysis.CodeGen
             Cci.ITypeReference systemInt64Type,
             Cci.ICustomAttribute compilerGeneratedAttribute)
         {
-            Debug.Assert(module != null);
             Debug.Assert(systemObject != null);
             Debug.Assert(systemValueType != null);
 
-            _module = module;
+            _moduleBuilder = moduleBuilder;
             _systemObject = systemObject;
             _systemValueType = systemValueType;
 
@@ -81,12 +84,25 @@ namespace Microsoft.CodeAnalysis.CodeGen
             _systemInt64Type = systemInt64Type;
 
             _compilerGeneratedAttribute = compilerGeneratedAttribute;
-            _name = GetClassName(submissionSlotIndex);
+
+            var isNetModule = moduleBuilder.AsAssembly == null;
+            _name = GetClassName(moduleName, submissionSlotIndex, isNetModule);
         }
 
-        internal static string GetClassName(int submissionSlotIndex)
+        private static string GetClassName(string moduleName, int submissionSlotIndex, bool isNetModule)
         {
-            return "<PrivateImplementationDetails>" + (submissionSlotIndex >= 0 ? submissionSlotIndex.ToString() : "");
+            // we include the module name in the name of the PrivateImplementationDetails class so that more than
+            // one of them can be included in an assembly as part of netmodules.    
+            var name = isNetModule ?
+                        $"<PrivateImplementationDetails><{MetadataHelpers.MangleForTypeNameIfNeeded(moduleName)}>" :
+                        $"<PrivateImplementationDetails>";
+
+            if (submissionSlotIndex >= 0)
+            {
+                name += submissionSlotIndex.ToString();
+            }
+
+            return name;
         }
 
         internal void Freeze()
@@ -97,9 +113,21 @@ namespace Microsoft.CodeAnalysis.CodeGen
                 throw new InvalidOperationException();
             }
 
-            // Sort data fields
-            _orderedMappedFields = _mappedFields.Values.OrderBy((x, y) => x.Name.CompareTo(y.Name)).AsImmutable();
+            // Sort fields.
+            ArrayBuilder<SynthesizedStaticField> fieldsBuilder = ArrayBuilder<SynthesizedStaticField>.GetInstance(_mappedFields.Count + (_mvidField != null ? 1 : 0));
+            fieldsBuilder.AddRange(_mappedFields.Values);
+            if (_mvidField != null)
+            {
+                fieldsBuilder.Add(_mvidField);
+            }
+            fieldsBuilder.AddRange(_instrumentationPayloadRootFields.Values);
+            fieldsBuilder.Sort(FieldComparer.Instance);
+            _orderedSynthesizedFields = fieldsBuilder.ToImmutableAndFree();
+
+            // Sort methods.
             _orderedSynthesizedMethods = _synthesizedMethods.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value).AsImmutable();
+           
+            // Sort proxy types.
             _orderedProxyTypes = _proxyTypes.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value).AsImmutable();
         }
 
@@ -108,7 +136,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         internal Cci.IFieldReference CreateDataField(ImmutableArray<byte> data)
         {
             Debug.Assert(!IsFrozen);
-            Cci.ITypeReference type = _proxyTypes.GetOrAdd((uint)data.Length, size => GetStorageStruct(size));
+            Cci.ITypeReference type = _proxyTypes.GetOrAdd((uint)data.Length, GetStorageStruct);
             return _mappedFields.GetOrAdd(data, data0 =>
             {
                 var name = GenerateDataFieldName(data0);
@@ -134,8 +162,39 @@ namespace Microsoft.CodeAnalysis.CodeGen
             return new ExplicitSizeStruct(size, this, _systemValueType);
         }
 
+        internal Cci.IFieldReference GetModuleVersionId(Cci.ITypeReference mvidType)
+        {
+            if (_mvidField == null)
+            {
+                Debug.Assert(!IsFrozen);
+                Interlocked.CompareExchange(ref _mvidField, new ModuleVersionIdField(this, mvidType), null);
+            }
 
-        // Add a new synthesized method indexed by it's name if the method isn't already present.
+            Debug.Assert(_mvidField.Type.Equals(mvidType));
+            return _mvidField;
+        }
+
+        internal Cci.IFieldReference GetOrAddInstrumentationPayloadRoot(int analysisKind, Cci.ITypeReference payloadRootType)
+        {
+            InstrumentationPayloadRootField payloadRootField;
+            if (!_instrumentationPayloadRootFields.TryGetValue(analysisKind, out payloadRootField))
+            {
+                Debug.Assert(!IsFrozen);
+                payloadRootField = _instrumentationPayloadRootFields.GetOrAdd(analysisKind, kind => new InstrumentationPayloadRootField(this, kind, payloadRootType));
+            }
+
+            Debug.Assert(payloadRootField.Type.Equals(payloadRootType));
+            return payloadRootField;
+        }
+
+        // Get the instrumentation payload roots ordered by analysis kind.
+        internal IOrderedEnumerable<KeyValuePair<int, InstrumentationPayloadRootField>> GetInstrumentationPayloadRoots()
+        {
+            Debug.Assert(IsFrozen);
+            return _instrumentationPayloadRootFields.OrderBy(analysis => analysis.Key);
+        }
+
+        // Add a new synthesized method indexed by its name if the method isn't already present.
         internal bool TryAddSynthesizedMethod(Cci.IMethodDefinition method)
         {
             Debug.Assert(!IsFrozen);
@@ -145,7 +204,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         public override IEnumerable<Cci.IFieldDefinition> GetFields(EmitContext context)
         {
             Debug.Assert(IsFrozen);
-            return _orderedMappedFields;
+            return _orderedSynthesizedFields;
         }
 
         public override IEnumerable<Cci.IMethodDefinition> GetMethods(EmitContext context)
@@ -165,7 +224,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         public override IEnumerable<Cci.INestedTypeDefinition> GetNestedTypes(EmitContext context)
         {
             Debug.Assert(IsFrozen);
-            return System.Linq.Enumerable.OfType<ExplicitSizeStruct>(_orderedProxyTypes);
+            return _orderedProxyTypes.OfType<ExplicitSizeStruct>();
         }
 
         public override string ToString() => this.Name;
@@ -184,7 +243,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public override void Dispatch(Cci.MetadataVisitor visitor)
         {
-            visitor.Visit((Cci.INamespaceTypeDefinition)this);
+            visitor.Visit(this);
         }
 
         public override Cci.INamespaceTypeDefinition AsNamespaceTypeDefinition(EmitContext context) => this;
@@ -197,8 +256,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public Cci.IUnitReference GetUnit(EmitContext context)
         {
-            Debug.Assert(context.Module == _module);
-            return _module;
+            Debug.Assert(context.Module == _moduleBuilder);
+            return _moduleBuilder;
         }
 
         public string NamespaceName => string.Empty;
@@ -214,11 +273,27 @@ namespace Microsoft.CodeAnalysis.CodeGen
                 c[i++] = Hexchar(b & 0xF);
             }
 
-            return MemberNamePrefix + new string(c);
+            return new string(c);
         }
 
         private static char Hexchar(int x)
             => (char)((x <= 9) ? (x + '0') : (x + ('A' - 10)));
+
+        private sealed class FieldComparer : IComparer<SynthesizedStaticField>
+        {
+            public static readonly FieldComparer Instance = new FieldComparer();
+
+            private FieldComparer()
+            {
+            }
+
+            public int Compare(SynthesizedStaticField x, SynthesizedStaticField y)
+            {
+                // Fields are always synthesized with non-null names.
+                Debug.Assert(x.Name != null && y.Name != null);
+                return x.Name.CompareTo(y.Name);
+            }
+        }
     }
 
     /// <summary>
@@ -250,7 +325,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         override public void Dispatch(Cci.MetadataVisitor visitor)
         {
-            visitor.Visit((Cci.INestedTypeDefinition)this);
+            visitor.Visit(this);
         }
 
         public string Name => "__StaticArrayInitTypeSize=" + _size;
@@ -268,34 +343,28 @@ namespace Microsoft.CodeAnalysis.CodeGen
         public override Cci.INestedTypeReference AsNestedTypeReference => this;
     }
 
-    /// <summary>
-    /// Definition of a simple field mapped to a metadata block
-    /// </summary>
-    internal sealed class MappedField : Cci.IFieldDefinition
+    internal abstract class SynthesizedStaticField : Cci.IFieldDefinition
     {
         private readonly Cci.INamedTypeDefinition _containingType;
         private readonly Cci.ITypeReference _type;
-        private readonly ImmutableArray<byte> _block;
         private readonly string _name;
 
-        internal MappedField(string name, Cci.INamedTypeDefinition containingType, Cci.ITypeReference type, ImmutableArray<byte> block)
+        internal SynthesizedStaticField(string name, Cci.INamedTypeDefinition containingType, Cci.ITypeReference type)
         {
             Debug.Assert(name != null);
             Debug.Assert(containingType != null);
             Debug.Assert(type != null);
-            Debug.Assert(!block.IsDefault);
 
             _containingType = containingType;
             _type = type;
-            _block = block;
             _name = name;
         }
-        
+
         public override string ToString() => $"{_type} {_containingType}.{this.Name}";
 
         public Cci.IMetadataConstant GetCompileTimeValue(EmitContext context) => null;
 
-        public ImmutableArray<byte> MappedData => _block;
+        public abstract ImmutableArray<byte> MappedData { get; }
 
         public bool IsCompileTimeConstant => false;
 
@@ -315,7 +384,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public ImmutableArray<byte> MarshallingDescriptor => default(ImmutableArray<byte>);
 
-        public uint Offset
+        public int Offset
         {
             get { throw ExceptionUtilities.Unreachable; }
         }
@@ -331,7 +400,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public void Dispatch(Cci.MetadataVisitor visitor)
         {
-            visitor.Visit((Cci.IFieldDefinition)this);
+            visitor.Visit(this);
         }
 
         public Cci.IDefinition AsDefinition(EmitContext context)
@@ -345,6 +414,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public Cci.ITypeReference GetType(EmitContext context) => _type;
 
+        internal Cci.ITypeReference Type => _type;
+
         public Cci.IFieldDefinition GetResolvedField(EmitContext context) => this;
 
         public Cci.ISpecializedFieldReference AsSpecializedFieldReference => null;
@@ -353,6 +424,44 @@ namespace Microsoft.CodeAnalysis.CodeGen
         {
             get { throw ExceptionUtilities.Unreachable; }
         }
+    }
+
+    internal sealed class ModuleVersionIdField : SynthesizedStaticField
+    {
+        internal ModuleVersionIdField(Cci.INamedTypeDefinition containingType, Cci.ITypeReference type)
+            : base("MVID", containingType, type)
+        {
+        }
+
+        public override ImmutableArray<byte> MappedData => default(ImmutableArray<byte>);
+    }
+
+    internal sealed class InstrumentationPayloadRootField : SynthesizedStaticField
+    {
+        internal InstrumentationPayloadRootField(Cci.INamedTypeDefinition containingType, int analysisIndex, Cci.ITypeReference payloadType)
+            : base("PayloadRoot" + analysisIndex.ToString(), containingType, payloadType)
+        {
+        }
+
+        public override ImmutableArray<byte> MappedData => default(ImmutableArray<byte>);
+    }
+
+    /// <summary>
+    /// Definition of a simple field mapped to a metadata block
+    /// </summary>
+    internal sealed class MappedField : SynthesizedStaticField
+    {
+        private readonly ImmutableArray<byte> _block;
+
+        internal MappedField(string name, Cci.INamedTypeDefinition containingType, Cci.ITypeReference type, ImmutableArray<byte> block)
+            : base(name, containingType, type)
+        {
+            Debug.Assert(!block.IsDefault);
+            
+            _block = block;
+        }
+
+        public override ImmutableArray<byte> MappedData => _block;
     }
 
     /// <summary>
@@ -376,8 +485,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public bool HasDeclarativeSecurity => false;
 
-        public IEnumerable<Cci.ITypeReference> Interfaces(EmitContext context)
-            => SpecializedCollections.EmptyEnumerable<Cci.ITypeReference>();
+        public IEnumerable<Cci.TypeReferenceWithAttributes> Interfaces(EmitContext context)
+            => SpecializedCollections.EmptyEnumerable<Cci.TypeReferenceWithAttributes>();
 
         public bool IsAbstract => false;
 

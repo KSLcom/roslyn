@@ -82,6 +82,22 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// </summary>
         AllowAwaitInUnsafeContext = 1 << 25,
 
+        /// <summary>
+        /// Ignore duplicate types from the cor library.
+        /// </summary>
+        IgnoreCorLibraryDuplicatedTypes = 1 << 26,
+
+        /// <summary>
+        /// When binding imports in scripts/submissions, using aliases (other than from the current submission)
+        /// are considered but other imports are not.
+        /// </summary>
+        InScriptUsing = 1 << 27,
+
+        /// <summary>
+        /// In a file that has been included in the compilation via #load.
+        /// </summary>
+        InLoadedSyntaxTree = 1 << 28,
+
         // Groups
 
         AllClearedAtExecutableCodeBoundary = InLockBody | InCatchBlock | InCatchFilter | InFinallyBlock | InTryBlockOfTryCatch | InNestedFinallyBlock,

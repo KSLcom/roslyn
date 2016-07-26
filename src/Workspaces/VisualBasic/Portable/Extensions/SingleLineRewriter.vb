@@ -12,26 +12,32 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Extensions
     Friend Class SingleLineRewriter
         Inherits VisualBasicSyntaxRewriter
 
-        Private lastTokenEndedInWhitespace As Boolean
-        Private Shared ReadOnly Space As SyntaxTriviaList = SyntaxTriviaList.Create(SyntaxFactory.WhitespaceTrivia(" "))
+        Private useElasticTrivia As Boolean
+        Private _lastTokenEndedInWhitespace As Boolean
+
+        Public Sub New(Optional useElasticTrivia As Boolean = False)
+            Me.useElasticTrivia = useElasticTrivia
+        End Sub
 
         Public Overrides Function VisitToken(token As SyntaxToken) As SyntaxToken
-            If lastTokenEndedInWhitespace Then
+            If _lastTokenEndedInWhitespace Then
                 token = token.WithLeadingTrivia(Enumerable.Empty(Of SyntaxTrivia)())
             ElseIf token.LeadingTrivia.Count > 0 Then
-                token = token.WithLeadingTrivia(Space)
+                If useElasticTrivia Then
+                    token = token.WithLeadingTrivia(SyntaxFactory.ElasticSpace)
+                Else
+                    token = token.WithLeadingTrivia(SyntaxFactory.Space)
+                End If
             End If
-
-#If False Then
-            If token.Kind = SyntaxKind.StatementTerminatorToken Then
-                token = Syntax.Token(token.LeadingTrivia, SyntaxKind.StatementTerminatorToken, token.TrailingTrivia, ":")
-            End If
-#End If
             If token.TrailingTrivia.Count > 0 Then
-                token = token.WithTrailingTrivia(Space)
-                lastTokenEndedInWhitespace = True
+                If useElasticTrivia Then
+                    token = token.WithTrailingTrivia(SyntaxFactory.ElasticSpace)
+                Else
+                    token = token.WithTrailingTrivia(SyntaxFactory.Space)
+                End If
+                _lastTokenEndedInWhitespace = True
             Else
-                lastTokenEndedInWhitespace = False
+                _lastTokenEndedInWhitespace = False
             End If
 
             Return token

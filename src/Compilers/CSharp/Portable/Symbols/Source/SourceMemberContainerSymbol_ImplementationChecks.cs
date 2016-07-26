@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Symbols
 {
@@ -47,7 +48,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     {
                         // Do not cancel from this point on.  We've assigned the member, so we must add
                         // the diagnostics.
-                        AddSemanticDiagnostics(diagnostics);
+                        AddDeclarationDiagnostics(diagnostics);
 
                         state.NotePartComplete(CompletionPart.SynthesizedExplicitImplementations);
                     }
@@ -70,7 +71,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 return;
             }
 
-            // CONSIDER: We know that no one will ask for NotOverriddenAbstractMembers again
+            // CONSIDER: We know that no-one will ask for NotOverriddenAbstractMembers again
             // (since this class is concrete), so we could just call the construction method
             // directly to avoid storing the result.
             foreach (var abstractMember in this.AbstractMembers)
@@ -262,9 +263,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         internal Location GetImplementsLocation(NamedTypeSymbol implementedInterface)
         {
-            // We ideally want to identify the interface location in the baselist with an exact match but
+            // We ideally want to identify the interface location in the base list with an exact match but
             // will fall back and use the first derived interface if exact interface is not present.
-            // this is the similar logic as the VB Implementation.
+            // this is the similar logic as the VB implementation.
             Debug.Assert(this.InterfacesAndTheirBaseInterfacesNoUseSiteDiagnostics.Contains(implementedInterface));
             HashSet<DiagnosticInfo> unuseddiagnostics = null;
 
@@ -354,8 +355,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     break;
 
                 default:
-                    Debug.Assert(false, "Unexpected named type kind " + this.TypeKind);
-                    break;
+                    throw ExceptionUtilities.UnexpectedValue(this.TypeKind);
             }
 
             foreach (var member in this.GetMembersUnordered())
@@ -375,9 +375,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             }
                             else
                             {
-                                // synthesized constructors are the exception, but they should have been weeded out by the caller
-                                var isNew = ((SourceMethodSymbol)method).IsNew;
-                                CheckNonOverrideMember(method, isNew, method.OverriddenOrHiddenMembers, diagnostics, out suppressAccessors);
+                                var sourceMethod = method as SourceMethodSymbol;
+                                if ((object)sourceMethod != null) // skip submission initializer
+                                {
+                                    var isNew = sourceMethod.IsNew;
+                                    CheckNonOverrideMember(method, isNew, method.OverriddenOrHiddenMembers, diagnostics, out suppressAccessors);
+                                }
                             }
                         }
                         else if (method.MethodKind == MethodKind.Destructor)
@@ -505,7 +508,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 return;
             }
 
-            // Do not give warnings about missing 'new' modifier for impicitly declared members,
+            // Do not give warnings about missing 'new' modifier for implicitly declared members,
             // e.g. backing fields for auto-properties
             if (symbol.IsImplicitlyDeclared)
             {
@@ -695,8 +698,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             TypeSymbol overridingMemberType = overridingProperty.Type;
                             TypeSymbol overriddenMemberType = overriddenProperty.Type;
 
-                            // Ignore custom modifiers because this diagnostic is based on the C# semantics.
-                            if (!overridingMemberType.Equals(overriddenMemberType, ignoreCustomModifiers: true, ignoreDynamic: true))
+                            // Check for mismatched byref returns and return type. Ignore custom modifiers, because this diagnostic is based on the C# semantics.
+                            if ((overridingProperty.RefKind != RefKind.None) != (overriddenProperty.RefKind != RefKind.None))
+                            {
+                                diagnostics.Add(ErrorCode.ERR_CantChangeRefReturnOnOverride, overridingMemberLocation, overridingMember, overriddenMember, overridingProperty.RefKind != RefKind.None ? "not " : "");
+                                suppressAccessors = true; //we get really unhelpful errors from the accessor if the ref kind is mismatched
+                            }
+                            else if (!overridingMemberType.Equals(overriddenMemberType, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true))
                             {
                                 diagnostics.Add(ErrorCode.ERR_CantChangeTypeOnOverride, overridingMemberLocation, overridingMember, overriddenMember, overriddenMemberType);
                                 suppressAccessors = true; //we get really unhelpful errors from the accessor if the type is mismatched
@@ -733,7 +741,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             TypeSymbol overriddenMemberType = overriddenEvent.Type;
 
                             // Ignore custom modifiers because this diagnostic is based on the C# semantics.
-                            if (!overridingMemberType.Equals(overriddenMemberType, ignoreCustomModifiers: true, ignoreDynamic: true))
+                            if (!overridingMemberType.Equals(overriddenMemberType, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true))
                             {
                                 diagnostics.Add(ErrorCode.ERR_CantChangeTypeOnOverride, overridingMemberLocation, overridingMember, overriddenMember, overriddenMemberType);
                                 suppressAccessors = true; //we get really unhelpful errors from the accessor if the type is mismatched
@@ -746,8 +754,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             var overridingMethod = (MethodSymbol)overridingMember;
                             var overriddenMethod = (MethodSymbol)overriddenMember;
 
-                            // Ignore custom modifiers, because this diagnostic is based on the C# semantics.
-                            if (!MemberSignatureComparer.HaveSameReturnTypes(overridingMethod, overriddenMethod, considerCustomModifiers: false))
+                            // Check for mismatched byref returns and return type. Ignore custom modifiers, because this diagnostic is based on the C# semantics.
+                            if ((overridingMethod.RefKind != RefKind.None) != (overriddenMethod.RefKind != RefKind.None))
+                            {
+                                diagnostics.Add(ErrorCode.ERR_CantChangeRefReturnOnOverride, overridingMemberLocation, overridingMember, overriddenMember, overridingMethod.RefKind != RefKind.None ? "not " : "");
+                            }
+                            else if (!MemberSignatureComparer.HaveSameReturnTypes(overridingMethod, overriddenMethod, considerCustomModifiers: false))
                             {
                                 // Suppose we have a virtual base class method M<T>() that returns C<T>, and the overriding
                                 // method M<V> returns void. The error should be "return type must be C<V>", not 
@@ -782,8 +794,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             // DevDiv Bugs 115384: Both out and ref parameters are implemented as references. In addition, out parameters are 
             // decorated with OutAttribute. In CLR when a signature is looked up in virtual dispatch, CLR does not distinguish
             // between these to parameter types. The choice is the last method in the vtable. Therefore we check and warn if 
-            // there would potentially be a mismatch in CLRs and C#s choice of the overriden method. Unfortunately we have no 
-            // way of communicating to CLR which method is the overriden one. We only run into this problem when the 
+            // there would potentially be a mismatch in CLRs and C#s choice of the overridden method. Unfortunately we have no 
+            // way of communicating to CLR which method is the overridden one. We only run into this problem when the 
             // parameters are generic.
             var runtimeOverriddenMembers = overriddenOrHiddenMembers.RuntimeOverriddenMembers;
             Debug.Assert(!runtimeOverriddenMembers.IsDefault);
@@ -919,8 +931,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         return true;
                     }
                 default:
-                    Debug.Assert(false, $"Unexpected accessibility {hidingMember.DeclaredAccessibility}");
-                    break;
+                    throw ExceptionUtilities.UnexpectedValue(hidingMember.DeclaredAccessibility);
             }
             return false;
         }
@@ -982,6 +993,14 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         interface1.OriginalDefinition == interface2.OriginalDefinition &&
                         interface1.CanUnifyWith(interface2))
                     {
+                        if (GetImplementsLocation(interface1).SourceSpan.Start > GetImplementsLocation(interface2).SourceSpan.Start)
+                        {
+                            // Mention interfaces in order of their appearance in the base list, for consistency.
+                            var temp = interface1;
+                            interface1 = interface2;
+                            interface2 = temp;
+                        }
+
                         diagnostics.Add(ErrorCode.ERR_UnifyingInterfaceInstantiations, this.Locations[0], this, interface1, interface2);
                     }
                 }
@@ -1095,7 +1114,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         /// <summary>
         /// If C# picks a different implementation than the CLR (see IsPossibleImplementationUnderClrRules), then we might
-        /// still be okay, but dynamic dispath might result in C#'s choice getting called anyway.
+        /// still be okay, but dynamic dispatch might result in C#'s choice getting called anyway.
         /// </summary>
         /// <remarks>
         /// This is based on SymbolPreparer::IsCLRMethodImplSame in the native compiler.

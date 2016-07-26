@@ -1,13 +1,14 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 Imports System.Collections.Immutable
-Imports System.Threading
+Imports Microsoft.CodeAnalysis.CSharp
 Imports Microsoft.CodeAnalysis.Diagnostics
 Imports Microsoft.CodeAnalysis.Editor.UnitTests
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
 Imports Microsoft.CodeAnalysis.Options
 Imports Microsoft.CodeAnalysis.Shared.Options
 Imports Microsoft.CodeAnalysis.SolutionCrawler
+Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Roslyn.Utilities
 
 Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
@@ -16,17 +17,17 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
     ''' Tests for Error List. Since it is language agnostic there are no C# or VB Specific tests
     ''' </summary>
     Public Class DiagnosticProviderTests
-        Private Const ErrorElementName As String = "Error"
-        Private Const ProjectAttributeName As String = "Project"
-        Private Const CodeAttributeName As String = "Code"
-        Private Const MappedLineAttributeName As String = "MappedLine"
-        Private Const MappedColumnAttributeName As String = "MappedColumn"
-        Private Const OriginalLineAttributeName As String = "OriginalLine"
-        Private Const OriginalColumnAttributeName As String = "OriginalColumn"
-        Private Const IdAttributeName As String = "Id"
-        Private Const MessageAttributeName As String = "Message"
-        Private Const OriginalFileAttributeName As String = "OriginalFile"
-        Private Const MappedFileAttributeName As String = "MappedFile"
+        Private Const s_errorElementName As String = "Error"
+        Private Const s_projectAttributeName As String = "Project"
+        Private Const s_codeAttributeName As String = "Code"
+        Private Const s_mappedLineAttributeName As String = "MappedLine"
+        Private Const s_mappedColumnAttributeName As String = "MappedColumn"
+        Private Const s_originalLineAttributeName As String = "OriginalLine"
+        Private Const s_originalColumnAttributeName As String = "OriginalColumn"
+        Private Const s_idAttributeName As String = "Id"
+        Private Const s_messageAttributeName As String = "Message"
+        Private Const s_originalFileAttributeName As String = "OriginalFile"
+        Private Const s_mappedFileAttributeName As String = "MappedFile"
 
         <Fact, Trait(Traits.Feature, Traits.Features.Diagnostics)>
         Public Sub TestNoErrors()
@@ -52,7 +53,7 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
                        </Workspace>
             Dim diagnostics = <Diagnostics>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="1" MappedColumn="64" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="64"
-                                      Message="Invalid token '}' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "}") %>/>
                               </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics)
@@ -73,11 +74,11 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
                        </Workspace>
             Dim diagnostics = <Diagnostics>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="1" MappedColumn="64" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="64"
-                                      Message="Invalid token '}' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "}") %>/>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="999" MappedColumn="65" OriginalFile="Test.cs" OriginalLine="3" OriginalColumn="65"
-                                      Message="Invalid token '}' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "}") %>/>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="5" MappedColumn="65" OriginalFile="Test.cs" OriginalLine="5" OriginalColumn="65"
-                                      Message="Invalid token '}' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "}") %>/>
                               </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics)
@@ -95,7 +96,7 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
 
             Dim diagnostics = <Diagnostics>
                                   <Error Code="29" Id="CS0029" MappedFile="Test.cs" MappedLine="1" MappedColumn="60" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="60"
-                                      Message="Cannot implicitly convert type 'string' to 'int'"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_NoImplicitConv, "string", "int") %>/>
                               </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics)
@@ -116,13 +117,13 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
 
             Dim diagnostics = <Diagnostics>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="1" MappedColumn="62" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="62"
-                                      Message="Invalid token '}' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "}") %>/>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="2" MappedColumn="53" OriginalFile="Test.cs" OriginalLine="2" OriginalColumn="53"
-                                      Message="Invalid token 'as' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "as") %>/>
                                   <Warning Code="78" Id="CS0078" MappedFile="Test.cs" MappedLine="3" MappedColumn="63" OriginalFile="Test.cs" OriginalLine="3" OriginalColumn="63"
-                                      Message="The 'l' suffix is easily confused with the digit '1' -- use 'L' for clarity"/>
+                                      Message=<%= CSharpResources.WRN_LowercaseEllSuffix %>/>
                                   <Warning Code="1633" Id="CS1633" MappedFile="Test.cs" MappedLine="4" MappedColumn="48" OriginalFile="Test.cs" OriginalLine="4" OriginalColumn="48"
-                                      Message="Unrecognized #pragma directive"/>
+                                      Message=<%= CSharpResources.WRN_IllegalPragma %>/>
                               </Diagnostics>
 
             ' Note: The below is removed because of bug # 550593.
@@ -144,9 +145,9 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
 
             Dim diagnostics = <Diagnostics>
                                   <Error Code="1525" Id="CS1525" MappedFile="Test.cs" MappedLine="1" MappedColumn="72" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="72"
-                                      Message="Invalid expression term '}'"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidExprTerm, "}") %>/>
                                   <Error Code="1002" Id="CS1002" MappedFile="Test.cs" MappedLine="1" MappedColumn="72" OriginalFile="Test.cs" OriginalLine="1" OriginalColumn="72"
-                                      Message="; expected"/>
+                                      Message=<%= CSharpResources.ERR_SemicolonExpected %>/>
                               </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics)
@@ -179,13 +180,13 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
 
             Dim diagnostics = <Diagnostics>
                                   <Error Code="1519" Id="CS1519" MappedFile="Test.cs" MappedLine="3" MappedColumn="44" OriginalFile="Test.cs" OriginalLine="3" OriginalColumn="44"
-                                      Message="Invalid token '-' in class, struct, or interface member declaration"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_InvalidMemberDecl, "-") %>/>
                                   <Error Code="19" Id="CS0019" MappedFile="Test.cs" MappedLine="6" MappedColumn="56" OriginalFile="Test.cs" OriginalLine="6" OriginalColumn="56"
-                                      Message="Operator '-' cannot be applied to operands of type 'int' and 'string'"/>
+                                      Message=<%= String.Format(CSharpResources.ERR_BadBinaryOps, "-", "int", "string") %>/>
                                   <Error Code="30026" Id="BC30026" MappedFile="Test.vb" MappedLine="2" MappedColumn="44" OriginalFile="Test.vb" OriginalLine="2" OriginalColumn="44"
-                                      Message="'End Sub' expected."/>
+                                      Message=<%= ERR_EndSubExpected %>/>
                                   <Error Code="30205" Id="BC30205" MappedFile="Test.vb" MappedLine="2" MappedColumn="55" OriginalFile="Test.vb" OriginalLine="2" OriginalColumn="55"
-                                      Message="End of statement expected."/>
+                                      Message=<%= ERR_ExpectedEOS %>/>
                               </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics, ordered:=False)
@@ -243,42 +244,62 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
                     <Error Code="219" Id="CS0219"
                         MappedFile="Test.cs" MappedLine="5" MappedColumn="40"
                         OriginalFile="Test.cs" OriginalLine="5" OriginalColumn="40"
-                        Message="The variable 'a' is assigned but its value is never used"/>
+                        Message=<%= String.Format(CSharpResources.WRN_UnreferencedVarAssg, "a") %>/>
+                </Diagnostics>
+
+            VerifyAllAvailableDiagnostics(test, diagnostics)
+        End Sub
+
+        <Fact, Trait(Traits.Feature, Traits.Features.Diagnostics)>
+        Public Sub DiagnosticsInNoCompilationProjects()
+            Dim test =
+                <Workspace>
+                    <Project Language="NoCompilation">
+                        <Document FilePath="A.ts">
+                            Dummy content.
+                        </Document>
+                    </Project>
+                </Workspace>
+
+            Dim diagnostics =
+                <Diagnostics>
+                    <Error Id=<%= NoCompilationDocumentDiagnosticAnalyzer.Descriptor.Id %>
+                        MappedFile="A.ts" MappedLine="0" MappedColumn="0"
+                        OriginalFile="A.ts" OriginalLine="0" OriginalColumn="0"
+                        Message=<%= NoCompilationDocumentDiagnosticAnalyzer.Descriptor.MessageFormat.ToString() %>/>
                 </Diagnostics>
 
             VerifyAllAvailableDiagnostics(test, diagnostics)
         End Sub
 
         Private Sub VerifyAllAvailableDiagnostics(test As XElement, diagnostics As XElement, Optional ordered As Boolean = True, Optional enabled As Boolean = True)
-            Using workspace = TestWorkspaceFactory.CreateWorkspace(test)
+            Using workspace = TestWorkspace.CreateWorkspace(test)
 
                 ' turn off diagnostic
                 If Not enabled Then
-                    Dim optionService = workspace.Services.GetService(Of IOptionService)()
-                    optionService.SetOptions(
-                        optionService.GetOptions().WithChangedOption(ServiceComponentOnOffOptions.DiagnosticProvider, False) _
+                    workspace.Options = workspace.Options _
+                                                  .WithChangedOption(ServiceComponentOnOffOptions.DiagnosticProvider, False) _
                                                   .WithChangedOption(ServiceFeatureOnOffOptions.ClosedFileDiagnostic, LanguageNames.CSharp, False) _
-                                                  .WithChangedOption(ServiceFeatureOnOffOptions.ClosedFileDiagnostic, LanguageNames.VisualBasic, False))
+                                                  .WithChangedOption(ServiceFeatureOnOffOptions.ClosedFileDiagnostic, LanguageNames.VisualBasic, False)
                 End If
 
                 Dim registrationService = workspace.Services.GetService(Of ISolutionCrawlerRegistrationService)()
                 registrationService.Register(workspace)
 
                 Dim diagnosticProvider = GetDiagnosticProvider(workspace)
-                Dim actualDiagnostics = diagnosticProvider.GetCachedDiagnosticsAsync(workspace).Result _
-                                                          .Select(Function(d) New [Shared].Diagnostics.DiagnosticTaskItem(d))
+                Dim actualDiagnostics = diagnosticProvider.GetCachedDiagnosticsAsync(workspace).Result
 
                 registrationService.Unregister(workspace)
 
                 If diagnostics Is Nothing Then
-                    Assert.Equal(0, actualDiagnostics.Count)
+                    Assert.Equal(0, actualDiagnostics.Length)
                 Else
                     Dim expectedDiagnostics = GetExpectedDiagnostics(workspace, diagnostics)
 
                     If ordered Then
-                        AssertEx.Equal(expectedDiagnostics, actualDiagnostics, EqualityComparer(Of IErrorTaskItem).Default)
+                        AssertEx.Equal(expectedDiagnostics, actualDiagnostics, New Comparer())
                     Else
-                        AssertEx.SetEqual(expectedDiagnostics, actualDiagnostics, EqualityComparer(Of IErrorTaskItem).Default)
+                        AssertEx.SetEqual(expectedDiagnostics, actualDiagnostics, New Comparer())
                     End If
                 End If
             End Using
@@ -287,10 +308,12 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
         Private Function GetDiagnosticProvider(workspace As TestWorkspace) As DiagnosticAnalyzerService
             Dim snapshot = workspace.CurrentSolution
 
-            Dim notificationServie = New TestForegroundNotificationService()
+            Dim notificationService = New TestForegroundNotificationService()
 
-            Dim compilerAnalyzersMap = DiagnosticExtensions.GetCompilerDiagnosticAnalyzersMap()
-            Dim analyzerService = New DiagnosticAnalyzerService(compilerAnalyzersMap)
+            Dim compilerAnalyzersMap = DiagnosticExtensions.GetCompilerDiagnosticAnalyzersMap().Add(
+                NoCompilationConstants.LanguageName, ImmutableArray.Create(Of DiagnosticAnalyzer)(New NoCompilationDocumentDiagnosticAnalyzer()))
+
+            Dim analyzerService = New TestDiagnosticAnalyzerService(compilerAnalyzersMap)
 
             ' CollectErrors generates interleaved background and foreground tasks.
             Dim service = DirectCast(workspace.Services.GetService(Of ISolutionCrawlerRegistrationService)(), SolutionCrawlerRegistrationService)
@@ -299,27 +322,25 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
             Return analyzerService
         End Function
 
-        Private Function GetExpectedDiagnostics(workspace As TestWorkspace, diagnostics As XElement) As List(Of IErrorTaskItem)
-            Dim result As New List(Of IErrorTaskItem)
-            Dim code As Integer, mappedLine As Integer, mappedColumn As Integer, originalLine As Integer, originalColumn As Integer
+        Private Function GetExpectedDiagnostics(workspace As TestWorkspace, diagnostics As XElement) As List(Of DiagnosticData)
+            Dim result As New List(Of DiagnosticData)
+            Dim mappedLine As Integer, mappedColumn As Integer, originalLine As Integer, originalColumn As Integer
             Dim Id As String, message As String, originalFile As String, mappedFile As String
             Dim documentId As DocumentId
 
             For Each diagnostic As XElement In diagnostics.Elements()
+                mappedLine = Integer.Parse(diagnostic.Attribute(s_mappedLineAttributeName).Value)
+                mappedColumn = Integer.Parse(diagnostic.Attribute(s_mappedColumnAttributeName).Value)
+                originalLine = Integer.Parse(diagnostic.Attribute(s_originalLineAttributeName).Value)
+                originalColumn = Integer.Parse(diagnostic.Attribute(s_originalColumnAttributeName).Value)
 
-                code = Integer.Parse(diagnostic.Attribute(CodeAttributeName).Value)
-                mappedLine = Integer.Parse(diagnostic.Attribute(MappedLineAttributeName).Value)
-                mappedColumn = Integer.Parse(diagnostic.Attribute(MappedColumnAttributeName).Value)
-                originalLine = Integer.Parse(diagnostic.Attribute(OriginalLineAttributeName).Value)
-                originalColumn = Integer.Parse(diagnostic.Attribute(OriginalColumnAttributeName).Value)
-
-                Id = diagnostic.Attribute(IdAttributeName).Value
-                message = diagnostic.Attribute(MessageAttributeName).Value
-                originalFile = diagnostic.Attribute(OriginalFileAttributeName).Value
-                mappedFile = diagnostic.Attribute(MappedFileAttributeName).Value
+                Id = diagnostic.Attribute(s_idAttributeName).Value
+                message = diagnostic.Attribute(s_messageAttributeName).Value
+                originalFile = diagnostic.Attribute(s_originalFileAttributeName).Value
+                mappedFile = diagnostic.Attribute(s_mappedFileAttributeName).Value
                 documentId = GetDocumentId(workspace, originalFile)
 
-                If diagnostic.Name.LocalName.Equals(ErrorElementName) Then
+                If diagnostic.Name.LocalName.Equals(s_errorElementName) Then
                     result.Add(SourceError(Id, message, workspace, documentId, documentId.ProjectId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile))
                 Else
                     result.Add(SourceWarning(Id, message, workspace, documentId, documentId.ProjectId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile))
@@ -341,64 +362,45 @@ Namespace Microsoft.CodeAnalysis.Editor.Implementation.Diagnostics.UnitTests
         End Function
 
         Private Function SourceError(id As String, message As String, workspace As Workspace, docId As DocumentId, projId As ProjectId, mappedLine As Integer, originalLine As Integer,
-                                       mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String) As DiagnosticTaskItem
-            Return New DiagnosticTaskItem(id, DiagnosticSeverity.Error, message, workspace, docId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile)
+                                      mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String) As DiagnosticData
+            Return CreateDiagnostic(id, message, DiagnosticSeverity.Error, workspace, docId, projId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile)
         End Function
 
         Private Function SourceWarning(id As String, message As String, workspace As Workspace, docId As DocumentId, projId As ProjectId, mappedLine As Integer, originalLine As Integer,
-                                       mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String) As DiagnosticTaskItem
-            Return New DiagnosticTaskItem(id, DiagnosticSeverity.Warning, message, workspace, docId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile)
+                                       mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String) As DiagnosticData
+            Return CreateDiagnostic(id, message, DiagnosticSeverity.Warning, workspace, docId, projId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile)
         End Function
 
-        Private Class DiagnosticTaskItem
-            Inherits TaskItem
-            Implements IErrorTaskItem
+        Private Function CreateDiagnostic(id As String, message As String, severity As DiagnosticSeverity, workspace As Workspace, docId As DocumentId, projId As ProjectId, mappedLine As Integer, originalLine As Integer,
+                                       mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String) As DiagnosticData
+            Return New DiagnosticData(id, "test", message, message, severity, severity, True, 0,
+                                      ImmutableArray(Of String).Empty, ImmutableDictionary(Of String, String).Empty,
+                                      workspace, projId, New DiagnosticDataLocation(docId, Nothing,
+                                        originalFile, originalLine, originalColumn, originalLine, originalColumn,
+                                        mappedFile, mappedLine, mappedColumn, mappedLine, mappedColumn),
+                                      Nothing, Nothing, Nothing)
+        End Function
 
-            Private ReadOnly _id As String
-            Private ReadOnly _projectId As ProjectId
-            Private ReadOnly _severity As DiagnosticSeverity
+        Private Class Comparer
+            Implements IEqualityComparer(Of DiagnosticData)
 
-            Public Sub New(id As String, severity As DiagnosticSeverity, message As String, workspace As Workspace, docId As DocumentId,
-                           mappedLine As Integer, originalLine As Integer, mappedColumn As Integer, originalColumn As Integer, mappedFile As String, originalFile As String)
-                MyBase.New(message, workspace, docId, mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile)
-                Me._id = id
-                Me._projectId = docId.ProjectId
-                Me._severity = severity
-            End Sub
-
-            Public ReadOnly Property Id As String Implements IErrorTaskItem.Id
-                Get
-                    Return Me._id
-                End Get
-            End Property
-
-            Public ReadOnly Property ProjectId As ProjectId Implements IErrorTaskItem.ProjectId
-                Get
-                    Return Me._projectId
-                End Get
-            End Property
-
-            Public ReadOnly Property Severity As DiagnosticSeverity Implements IErrorTaskItem.Severity
-                Get
-                    Return Me._severity
-                End Get
-            End Property
-
-            Public Overrides Function Equals(obj As Object) As Boolean
-                Dim other As IErrorTaskItem = TryCast(obj, IErrorTaskItem)
-                If other Is Nothing Then
-                    Return False
-                End If
-
-                If Not AbstractTaskItem.Equals(Me, other) Then
-                    Return False
-                End If
-
-                Return Id = other.Id AndAlso ProjectId = other.ProjectId AndAlso Severity = other.Severity
+            Public Overloads Function Equals(x As DiagnosticData, y As DiagnosticData) As Boolean Implements IEqualityComparer(Of DiagnosticData).Equals
+                Return x.Id = y.Id AndAlso
+                       x.Message = y.Message AndAlso
+                       x.Severity = y.Severity AndAlso
+                       x.ProjectId = y.ProjectId AndAlso
+                       x.DocumentId = y.DocumentId AndAlso
+                       Equals(x.DataLocation?.OriginalStartLine, y.DataLocation?.OriginalStartLine) AndAlso
+                       Equals(x.DataLocation?.OriginalStartColumn, y.DataLocation?.OriginalStartColumn)
             End Function
 
-            Public Overrides Function GetHashCode() As Integer
-                Return Hash.Combine(AbstractTaskItem.GetHashCode(Me), Hash.Combine(Id.GetHashCode(), CType(Severity, Integer)))
+            Public Overloads Function GetHashCode(obj As DiagnosticData) As Integer Implements IEqualityComparer(Of DiagnosticData).GetHashCode
+                Return Hash.Combine(obj.Id,
+                       Hash.Combine(obj.Message,
+                       Hash.Combine(obj.ProjectId,
+                       Hash.Combine(obj.DocumentId,
+                       Hash.Combine(If(obj.DataLocation?.OriginalStartLine, 0),
+                       Hash.Combine(If(obj.DataLocation?.OriginalStartColumn, 0), obj.Severity))))))
             End Function
         End Class
     End Class

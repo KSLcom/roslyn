@@ -1,7 +1,7 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 Imports Microsoft.CodeAnalysis.Editor.Commands
-Imports Microsoft.CodeAnalysis.Editor.Shared.SuggestionSupport
+Imports Microsoft.CodeAnalysis.Editor.Shared
 Imports Microsoft.CodeAnalysis.Editor.UnitTests
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Utilities
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
@@ -14,30 +14,35 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.EncapsulateField
     Friend Class EncapsulateFieldTestState
         Implements IDisposable
 
-        Private testDocument As TestHostDocument
+        Private _testDocument As TestHostDocument
         Public Workspace As TestWorkspace
         Public TargetDocument As Document
 
-        Private Shared ReadOnly ExportProvider As ExportProvider = MinimalTestExportProvider.CreateExportProvider(
+        Private Shared ReadOnly s_exportProvider As ExportProvider = MinimalTestExportProvider.CreateExportProvider(
             TestExportProvider.MinimumCatalogWithCSharpAndVisualBasic.WithParts(
                 GetType(VisualBasicEncapsulateFieldService),
-                GetType(DefaultDocumentSupportsSuggestionService)))
+                GetType(DefaultDocumentSupportsFeatureService)))
 
-        Public Sub New(markup As String)
-            Workspace = VisualBasicWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider:=ExportProvider)
-            testDocument = Workspace.Documents.Single(Function(d) d.CursorPosition.HasValue OrElse d.SelectedSpans.Any())
-            TargetDocument = Workspace.CurrentSolution.GetDocument(testDocument.Id)
+        Private Sub New(workspace As TestWorkspace)
+            Me.Workspace = workspace
+            _testDocument = workspace.Documents.Single(Function(d) d.CursorPosition.HasValue OrElse d.SelectedSpans.Any())
+            TargetDocument = workspace.CurrentSolution.GetDocument(_testDocument.Id)
         End Sub
 
+        Public Shared Async Function CreateAsync(markup As String) As System.Threading.Tasks.Task(Of EncapsulateFieldTestState)
+            Dim workspace = Await TestWorkspace.CreateVisualBasicAsync(markup, exportProvider:=s_exportProvider)
+            Return New EncapsulateFieldTestState(workspace)
+        End Function
+
         Public Sub Encapsulate()
-            Dim args = New EncapsulateFieldCommandArgs(testDocument.GetTextView(), testDocument.GetTextBuffer())
+            Dim args = New EncapsulateFieldCommandArgs(_testDocument.GetTextView(), _testDocument.GetTextBuffer())
             Dim commandHandler = New EncapsulateFieldCommandHandler(TestWaitIndicator.Default, Workspace.GetService(Of ITextBufferUndoManagerProvider)())
             commandHandler.ExecuteCommand(args, Nothing)
         End Sub
 
         Public Sub AssertEncapsulateAs(expected As String)
             Encapsulate()
-            Assert.Equal(expected, testDocument.GetTextBuffer().CurrentSnapshot.GetText().ToString())
+            Assert.Equal(expected, _testDocument.GetTextBuffer().CurrentSnapshot.GetText().ToString())
         End Sub
 
         Public Sub Dispose() Implements IDisposable.Dispose

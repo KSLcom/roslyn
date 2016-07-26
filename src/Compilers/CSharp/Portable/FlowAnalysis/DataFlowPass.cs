@@ -27,6 +27,12 @@ namespace Microsoft.CodeAnalysis.CSharp
         private readonly PooledHashSet<LocalSymbol> _usedVariables = PooledHashSet<LocalSymbol>.GetInstance();
 
         /// <summary>
+        /// Variables that were used anywhere, in the sense required to suppress warnings about
+        /// unused variables.
+        /// </summary>
+        private readonly PooledHashSet<LocalFunctionSymbol> _usedLocalFunctions = PooledHashSet<LocalFunctionSymbol>.GetInstance();
+
+        /// <summary>
         /// Variables that were initialized or written anywhere.
         /// </summary>
         private readonly PooledHashSet<Symbol> _writtenVariables = PooledHashSet<Symbol>.GetInstance();
@@ -77,7 +83,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// Tracks variables for which we have already reported a definite assignment error.  This
         /// allows us to report at most one such error per variable.
         /// </summary>
-        private BitArray _alreadyReported;
+        private BitVector _alreadyReported;
 
         /// <summary>
         /// Reflects the enclosing method or lambda at the current location (in the bound tree).
@@ -87,21 +93,24 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// <summary>
         /// A cache for remember which structs are empty.
         /// </summary>
-        private EmptyStructTypeCache _emptyStructTypeCache;
+        private readonly EmptyStructTypeCache _emptyStructTypeCache;
 
         /// <summary>
         /// true if we should check to ensure that out parameters are assigned on every exit point.
         /// </summary>
-        private bool _requireOutParamsAssigned;
+        private readonly bool _requireOutParamsAssigned;
 
         /// <summary>
         /// The topmost method of this analysis.
         /// </summary>
         protected MethodSymbol topLevelMethod;
 
+        protected bool _convertInsufficientExecutionStackExceptionToCancelledByStackGuardException = false; // By default, just let the original exception to bubble up.
+
         protected override void Free()
         {
             _usedVariables.Free();
+            _usedLocalFunctions.Free();
             _writtenVariables.Free();
             _capturedVariables.Free();
             _unsafeAddressTakenVariables.Free();
@@ -169,12 +178,17 @@ namespace Microsoft.CodeAnalysis.CSharp
             _emptyStructTypeCache = new NeverEmptyStructTypeCache();
         }
 
+        protected override bool ConvertInsufficientExecutionStackExceptionToCancelledByStackGuardException()
+        {
+            return _convertInsufficientExecutionStackExceptionToCancelledByStackGuardException;
+        }
+
         protected override ImmutableArray<PendingBranch> Scan(ref bool badRegion)
         {
             this.Diagnostics.Clear();
             ImmutableArray<ParameterSymbol> methodParameters = MethodParameters;
             ParameterSymbol methodThisParameter = MethodThisParameter;
-            _alreadyReported = BitArray.Empty;           // no variables yet reported unassigned
+            _alreadyReported = BitVector.Empty;           // no variables yet reported unassigned
             this.State = ReachableState();                   // entry point is reachable
             this.regionPlace = RegionPlace.Before;
             EnterParameters(methodParameters);               // with parameters assigned
@@ -219,18 +233,12 @@ namespace Microsoft.CodeAnalysis.CSharp
         protected override ImmutableArray<PendingBranch> RemoveReturns()
         {
             var result = base.RemoveReturns();
-            if ((object)currentMethodOrLambda != null && currentMethodOrLambda.IsAsync)
-            {
-                bool foundAwait = false;
-                foreach (var pending in result)
-                {
-                    if (pending.Branch != null && pending.Branch.Kind == BoundKind.AwaitExpression)
-                    {
-                        foundAwait = true;
-                        break;
-                    }
-                }
 
+            if ((object)currentMethodOrLambda != null &&
+                currentMethodOrLambda.IsAsync &&
+                !currentMethodOrLambda.IsImplicitlyDeclared)
+            {
+                var foundAwait = result.Any(pending => pending.Branch != null && pending.Branch.Kind == BoundKind.AwaitExpression);
                 if (!foundAwait)
                 {
                     Diagnostics.Add(ErrorCode.WRN_AsyncLacksAwaits, currentMethodOrLambda.Locations[0]);
@@ -300,11 +308,21 @@ namespace Microsoft.CodeAnalysis.CSharp
         public static void Analyze(CSharpCompilation compilation, Symbol member, BoundNode node, DiagnosticBag diagnostics, bool requireOutParamsAssigned = true)
         {
             var walker = new DataFlowPass(compilation, member, node, requireOutParamsAssigned: requireOutParamsAssigned);
+
+            if (diagnostics != null)
+            {
+                walker._convertInsufficientExecutionStackExceptionToCancelledByStackGuardException = true;
+            }
+
             try
             {
                 bool badRegion = false;
                 walker.Analyze(ref badRegion, diagnostics);
                 Debug.Assert(!badRegion);
+            }
+            catch (BoundTreeVisitor.CancelledByStackGuardException ex) when (diagnostics != null)
+            {
+                ex.AddAnError(diagnostics);
             }
             finally
             {
@@ -334,20 +352,42 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private void CheckCaptured(Symbol variable)
+        /// <summary>
+        /// Check if the variable is captured and, if so, add it to this._capturedVariables.
+        /// </summary>
+        /// <param name="variable">The variable to be checked</param>
+        /// <param name="rangeVariableUnderlyingParameter">If variable.Kind is RangeVariable, its underlying lambda parameter. Else null.</param>
+        private void CheckCaptured(Symbol variable, ParameterSymbol rangeVariableUnderlyingParameter = null)
         {
             switch (variable.Kind)
             {
                 case SymbolKind.Local:
                     if (((LocalSymbol)variable).IsConst) break;
-                    goto case SymbolKind.RangeVariable;
+                    goto case SymbolKind.Parameter;
                 case SymbolKind.Parameter:
-                case SymbolKind.RangeVariable:
                     if (currentMethodOrLambda != variable.ContainingSymbol)
                     {
-                        _capturedVariables.Add(variable);
+                        NoteCaptured(variable);
                     }
                     break;
+                case SymbolKind.RangeVariable:
+                    if (rangeVariableUnderlyingParameter != null && currentMethodOrLambda != rangeVariableUnderlyingParameter.ContainingSymbol)
+                    {
+                        NoteCaptured(variable);
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Add the variable to the captured set. For range variables we only add it if inside the region.
+        /// </summary>
+        /// <param name="variable"></param>
+        private void NoteCaptured(Symbol variable)
+        {
+            if (variable.Kind != SymbolKind.RangeVariable || this.regionPlace == PreciseAbstractFlowPass<LocalState>.RegionPlace.Inside)
+            {
+                _capturedVariables.Add(variable);
             }
         }
 
@@ -365,12 +405,17 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         #region Tracking reads/writes of variables for warnings
 
-        protected virtual void NoteRead(Symbol variable)
+        protected virtual void NoteRead(Symbol variable, ParameterSymbol rangeVariableUnderlyingParameter = null)
         {
             var local = variable as LocalSymbol;
             if ((object)local != null)
             {
                 _usedVariables.Add(local);
+            }
+            var localFunction = variable as LocalFunctionSymbol;
+            if ((object)localFunction != null)
+            {
+                _usedLocalFunctions.Add(localFunction);
             }
 
             if ((object)variable != null)
@@ -380,7 +425,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     _sourceAssembly.NoteFieldAccess((FieldSymbol)variable.OriginalDefinition, read: true, write: false);
                 }
 
-                CheckCaptured(variable);
+                CheckCaptured(variable, rangeVariableUnderlyingParameter);
             }
         }
 
@@ -711,7 +756,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     {
                         var propAccess = (BoundPropertyAccess)node;
 
-                        if (Binder.AccessingAutopropertyFromConstructor(propAccess, this.currentMethodOrLambda))
+                        if (Binder.AccessingAutoPropertyFromConstructor(propAccess, this.currentMethodOrLambda))
                         {
                             var propSymbol = propAccess.PropertySymbol;
                             var backingField = (propSymbol as SourcePropertySymbol)?.BackingField;
@@ -739,6 +784,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// <param name="node"></param>
         protected void CheckAssigned(Symbol symbol, CSharpSyntaxNode node)
         {
+            Debug.Assert(!IsConditionalState);
             if ((object)symbol != null)
             {
                 if (this.State.Reachable)
@@ -849,7 +895,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BoundKind.PropertyAccess:
                     {
                         var propertyAccess = (BoundPropertyAccess)node;
-                        if (Binder.AccessingAutopropertyFromConstructor(propertyAccess, this.currentMethodOrLambda))
+                        if (Binder.AccessingAutoPropertyFromConstructor(propertyAccess, this.currentMethodOrLambda))
                         {
                             var property = propertyAccess.PropertySymbol;
                             var backingField = (property as SourcePropertySymbol)?.BackingField;
@@ -971,6 +1017,16 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             switch (node.Kind)
             {
+                case BoundKind.DeclarationPattern:
+                    {
+                        var local = (BoundDeclarationPattern)node;
+                        LocalSymbol symbol = local.LocalSymbol;
+                        int slot = GetOrCreateSlot(symbol);
+                        SetSlotState(slot, assigned: written || !this.State.Reachable);
+                        if (written) NoteWrite(symbol, value, read);
+                        break;
+                    }
+
                 case BoundKind.LocalDeclaration:
                     {
                         var local = (BoundLocalDeclaration)node;
@@ -1019,11 +1075,18 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 case BoundKind.ForEachStatement:
                     {
-                        var iterationVariable = ((BoundForEachStatement)node).IterationVariable;
+                        var iterationVariable = ((BoundForEachStatement)node).IterationVariableOpt;
                         Debug.Assert((object)iterationVariable != null);
                         int slot = GetOrCreateSlot(iterationVariable);
                         if (slot > 0) SetSlotState(slot, written);
                         if (written) NoteWrite(iterationVariable, value, read);
+                        break;
+                    }
+
+                case BoundKind.LocalFunctionStatement:
+                    {
+                        int slot = GetOrCreateSlot(((BoundLocalFunctionStatement)node).Symbol);
+                        SetSlotState(slot, written);
                         break;
                     }
 
@@ -1074,6 +1137,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return ((FieldSymbol)s).Type;
                 case SymbolKind.Parameter:
                     return ((ParameterSymbol)s).Type;
+                case SymbolKind.Method:
+                    Debug.Assert(((MethodSymbol)s).MethodKind == MethodKind.LocalFunction);
+                    return null;
                 default:
                     throw ExceptionUtilities.UnexpectedValue(s.Kind);
             }
@@ -1171,12 +1237,12 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         protected override LocalState ReachableState()
         {
-            return new LocalState(BitArray.Empty);
+            return new LocalState(BitVector.Empty);
         }
 
         protected override LocalState AllBitsSet()
         {
-            var result = new LocalState(BitArray.AllSet(nextVariableSlot));
+            var result = new LocalState(BitVector.AllSet(nextVariableSlot));
             result.Assigned[0] = false;
             return result;
         }
@@ -1244,11 +1310,44 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         #region Visitors
 
+        public override void VisitPattern(BoundExpression expression, BoundPattern pattern)
+        {
+            base.VisitPattern(expression, pattern);
+            var whenFail = StateWhenFalse;
+            SetState(StateWhenTrue);
+            AssignPatternVariables(pattern);
+            SetConditionalState(this.State, whenFail);
+        }
+
+        private void AssignPatternVariables(BoundPattern pattern)
+        {
+            switch (pattern.Kind)
+            {
+                case BoundKind.DeclarationPattern:
+                    {
+                        var pat = (BoundDeclarationPattern)pattern;
+                        Assign(pat, null, RefKind.None, false);
+                        break;
+                    }
+                case BoundKind.WildcardPattern:
+                    break;
+                case BoundKind.ConstantPattern:
+                    {
+                        var pat = (BoundConstantPattern)pattern;
+                        this.VisitRvalue(pat.Value);
+                        break;
+                    }
+                default:
+                    break;
+            }
+        }
+
         public override BoundNode VisitBlock(BoundBlock node)
         {
             DeclareVariables(node.Locals);
             var result = base.VisitBlock(node);
             ReportUnusedVariables(node.Locals);
+            ReportUnusedVariables(node.LocalFunctions);
             return result;
         }
 
@@ -1257,7 +1356,44 @@ namespace Microsoft.CodeAnalysis.CSharp
             DeclareVariables(node.InnerLocals);
             var result = base.VisitSwitchStatement(node);
             ReportUnusedVariables(node.InnerLocals);
+            ReportUnusedVariables(node.InnerLocalFunctions);
             return result;
+        }
+
+        public override BoundNode VisitPatternSwitchStatement(BoundPatternSwitchStatement node)
+        {
+            DeclareVariables(node.InnerLocals);
+            var result = base.VisitPatternSwitchStatement(node);
+            ReportUnusedVariables(node.InnerLocals);
+            ReportUnusedVariables(node.InnerLocalFunctions);
+            return result;
+        }
+
+        protected override void VisitPatternSwitchSection(BoundPatternSwitchSection node, BoundExpression switchExpression, bool isLastSection)
+        {
+            DeclareVariables(node.Locals);
+            base.VisitPatternSwitchSection(node, switchExpression, isLastSection);
+        }
+
+        protected override void VisitGuardedPattern(DecisionTree.Guarded guarded)
+        {
+            AssignPatternVariables(guarded.Label.Pattern);
+            base.VisitGuardedPattern(guarded);
+        }
+
+        private void CreateSlots(BoundPattern pattern)
+        {
+            switch (pattern.Kind)
+            {
+                case BoundKind.DeclarationPattern:
+                    {
+                        int slot = GetOrCreateSlot(((BoundDeclarationPattern)pattern).LocalSymbol);
+                        break;
+                    }
+                case BoundKind.ConstantPattern:
+                default:
+                    break;
+            }
         }
 
         public override BoundNode VisitForStatement(BoundForStatement node)
@@ -1312,23 +1448,26 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             foreach (LocalSymbol local in localsOpt)
             {
-                if (local.DeclarationKind == LocalDeclarationKind.RegularVariable)
+                switch (local.DeclarationKind)
                 {
-                    DeclareVariable(local);
-                }
-                else
-                {
-                    Debug.Assert(local.DeclarationKind == LocalDeclarationKind.UsingVariable);
-                    int slot = GetOrCreateSlot(local);
-                    if (slot >= 0)
-                    {
-                        SetSlotAssigned(slot);
-                        NoteWrite(local, value: null, read: true);
-                    }
-                    else
-                    {
-                        Debug.Assert(_emptyStructTypeCache.IsEmptyStructType(local.Type));
-                    }
+                    case LocalDeclarationKind.RegularVariable:
+                    case LocalDeclarationKind.PatternVariable:
+                        DeclareVariable(local);
+                        break;
+
+                    default:
+                        Debug.Assert(local.DeclarationKind == LocalDeclarationKind.UsingVariable);
+                        int slot = GetOrCreateSlot(local);
+                        if (slot >= 0)
+                        {
+                            SetSlotAssigned(slot);
+                            NoteWrite(local, value: null, read: true);
+                        }
+                        else
+                        {
+                            Debug.Assert(_emptyStructTypeCache.IsEmptyStructType(local.Type));
+                        }
+                        break;
                 }
             }
 
@@ -1336,16 +1475,19 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             foreach (LocalSymbol local in localsOpt)
             {
-                if (local.DeclarationKind == LocalDeclarationKind.RegularVariable)
+                switch (local.DeclarationKind)
                 {
-                    ReportIfUnused(local, assigned: true);
-                }
-                else
-                {
-                    NoteRead(local); // At the end of the statement, there's an implied read when the local is disposed
+                    case LocalDeclarationKind.RegularVariable:
+                        ReportIfUnused(local, assigned: true);
+                        break;
+
+                    case LocalDeclarationKind.UsingVariable:
+                        NoteRead(local); // At the end of the statement, there's an implied read when the local is disposed
+                        break;
                 }
             }
-            Debug.Assert(localsOpt.All(_usedVariables.Contains));
+
+            Debug.Assert(localsOpt.Where(l => l.DeclarationKind != LocalDeclarationKind.PatternVariable).All(_usedVariables.Contains));
 
             return result;
         }
@@ -1354,14 +1496,16 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             foreach (LocalSymbol local in node.Locals)
             {
-                if (local.DeclarationKind == LocalDeclarationKind.RegularVariable)
+                switch (local.DeclarationKind)
                 {
-                    DeclareVariable(local);
-                }
-                else
-                {
-                    Debug.Assert(local.DeclarationKind == LocalDeclarationKind.FixedVariable);
-                    // TODO: should something be done about this local?
+                    case LocalDeclarationKind.RegularVariable:
+                    case LocalDeclarationKind.PatternVariable:
+                        DeclareVariable(local);
+                        break;
+
+                    default:
+                        Debug.Assert(local.DeclarationKind == LocalDeclarationKind.FixedVariable);
+                        break;
                 }
             }
 
@@ -1416,9 +1560,28 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             if (!_usedVariables.Contains(symbol))
             {
-                if (!string.IsNullOrEmpty(symbol.Name)) // avoid diagnostics for parser-inserted names
+                if (symbol.DeclarationKind != LocalDeclarationKind.PatternVariable && !string.IsNullOrEmpty(symbol.Name)) // avoid diagnostics for parser-inserted names
                 {
                     Diagnostics.Add(assigned && _writtenVariables.Contains(symbol) ? ErrorCode.WRN_UnreferencedVarAssg : ErrorCode.WRN_UnreferencedVar, symbol.Locations[0], symbol.Name);
+                }
+            }
+        }
+
+        private void ReportUnusedVariables(ImmutableArray<LocalFunctionSymbol> locals)
+        {
+            foreach (var symbol in locals)
+            {
+                ReportIfUnused(symbol);
+            }
+        }
+
+        private void ReportIfUnused(LocalFunctionSymbol symbol)
+        {
+            if (!_usedLocalFunctions.Contains(symbol))
+            {
+                if (!string.IsNullOrEmpty(symbol.Name)) // avoid diagnostics for parser-inserted names
+                {
+                    Diagnostics.Add(ErrorCode.WRN_UnreferencedVar, symbol.Locations[0], symbol.Name);
                 }
             }
         }
@@ -1426,11 +1589,13 @@ namespace Microsoft.CodeAnalysis.CSharp
         public override BoundNode VisitLocal(BoundLocal node)
         {
             // Note: the caller should avoid allowing this to be called for the left-hand-side of
-            // an assignment (if a simple variable or this-qualified) or an out parameter.  That's
-            // because this code assumes the variable is being read, not written.
+            // an assignment (if a simple variable or this-qualified or deconstruction variables) or an out parameter.
+            // That's because this code assumes the variable is being read, not written.
             LocalSymbol localSymbol = node.LocalSymbol;
             CheckAssigned(localSymbol, node.Syntax);
-            if (localSymbol.IsFixed && this.currentMethodOrLambda.MethodKind == MethodKind.AnonymousFunction && _capturedVariables.Contains(localSymbol))
+            if (localSymbol.IsFixed &&
+                (this.currentMethodOrLambda.MethodKind == MethodKind.AnonymousFunction || this.currentMethodOrLambda.MethodKind == MethodKind.LocalFunction) &&
+                _capturedVariables.Contains(localSymbol))
             {
                 Diagnostics.Add(ErrorCode.ERR_FixedLocalInLambda, new SourceLocation(node.Syntax), localSymbol);
             }
@@ -1456,7 +1621,57 @@ namespace Microsoft.CodeAnalysis.CSharp
             return null;
         }
 
+        public override BoundNode VisitCall(BoundCall node)
+        {
+            if (node.Method.MethodKind == MethodKind.LocalFunction)
+            {
+                CheckAssigned(node.Method.OriginalDefinition, node.Syntax);
+            }
+            return base.VisitCall(node);
+        }
+
+        public override BoundNode VisitConversion(BoundConversion node)
+        {
+            if (node.ConversionKind == ConversionKind.MethodGroup && node.SymbolOpt?.MethodKind == MethodKind.LocalFunction)
+            {
+                CheckAssigned(node.SymbolOpt.OriginalDefinition, node.Syntax);
+            }
+            return base.VisitConversion(node);
+        }
+
+        public override BoundNode VisitDelegateCreationExpression(BoundDelegateCreationExpression node)
+        {
+            if (node.MethodOpt?.MethodKind == MethodKind.LocalFunction)
+            {
+                CheckAssigned(node.MethodOpt.OriginalDefinition, node.Syntax);
+            }
+            return base.VisitDelegateCreationExpression(node);
+        }
+
+        public override BoundNode VisitMethodGroup(BoundMethodGroup node)
+        {
+            foreach (var method in node.Methods)
+            {
+                if (method.MethodKind == MethodKind.LocalFunction)
+                {
+                    CheckAssigned(method, node.Syntax);
+                }
+            }
+            return base.VisitMethodGroup(node);
+        }
+
         public override BoundNode VisitLambda(BoundLambda node)
+        {
+            return VisitLambdaOrLocalFunction(node);
+        }
+
+        public override BoundNode VisitLocalFunctionStatement(BoundLocalFunctionStatement node)
+        {
+            Assign(node, value: null);
+            return VisitLambdaOrLocalFunction(node);
+        }
+
+        private BoundNode VisitLambdaOrLocalFunction(IBoundLambdaOrFunction node)
         {
             var oldMethodOrLambda = this.currentMethodOrLambda;
             this.currentMethodOrLambda = node.Symbol;
@@ -1515,6 +1730,18 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             base.VisitAssignmentOperator(node);
             Assign(node.Left, node.Right, refKind: node.RefKind);
+            return null;
+        }
+
+        public override BoundNode VisitDeconstructionAssignmentOperator(BoundDeconstructionAssignmentOperator node)
+        {
+            base.VisitDeconstructionAssignmentOperator(node);
+
+            foreach (BoundExpression variable in node.LeftVariables)
+            {
+                Assign(variable, value: null, refKind: RefKind.None);
+            }
+
             return null;
         }
 
@@ -1727,10 +1954,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private void VisitCatchBlockInternal(BoundCatchBlock catchBlock, ref LocalState finallyState)
         {
-            if ((object)catchBlock.LocalOpt != null)
-            {
-                DeclareVariable(catchBlock.LocalOpt);
-            }
+            DeclareVariables(catchBlock.Locals);
 
             var exceptionSource = catchBlock.ExceptionSourceOpt;
             if (exceptionSource != null)
@@ -1740,9 +1964,9 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             base.VisitCatchBlock(catchBlock, ref finallyState);
 
-            if ((object)catchBlock.LocalOpt != null)
+            foreach (var local in catchBlock.Locals)
             {
-                ReportIfUnused(catchBlock.LocalOpt, assigned: false);
+                ReportIfUnused(local, assigned: local.DeclarationKind != LocalDeclarationKind.CatchVariable);
             }
         }
 
@@ -1801,7 +2025,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         public override BoundNode VisitPropertyAccess(BoundPropertyAccess node)
         {
             var result = base.VisitPropertyAccess(node);
-            if (Binder.AccessingAutopropertyFromConstructor(node, this.currentMethodOrLambda))
+            if (Binder.AccessingAutoPropertyFromConstructor(node, this.currentMethodOrLambda))
             {
                 var property = node.PropertySymbol;
                 var backingField = (property as SourcePropertySymbol)?.BackingField;
@@ -1841,7 +2065,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         public override void VisitForEachIterationVariable(BoundForEachStatement node)
         {
-            var local = node.IterationVariable;
+            var local = node.IterationVariableOpt;
             if ((object)local != null)
             {
                 GetOrCreateSlot(local);
@@ -1878,7 +2102,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             return builder.ToString();
         }
 
-        protected void AppendBitNames(BitArray a, StringBuilder builder)
+        protected void AppendBitNames(BitVector a, StringBuilder builder)
         {
             bool any = false;
             foreach (int bit in a.TrueBits())
@@ -1948,9 +2172,9 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         internal struct LocalState : AbstractLocalState
         {
-            internal BitArray Assigned;
+            internal BitVector Assigned;
 
-            internal LocalState(BitArray assigned)
+            internal LocalState(BitVector assigned)
             {
                 this.Assigned = assigned;
                 Debug.Assert(!assigned.IsNull);

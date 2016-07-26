@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Microsoft.CodeAnalysis.Shared.Collections;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Formatting
@@ -22,7 +20,7 @@ namespace Microsoft.CodeAnalysis.Formatting
         private readonly Func<T, int, int, bool> _containPredicate;
 
         public ContextIntervalTree(IIntervalIntrospector<T> introspector)
-            : base(introspector)
+            : base(introspector, values: null)
         {
             _edgeExclusivePredicate = ContainsEdgeExclusive;
             _edgeInclusivePredicate = ContainsEdgeInclusive;
@@ -31,8 +29,8 @@ namespace Microsoft.CodeAnalysis.Formatting
 
         public void AddIntervalInPlace(T value)
         {
-            var newNode = new Node(Introspector, value);
-            this.root = Insert(root, newNode, Introspector, inPlace: true);
+            var newNode = new Node(value);
+            this.root = Insert(root, newNode, Introspector);
         }
 
         public T GetSmallestEdgeExclusivelyContainingInterval(int start, int length)

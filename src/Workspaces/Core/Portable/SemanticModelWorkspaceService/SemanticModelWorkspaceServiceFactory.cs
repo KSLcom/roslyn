@@ -127,7 +127,7 @@ namespace Microsoft.CodeAnalysis.SemanticModelWorkspaceService
                     {
                         // oops, something went wrong. we can't find old member. 
                         //
-                        // due to how we do versioning (filestamp based versioning), there is always a possiblity that 
+                        // due to how we do versioning (filestamp based versioning), there is always a possibility that 
                         // sources get changed without proper version changes in some rare situations,
                         // so in those rare cases which we can't control until we move to content based versioning,
                         // just bail out and use full semantic model
@@ -485,7 +485,15 @@ namespace Microsoft.CodeAnalysis.SemanticModelWorkspaceService
                         }
 
                         var documentId = newProject.GetDocumentId(newTree);
-                        Contract.Requires(documentId != null);
+
+                        // GetDocumentId will return null for #load'ed trees.
+                        // TODO:  Remove this check and add logic to fetch the #load'ed tree's
+                        // Document once https://github.com/dotnet/roslyn/issues/5260 is fixed.
+                        if (documentId == null)
+                        {
+                            Debug.Assert(newProject.Solution.Workspace.Kind == "Interactive");
+                            continue;
+                        }
 
                         map = map.SetItem(documentId, newTree);
                     }

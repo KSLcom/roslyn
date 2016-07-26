@@ -1,7 +1,8 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
+using Roslyn.Test.Utilities;
 using System;
 using Xunit;
 
@@ -399,7 +400,7 @@ class C : I, J, K
             Assert.True(prop.IsReadOnly);
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void Emit01()
         {
             var comp = CreateCompilationWithMscorlib45(@"
@@ -445,7 +446,7 @@ foo8
 18");
         }
 
-        [Fact]
+        [ClrOnlyFact]
         public void AccessorInheritsVisibility()
         {
             var comp = CreateCompilationWithMscorlib45(@"
@@ -480,6 +481,28 @@ class C
     // (4,16): error CS0106: The modifier 'static' is not valid for this item
     //     static int this[int i] => i;
     Diagnostic(ErrorCode.ERR_BadMemberFlag, "this").WithArguments("static").WithLocation(4, 16));
+        }
+
+        [Fact]
+        public void RefReturningExpressionBodiedProperty()
+        {
+            var comp = CreateCompilationWithMscorlib45(@"
+class C
+{
+    int field = 0;
+    public ref int P => ref field;
+}");
+            comp.VerifyDiagnostics();
+
+            var global = comp.GlobalNamespace;
+            var c = global.GetTypeMember("C");
+
+            var p = c.GetMember<SourcePropertySymbol>("P");
+            Assert.Null(p.SetMethod);
+            Assert.NotNull(p.GetMethod);
+            Assert.False(p.GetMethod.IsImplicitlyDeclared);
+            Assert.True(p.IsExpressionBodied);
+            Assert.Equal(RefKind.Ref, p.GetMethod.RefKind);
         }
     }
 }

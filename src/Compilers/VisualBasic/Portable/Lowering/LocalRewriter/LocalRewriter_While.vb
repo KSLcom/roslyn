@@ -30,9 +30,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 afterBodyResumeLabel = RegisterUnstructuredExceptionHandlingNonThrowingResumeTarget(node.Syntax)
             End If
 
-            Return RewriteWhileStatement(node.Syntax,
-                                         DirectCast(node.Syntax, WhileBlockSyntax).WhileStatement,
-                                         DirectCast(node.Syntax, WhileBlockSyntax).EndWhileStatement,
+            Return RewriteWhileStatement(node,
                                          VisitExpressionNode(node.Condition),
                                          rewrittenBody,
                                          node.ContinueLabel,
@@ -44,9 +42,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Function
 
         Protected Function RewriteWhileStatement(
-            syntaxNode As VisualBasicSyntaxNode,
-            statementBeginSyntax As VisualBasicSyntaxNode,
-            statementEndSyntax As VisualBasicSyntaxNode,
+            statement As BoundStatement,
             rewrittenCondition As BoundExpression,
             rewrittenBody As BoundStatement,
             continueLabel As LabelSymbol,
@@ -57,31 +53,60 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Optional afterBodyResumeTargetOpt As BoundStatement = Nothing
         ) As BoundNode
             Dim startLabel = GenerateLabel("start")
+            Dim statementSyntax = statement.Syntax
 
-            If GenerateDebugInfo Then
-                If statementEndSyntax IsNot Nothing Then
-                    rewrittenBody = InsertBlockEpilogue(rewrittenBody, afterBodyResumeTargetOpt, statementEndSyntax)
-                    afterBodyResumeTargetOpt = Nothing
-                End If
+            Dim instrument As Boolean = Me.Instrument(statement)
+
+            If instrument Then
+                Select Case statement.Kind
+                    Case BoundKind.WhileStatement
+                        afterBodyResumeTargetOpt = _instrumenter.InstrumentWhileEpilogue(DirectCast(statement, BoundWhileStatement), afterBodyResumeTargetOpt)
+                    Case BoundKind.DoLoopStatement
+                        afterBodyResumeTargetOpt = _instrumenter.InstrumentDoLoopEpilogue(DirectCast(statement, BoundDoLoopStatement), afterBodyResumeTargetOpt)
+                    Case BoundKind.ForEachStatement
+                    Case Else
+                        Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
+                End Select
             End If
 
-            If afterBodyResumeTargetOpt IsNot Nothing Then
-                rewrittenBody = Concat(rewrittenBody, afterBodyResumeTargetOpt)
+            rewrittenBody = Concat(rewrittenBody, afterBodyResumeTargetOpt)
+
+            ' EnC: We need to insert a hidden sequence point to handle function remapping in case 
+            ' the containing method is edited while methods invoked in the condition are being executed.
+            If rewrittenCondition IsNot Nothing AndAlso instrument Then
+                Select Case statement.Kind
+                    Case BoundKind.WhileStatement
+                        rewrittenCondition = _instrumenter.InstrumentWhileStatementCondition(DirectCast(statement, BoundWhileStatement), rewrittenCondition, _currentMethodOrLambda)
+                    Case BoundKind.DoLoopStatement
+                        rewrittenCondition = _instrumenter.InstrumentDoLoopStatementCondition(DirectCast(statement, BoundDoLoopStatement), rewrittenCondition, _currentMethodOrLambda)
+                    Case BoundKind.ForEachStatement
+                        rewrittenCondition = _instrumenter.InstrumentForEachStatementCondition(DirectCast(statement, BoundForEachStatement), rewrittenCondition, _currentMethodOrLambda)
+                    Case Else
+                        Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
+                End Select
             End If
 
             Dim ifConditionGotoStart As BoundStatement = New BoundConditionalGoto(
-                                                                 syntaxNode,
-                                                                 rewrittenCondition,
-                                                                 loopIfTrue,
-                                                                 startLabel)
+                statementSyntax,
+                rewrittenCondition,
+                loopIfTrue,
+                startLabel)
 
             If Not conditionResumeTargetOpt.IsDefaultOrEmpty Then
                 ifConditionGotoStart = New BoundStatementList(ifConditionGotoStart.Syntax, conditionResumeTargetOpt.Add(ifConditionGotoStart))
             End If
 
-            If Me.GenerateDebugInfo Then
-                ' will be hidden or not, depending on statementBeginSyntax being nothing (for each) or not (real while loop)
-                ifConditionGotoStart = New BoundSequencePoint(statementBeginSyntax, ifConditionGotoStart)
+            If instrument Then
+                Select Case statement.Kind
+                    Case BoundKind.WhileStatement
+                        ifConditionGotoStart = _instrumenter.InstrumentWhileStatementConditionalGotoStart(DirectCast(statement, BoundWhileStatement), ifConditionGotoStart)
+                    Case BoundKind.DoLoopStatement
+                        ifConditionGotoStart = _instrumenter.InstrumentDoLoopStatementEntryOrConditionalGotoStart(DirectCast(statement, BoundDoLoopStatement), ifConditionGotoStart)
+                    Case BoundKind.ForEachStatement
+                        ifConditionGotoStart = _instrumenter.InstrumentForEachStatementConditionalGotoStart(DirectCast(statement, BoundForEachStatement), ifConditionGotoStart)
+                    Case Else
+                        Throw ExceptionUtilities.UnexpectedValue(statement.Kind)
+                End Select
             End If
 
             ' While condition
@@ -101,23 +126,23 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             'We do not want to associate it with statement before.
             'This jump may be a target of another jump (for example if loops are nested) and that will make 
             'impression of the previous statement being re-executed
-            Dim gotoContinue As BoundStatement = New BoundGotoStatement(syntaxNode, continueLabel, Nothing)
+            Dim gotoContinue As BoundStatement = New BoundGotoStatement(statementSyntax, continueLabel, Nothing)
 
             If loopResumeLabelOpt IsNot Nothing Then
                 gotoContinue = Concat(loopResumeLabelOpt, gotoContinue)
             End If
 
-            If GenerateDebugInfo Then
-                gotoContinue = New BoundSequencePoint(Nothing, gotoContinue)
+            If instrument Then
+                gotoContinue = SyntheticBoundNodeFactory.HiddenSequencePoint(gotoContinue)
             End If
 
-            Return New BoundStatementList(syntaxNode, ImmutableArray.Create(Of BoundStatement)(
+            Return New BoundStatementList(statementSyntax, ImmutableArray.Create(Of BoundStatement)(
                     gotoContinue,
-                    New BoundLabelStatement(syntaxNode, startLabel),
+                    New BoundLabelStatement(statementSyntax, startLabel),
                     rewrittenBody,
-                    New BoundLabelStatement(syntaxNode, continueLabel),
+                    New BoundLabelStatement(statementSyntax, continueLabel),
                     ifConditionGotoStart,
-                    New BoundLabelStatement(syntaxNode, exitLabel)
+                    New BoundLabelStatement(statementSyntax, exitLabel)
                 ))
 
         End Function

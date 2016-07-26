@@ -8,8 +8,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Shared.Utilities;
 using Roslyn.Utilities;
@@ -21,14 +19,17 @@ namespace Microsoft.CodeAnalysis.FindSymbols
     /// </summary>
     internal static class DependentProjectsFinder
     {
+        /// <summary>
+        /// A helper struct used for keying in <see cref="s_dependentProjectsCache"/>.
+        /// </summary>
         private struct DefinitionProject
         {
-            private readonly bool _isSourceProject;
+            private readonly ProjectId _sourceProjectId;
             private readonly string _assemblyName;
 
-            public DefinitionProject(bool isSourceProject, string assemblyName)
+            public DefinitionProject(ProjectId sourceProjectId, string assemblyName)
             {
-                _isSourceProject = isSourceProject;
+                _sourceProjectId = sourceProjectId;
                 _assemblyName = assemblyName;
             }
         }
@@ -155,7 +156,7 @@ namespace Microsoft.CodeAnalysis.FindSymbols
             {
                 // We cache the dependent projects for non-private symbols, check in the cache first.
                 ConcurrentDictionary<DefinitionProject, IEnumerable<DependentProject>> dependentProjectsMap = s_dependentProjectsCache.GetValue(solution, s_createDependentProjectsMapCallback);
-                var key = new DefinitionProject(isSourceProject: sourceProject != null, assemblyName: containingAssembly.Name.ToLower());
+                var key = new DefinitionProject(sourceProjectId: sourceProject?.Id, assemblyName: containingAssembly.Name.ToLower());
 
                 if (!dependentProjectsMap.TryGetValue(key, out dependentProjects))
                 {
@@ -231,16 +232,18 @@ namespace Microsoft.CodeAnalysis.FindSymbols
             foreach (var projectId in solution.ProjectIds)
             {
                 var project = solution.GetProject(projectId);
-                if (project.IsSubmission)
+                if (project.IsSubmission && project.SupportsCompilation)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
                     // If we are referencing another project, store the link in the other direction
                     // so we walk across it later
                     var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
-                    if (compilation.PreviousSubmission != null)
+                    var previous = compilation.ScriptCompilationInfo.PreviousScriptCompilation;
+
+                    if (previous != null)
                     {
-                        var referencedProject = solution.GetProject(compilation.PreviousSubmission.Assembly, cancellationToken);
+                        var referencedProject = solution.GetProject(previous.Assembly, cancellationToken);
                         List<ProjectId> referencingSubmissions = null;
 
                         if (!projectIdsToReferencingSubmissionIds.TryGetValue(referencedProject.Id, out referencingSubmissions))
@@ -301,7 +304,7 @@ namespace Microsoft.CodeAnalysis.FindSymbols
 
             var internalsVisibleToMap = CreateInternalsVisibleToMap(sourceAssembly);
 
-            SymbolKey sourceAssemblySymbolKey = null;
+            SymbolKey? sourceAssemblySymbolKey = null;
 
             // TODO(cyrusn): What about error tolerance situations.  Do we maybe want to search
             // transitive dependencies as well?  Even if the code wouldn't compile, they may be
@@ -323,7 +326,7 @@ namespace Microsoft.CodeAnalysis.FindSymbols
                         if (sourceAssembly.Language != targetAssembly.Language)
                         {
                             sourceAssemblySymbolKey = sourceAssemblySymbolKey ?? sourceAssembly.GetSymbolKey();
-                            var sourceAssemblyInTargetCompilation = sourceAssemblySymbolKey.Resolve(compilation, cancellationToken: cancellationToken).Symbol as IAssemblySymbol;
+                            var sourceAssemblyInTargetCompilation = sourceAssemblySymbolKey.Value.Resolve(compilation, cancellationToken: cancellationToken).Symbol as IAssemblySymbol;
 
                             if (sourceAssemblyInTargetCompilation != null)
                             {
@@ -362,7 +365,12 @@ namespace Microsoft.CodeAnalysis.FindSymbols
                     }
 
                     var value = (string)typeNameConstant.Value;
-                    var commaIndex = value.IndexOf(",");
+                    if (value == null)
+                    {
+                        continue;
+                    }
+
+                    var commaIndex = value.IndexOf(',');
                     var assemblyName = commaIndex >= 0 ? value.Substring(0, commaIndex).Trim() : value;
 
                     map.Add(assemblyName);
@@ -377,12 +385,12 @@ namespace Microsoft.CodeAnalysis.FindSymbols
         {
             if (containingAssembly == null)
             {
-                throw new ArgumentNullException("containingAssembly");
+                throw new ArgumentNullException(nameof(containingAssembly));
             }
 
             if (project == null)
             {
-                throw new ArgumentNullException("project");
+                throw new ArgumentNullException(nameof(project));
             }
 
             if (sourceProject != null)
@@ -392,7 +400,7 @@ namespace Microsoft.CodeAnalysis.FindSymbols
             }
 
             // If the project we're looking at doesn't even support compilations, then there's no 
-            // way for it to have an IAssemblySymbo.  And without that, there is no way for it
+            // way for it to have an IAssemblySymbol.  And without that, there is no way for it
             // to have any sort of 'ReferenceTo' the provided 'containingAssembly' symbol.
             if (!project.SupportsCompilation)
             {

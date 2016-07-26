@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Options;
@@ -24,7 +21,9 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
 
             public bool HasOverloads { get { return false; } }
 
-            public string LocalizedErrorMessage { get; private set; }
+            public bool ForceRenameOverloads { get { return false; } }
+
+            public string LocalizedErrorMessage { get; }
 
             public TextSpan TriggerSpan { get { return default(TextSpan); } }
 

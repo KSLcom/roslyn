@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.Editor.Commands;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
@@ -60,35 +61,66 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
                 return;
             }
 
+            // If we're in a normal editor or the Immediate window, we'll send the enter through
+            // to the editor.  In single-line debugger windows (Watch, etc), however, we don't
+            // want to send the enter though, because those windows don't support displaying
+            // more than one line of text.
+            sendThrough = !_isDebugger || _isImmediateWindow;
+
             if (model.IsSoftSelection)
             {
-                // If the completion list is soft selected, then don't commit on enter.  Instead,
-                // send the enter through to the editor and dismiss the completion list.
-                sendThrough = true;
+                // If the completion list is soft selected, then don't commit on enter.
+                // Instead, just dismiss the completion list.
                 committed = false;
                 return;
             }
 
-            var selectedItem = Controller.GetExternallyUsableCompletionItem(model.SelectedItem);
-
             // If the selected item is the builder, dismiss
-            if (selectedItem.IsBuilder)
+            if (model.SelectedItem.IsSuggestionModeItem)
             {
                 sendThrough = false;
                 committed = false;
                 return;
             }
 
-            // Get the text that the user has currently entered into the buffer
-            var viewSpan = model.GetSubjectBufferFilterSpanInViewBuffer(selectedItem.FilterSpan);
-            var textTypedSoFar = model.GetCurrentTextInSnapshot(
-                viewSpan, this.TextView.TextSnapshot, this.GetCaretPointInViewBuffer());
+            if (sendThrough)
+            {
+                // Get the text that the user has currently entered into the buffer
+                var viewSpan = model.GetViewBufferSpan(model.SelectedItem.Item.Span);
+                var textTypedSoFar = model.GetCurrentTextInSnapshot(
+                    viewSpan, this.TextView.TextSnapshot, this.GetCaretPointInViewBuffer());
 
-            var textChange = selectedItem.CompletionProvider.GetTextChange(selectedItem);
+                var service = GetCompletionService();
+                sendThrough = SendEnterThroughToEditor(
+                     service.GetRules(), model.SelectedItem.Item, textTypedSoFar);
+            }
 
-            this.Commit(selectedItem, textChange, model, null);
-            sendThrough = selectedItem.CompletionProvider.SendEnterThroughToEditor(selectedItem, textTypedSoFar);
+            this.CommitOnNonTypeChar(model.SelectedItem, model);
             committed = true;
+        }
+
+        /// <summary>
+        /// Internal for testing purposes only.
+        /// </summary>
+        internal static bool SendEnterThroughToEditor(CompletionRules rules, CompletionItem item, string textTypedSoFar)
+        {
+            var rule = item.Rules.EnterKeyRule;
+            if (rule == EnterKeyRule.Default)
+            {
+                rule = rules.DefaultEnterKeyRule;
+            }
+
+            switch (rule)
+            {
+                default:
+                case EnterKeyRule.Default:
+                case EnterKeyRule.Never:
+                    return false;
+                case EnterKeyRule.Always:
+                    return true;
+                case EnterKeyRule.AfterFullyTypedWord:
+                    return item.DisplayText == textTypedSoFar;
+            }
         }
     }
 }

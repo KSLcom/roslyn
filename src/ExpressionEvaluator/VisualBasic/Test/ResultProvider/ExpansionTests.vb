@@ -9,7 +9,7 @@ Imports Microsoft.VisualStudio.Debugger.Evaluation
 Imports Roslyn.Test.Utilities
 Imports Xunit
 
-Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
+Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator.UnitTests
 
     Public Class ExpansionTests : Inherits VisualBasicResultProviderTestBase
 
@@ -92,7 +92,7 @@ End Class"
                 EvalResult("F", "1", "Object {Integer}", "(New C()).s1.F"))
         End Sub
 
-        <Fact(Skip := "Issue #321")>
+        <Fact>
         Public Sub Pointers()
             Dim source =
 ".class private auto ansi beforefieldinit C
@@ -280,13 +280,22 @@ End Class
 
             ' This Char is not printable, so we expect the EditableValue to be the "ChrW" representation.
             quotedChar = "ChrW(&H7)"
-            value = CreateDkmClrValue(ChrW(&H0007), GetType(Char))
+            value = CreateDkmClrValue(ChrW(&H0007))
             result = FormatResult("c", value, inspectionContext:=CreateDkmInspectionContext(radix:=16))
             Verify(result,
                 EvalResult("c", quotedChar, "Char", "c", editableValue:=quotedChar))
         End Sub
 
-        <Fact, WorkItem(1002381)>
+        <Fact>
+        Public Sub UnicodeString()
+            Const quotedString = """" & ChrW(&H1234) & """ & ChrW(7)"
+            Dim value = CreateDkmClrValue(New String({ChrW(&H1234), ChrW(&H0007)}))
+            Dim result = FormatResult("s", value)
+            Verify(result,
+                EvalResult("s", quotedString, "String", "s", editableValue:=quotedString, flags:=DkmEvaluationResultFlags.RawString))
+        End Sub
+
+        <Fact, WorkItem(1002381, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1002381")>
         Public Sub BaseTypeEditableValue()
             Dim source = "
 Imports System
@@ -319,7 +328,7 @@ End Class"
         ''' <remarks>
         ''' As in dev11, the FullName expressions don't parse.
         ''' </remarks> 
-        <Fact, WorkItem(1010498)>
+        <Fact, WorkItem(1010498, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1010498")>
         Public Sub HiddenMembers()
             Dim source =
 ".class public A
@@ -387,14 +396,14 @@ End Class"
                 EvalResult(rootExpr, "{A}", "A", rootExpr, DkmEvaluationResultFlags.Expandable))
             Dim children = GetChildren(result)
             Verify(children,
-                EvalResult("1<>", "Nothing", "Object", "(New A()).1<>"),
-                EvalResult("@", "Nothing", "Object", "(New A()).@"),
-                EvalResult("CS<>7__8", "Nothing", "Object", "(New A()).CS<>7__8"),
+                EvalResult("1<>", "Nothing", "Object", fullName:=Nothing),
+                EvalResult("@", "Nothing", "Object", fullName:=Nothing),
+                EvalResult("CS<>7__8", "Nothing", "Object", fullName:=Nothing),
                 EvalResult("Shared members", Nothing, "", "A", DkmEvaluationResultFlags.Expandable Or DkmEvaluationResultFlags.ReadOnly, DkmEvaluationResultCategory.Class))
             children = GetChildren(children(children.Length - 1))
             Verify(children,
-                EvalResult("[>]", "Nothing", "Object", "A.[>]"),
-                EvalResult("><", "Nothing", "Object", "A.><"))
+                EvalResult(">", "Nothing", "Object", fullName:=Nothing),
+                EvalResult("><", "Nothing", "Object", fullName:=Nothing))
 
             type = assembly.GetType("B")
             rootExpr = "New B()"
@@ -404,17 +413,17 @@ End Class"
                 EvalResult(rootExpr, "{B}", "B", rootExpr, DkmEvaluationResultFlags.Expandable))
             children = GetChildren(result)
             Verify(children,
-                EvalResult("1<>", "Nothing", "Object", "(New B()).1<>", DkmEvaluationResultFlags.ReadOnly),
-                EvalResult("@", "Nothing", "Object", "(New B()).@", DkmEvaluationResultFlags.ReadOnly),
-                EvalResult("VB<>7__8", "Nothing", "Object", "(New B()).VB<>7__8", DkmEvaluationResultFlags.ReadOnly),
+                EvalResult("1<>", "Nothing", "Object", fullName:=Nothing, flags:=DkmEvaluationResultFlags.ReadOnly),
+                EvalResult("@", "Nothing", "Object", fullName:=Nothing, flags:=DkmEvaluationResultFlags.ReadOnly),
+                EvalResult("VB<>7__8", "Nothing", "Object", fullName:=Nothing, flags:=DkmEvaluationResultFlags.ReadOnly),
                 EvalResult("Shared members", Nothing, "", "B", DkmEvaluationResultFlags.Expandable Or DkmEvaluationResultFlags.ReadOnly, DkmEvaluationResultCategory.Class))
             children = GetChildren(children(children.Length - 1))
             Verify(children,
-                EvalResult("[>]", "Nothing", "Object", "B.[>]", DkmEvaluationResultFlags.ReadOnly),
-                EvalResult("><", "Nothing", "Object", "B.><", DkmEvaluationResultFlags.ReadOnly))
+                EvalResult(">", "Nothing", "Object", fullName:=Nothing, flags:=DkmEvaluationResultFlags.ReadOnly),
+                EvalResult("><", "Nothing", "Object", fullName:=Nothing, flags:=DkmEvaluationResultFlags.ReadOnly))
         End Sub
 
-        <Fact, WorkItem(965892)>
+        <Fact, WorkItem(965892, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/965892")>
         Public Sub DeclaredTypeAndRuntimeTypeDifferent()
             Dim source = "
 Class A
@@ -618,7 +627,7 @@ End Class
                 EvalResult("S", "42", "Integer", "A.S"))
         End Sub
 
-        <Fact(Skip:="1074435"), WorkItem(1074435)>
+        <Fact, WorkItem(1074435, "DevDiv")>
         Public Sub NameConflictsWithInterfaceReimplementation()
             Dim source = "
 Interface I
@@ -663,7 +672,7 @@ End Class
         End Sub
 
         <Fact>
-        Public Sub NameConflictsWithVirualPropertiesAcrossDeclaredType()
+        Public Sub NameConflictsWithVirtualPropertiesAcrossDeclaredType()
             Dim source = "
 Class A 
     Public Overridable Property P As Integer = 1
@@ -693,7 +702,7 @@ End Class"
                 EvalResult("_p", "3", "Integer", "DirectCast(c, D)._p"))
         End Sub
 
-        <WorkItem(1016895)>
+        <WorkItem(1016895, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1016895")>
         <Fact>
         Public Sub RootVersusInternal()
             Const source = "

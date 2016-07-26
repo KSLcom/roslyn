@@ -10,11 +10,59 @@ using Xunit;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests
 {
-    public class ParsingErrorRecoveryTests
+    public class ParsingErrorRecoveryTests : CSharpTestBase
     {
         private CompilationUnitSyntax ParseTree(string text, CSharpParseOptions options = null)
         {
             return SyntaxFactory.ParseCompilationUnit(text, options: options);
+        }
+
+        [Theory]
+        [InlineData("public")]
+        [InlineData("internal")]
+        [InlineData("protected")]
+        [InlineData("private")]
+        public void AccessibilityModifierErrorRecovery(string accessibility)
+        {
+            var file = ParseTree($@"
+class C
+{{
+    void M()
+    {{
+        // bad visibility modifier
+        {accessibility} void localFunc() {{}}
+    }}
+    void M2()
+    {{
+        typing
+        {accessibility} void localFunc() {{}}
+    }}
+    void M3()
+    {{
+    // Ambiguous between local func with bad modifier and missing closing
+    // brace on previous method. Parsing currently assumes the former,
+    // assuming the tokens are parseable as a local func.
+    {accessibility} void M4() {{}}
+}}", LocalFunctionParsingTests.LocalFuncOptions);
+
+            Assert.NotNull(file);
+            file.GetDiagnostics().Verify(
+                // (7,9): error CS0106: The modifier '{accessibility}' is not valid for this item
+                //         {accessibility} void localFunc() {}
+                Diagnostic(ErrorCode.ERR_BadMemberFlag, accessibility).WithArguments(accessibility).WithLocation(7, 9),
+                // (11,15): error CS1002: ; expected
+                //         typing
+                Diagnostic(ErrorCode.ERR_SemicolonExpected, "").WithLocation(11, 15),
+                // (12,9): error CS0106: The modifier '{accessibility}' is not valid for this item
+                //         {accessibility} void localFunc() {}
+                Diagnostic(ErrorCode.ERR_BadMemberFlag, accessibility).WithArguments(accessibility).WithLocation(12, 9),
+                // (19,5): error CS0106: The modifier '{accessibility}' is not valid for this item
+                //     {accessibility} void M4() {}
+                Diagnostic(ErrorCode.ERR_BadMemberFlag, accessibility).WithArguments(accessibility).WithLocation(19, 5),
+                // (20,2): error CS1513: } expected
+                // }
+                Diagnostic(ErrorCode.ERR_RbraceExpected, "").WithLocation(20, 2)
+                );
         }
 
         [Fact]
@@ -5259,7 +5307,7 @@ class C
         public void TestSemicolonAfterUntypedLambdaParameter()
         {
             var text = "class c { void m() { var x = (y, ; } }";
-            var file = this.ParseTree(text);
+            var file = this.ParseTree(text, options: TestOptions.Regular);
 
             Assert.NotNull(file);
             Assert.Equal(text, file.ToFullString());
@@ -5277,12 +5325,41 @@ class C
             Assert.NotNull(ds.Declaration.Variables[0].Initializer);
             Assert.NotEqual(SyntaxKind.None, ds.Declaration.Variables[0].Initializer.EqualsToken.Kind());
             Assert.NotNull(ds.Declaration.Variables[0].Initializer.Value);
-            Assert.Equal(SyntaxKind.ParenthesizedLambdaExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
-            Assert.Equal(4, file.Errors().Length);
-            Assert.Equal((int)ErrorCode.ERR_IdentifierExpected, file.Errors()[0].Code);
+            Assert.Equal(SyntaxKind.TupleExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
+            Assert.Equal(2, file.Errors().Length);
+            Assert.Equal((int)ErrorCode.ERR_InvalidExprTerm, file.Errors()[0].Code);
             Assert.Equal((int)ErrorCode.ERR_CloseParenExpected, file.Errors()[1].Code);
-            Assert.Equal((int)ErrorCode.ERR_SyntaxError, file.Errors()[2].Code);
-            Assert.Equal((int)ErrorCode.ERR_InvalidExprTerm, file.Errors()[3].Code);
+        }
+
+        [Fact]
+        public void TestSemicolonAfterUntypedLambdaParameterWithCSharp6()
+        {
+            var text = "class c { void m() { var x = (y, ; } }";
+            var file = this.ParseTree(text, TestOptions.Regular.WithLanguageVersion(LanguageVersion.CSharp6));
+
+            Assert.NotNull(file);
+            Assert.Equal(text, file.ToFullString());
+            Assert.Equal(1, file.Members.Count);
+            Assert.Equal(SyntaxKind.ClassDeclaration, file.Members[0].Kind());
+            var agg = (TypeDeclarationSyntax)file.Members[0];
+            Assert.Equal(1, agg.Members.Count);
+            Assert.Equal(SyntaxKind.MethodDeclaration, agg.Members[0].Kind());
+            var ms = (MethodDeclarationSyntax)agg.Members[0];
+            Assert.NotNull(ms.Body);
+            Assert.Equal(1, ms.Body.Statements.Count);
+            Assert.Equal(SyntaxKind.LocalDeclarationStatement, ms.Body.Statements[0].Kind());
+            var ds = (LocalDeclarationStatementSyntax)ms.Body.Statements[0];
+            Assert.Equal(1, ds.Declaration.Variables.Count);
+            Assert.NotNull(ds.Declaration.Variables[0].Initializer);
+            Assert.NotEqual(SyntaxKind.None, ds.Declaration.Variables[0].Initializer.EqualsToken.Kind());
+            Assert.NotNull(ds.Declaration.Variables[0].Initializer.Value);
+            Assert.Equal(SyntaxKind.TupleExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
+
+            Assert.Equal(new [] {
+                                (int)ErrorCode.ERR_FeatureNotAvailableInVersion6,
+                                (int)ErrorCode.ERR_InvalidExprTerm,
+                                (int)ErrorCode.ERR_CloseParenExpected
+                            }, file.Errors().Select(e => e.Code));
         }
 
         [Fact]
@@ -5322,7 +5399,7 @@ class C
         public void TestStatementAfterUntypedLambdaParameter()
         {
             var text = "class c { void m() { var x = (y, while (c) { } } }";
-            var file = this.ParseTree(text);
+            var file = this.ParseTree(text, options: TestOptions.Regular);
 
             Assert.NotNull(file);
             Assert.Equal(text, file.ToFullString());
@@ -5341,13 +5418,46 @@ class C
             Assert.NotNull(ds.Declaration.Variables[0].Initializer);
             Assert.NotEqual(SyntaxKind.None, ds.Declaration.Variables[0].Initializer.EqualsToken.Kind());
             Assert.NotNull(ds.Declaration.Variables[0].Initializer.Value);
-            Assert.Equal(SyntaxKind.ParenthesizedLambdaExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
-            Assert.Equal(5, file.Errors().Length);
-            Assert.Equal((int)ErrorCode.ERR_IdentifierExpected, file.Errors()[0].Code);
+            Assert.Equal(SyntaxKind.TupleExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
+            Assert.Equal(3, file.Errors().Length);
+            Assert.Equal((int)ErrorCode.ERR_InvalidExprTerm, file.Errors()[0].Code);
             Assert.Equal((int)ErrorCode.ERR_CloseParenExpected, file.Errors()[1].Code);
-            Assert.Equal((int)ErrorCode.ERR_SyntaxError, file.Errors()[2].Code);
-            Assert.Equal((int)ErrorCode.ERR_InvalidExprTerm, file.Errors()[3].Code);
-            Assert.Equal((int)ErrorCode.ERR_SemicolonExpected, file.Errors()[4].Code);
+            Assert.Equal((int)ErrorCode.ERR_SemicolonExpected, file.Errors()[2].Code);
+        }
+
+        [Fact]
+        public void TestStatementAfterUntypedLambdaParameterWithCSharp6()
+        {
+            var text = "class c { void m() { var x = (y, while (c) { } } }";
+            var file = this.ParseTree(text, options: TestOptions.Regular.WithLanguageVersion(LanguageVersion.CSharp6));
+
+            Assert.NotNull(file);
+            Assert.Equal(text, file.ToFullString());
+            Assert.Equal(1, file.Members.Count);
+            Assert.Equal(SyntaxKind.ClassDeclaration, file.Members[0].Kind());
+            var agg = (TypeDeclarationSyntax)file.Members[0];
+            Assert.Equal(1, agg.Members.Count);
+            Assert.Equal(SyntaxKind.MethodDeclaration, agg.Members[0].Kind());
+            var ms = (MethodDeclarationSyntax)agg.Members[0];
+            Assert.NotNull(ms.Body);
+            Assert.Equal(2, ms.Body.Statements.Count);
+            Assert.Equal(SyntaxKind.LocalDeclarationStatement, ms.Body.Statements[0].Kind());
+            Assert.Equal(SyntaxKind.WhileStatement, ms.Body.Statements[1].Kind());
+
+            var ds = (LocalDeclarationStatementSyntax)ms.Body.Statements[0];
+            Assert.Equal("var x = (y, ", ds.ToFullString());
+            Assert.Equal(1, ds.Declaration.Variables.Count);
+            Assert.NotNull(ds.Declaration.Variables[0].Initializer);
+            Assert.NotEqual(SyntaxKind.None, ds.Declaration.Variables[0].Initializer.EqualsToken.Kind());
+            Assert.NotNull(ds.Declaration.Variables[0].Initializer.Value);
+            Assert.Equal(SyntaxKind.TupleExpression, ds.Declaration.Variables[0].Initializer.Value.Kind());
+
+            Assert.Equal(new [] {
+                                (int)ErrorCode.ERR_FeatureNotAvailableInVersion6,
+                                (int)ErrorCode.ERR_InvalidExprTerm,
+                                (int)ErrorCode.ERR_CloseParenExpected,
+                                (int)ErrorCode.ERR_SemicolonExpected
+                            }, file.Errors().Select(e => e.Code));
         }
 
         [Fact]
@@ -5494,7 +5604,7 @@ class C
             Assert.False(pd.AccessorList.OpenBraceToken.IsMissing);
             Assert.NotNull(pd.AccessorList.CloseBraceToken);
             Assert.True(pd.AccessorList.CloseBraceToken.IsMissing);
-            Assert.Equal(2, pd.AccessorList.Accessors.Count);
+            Assert.Equal(1, pd.AccessorList.Accessors.Count);
             var acc = pd.AccessorList.Accessors[0];
             Assert.Equal(SyntaxKind.GetAccessorDeclaration, acc.Kind());
             Assert.NotNull(acc.Keyword);
@@ -5508,10 +5618,9 @@ class C
             Assert.True(acc.Body.CloseBraceToken.IsMissing);
             Assert.Equal(SyntaxKind.None, acc.SemicolonToken.Kind());
 
-            Assert.Equal(3, file.Errors().Length);
+            Assert.Equal(2, file.Errors().Length);
             Assert.Equal((int)ErrorCode.ERR_RbraceExpected, file.Errors()[0].Code);
-            Assert.Equal((int)ErrorCode.ERR_GetOrSetExpected, file.Errors()[1].Code);
-            Assert.Equal((int)ErrorCode.ERR_RbraceExpected, file.Errors()[2].Code);
+            Assert.Equal((int)ErrorCode.ERR_RbraceExpected, file.Errors()[1].Code);
         }
 
         [Fact]
@@ -6090,7 +6199,7 @@ class C
             Assert.Equal((int)ErrorCode.ERR_IdentifierExpected, file.Errors()[0].Code);
         }
 
-        [WorkItem(537210, "DevDiv")]
+        [WorkItem(537210, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537210")]
         [Fact]
         public void RegressException4UseValueInAccessor()
         {
@@ -6152,7 +6261,7 @@ class C
             Assert.True(file.ContainsDiagnostics);
         }
 
-        [WorkItem(537214, "DevDiv")]
+        [WorkItem(537214, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537214")]
         [Fact]
         public void RegressWarning4UseContextKeyword()
         {
@@ -6173,7 +6282,7 @@ class C
             Assert.False(file.ContainsDiagnostics);
         }
 
-        [WorkItem(537150, "DevDiv")]
+        [WorkItem(537150, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537150")]
         [Fact]
         public void ParseStartOfAccessor()
         {
@@ -6192,7 +6301,7 @@ class C
             Assert.Equal((int)ErrorCode.ERR_GetOrSetExpected, file.Errors()[0].Code);
         }
 
-        [WorkItem(536050, "DevDiv")]
+        [WorkItem(536050, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/536050")]
         [Fact]
         public void ParseMethodWithConstructorInitializer()
         {
@@ -6228,7 +6337,7 @@ class C
             Assert.False(methodBody.ContainsDiagnostics);
         }
 
-        [WorkItem(537157, "DevDiv")]
+        [WorkItem(537157, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/537157")]
         [Fact]
         public void MissingInternalNode()
         {
@@ -6262,7 +6371,7 @@ class C
             Assert.True(identifierToken.IsMissing);
         }
 
-        [WorkItem(538469, "DevDiv")]
+        [WorkItem(538469, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538469")]
         [Fact]
         public void FromKeyword()
         {
@@ -6290,7 +6399,7 @@ public class QueryExpressionTest
             Assert.Equal((int)ErrorCode.ERR_SemicolonExpected, file.Errors()[2].Code); //we inserted a missing semicolon in a place we didn't expect
         }
 
-        [WorkItem(538971, "DevDiv")]
+        [WorkItem(538971, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/538971")]
         [Fact]
         public void UnclosedGenericInExplicitInterfaceName()
         {
@@ -6314,7 +6423,7 @@ class C : I<int>
             Assert.Equal((int)ErrorCode.ERR_SyntaxError, file.Errors()[1].Code); //expecting close angle bracket
         }
 
-        [WorkItem(540788, "DevDiv")]
+        [WorkItem(540788, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540788")]
         [Fact]
         public void IncompleteForEachStatement()
         {
@@ -6337,7 +6446,7 @@ public class Test
             Assert.Equal(3, foreachNode.ChildNodes().ToList().Count);
         }
 
-        [WorkItem(542236, "DevDiv")]
+        [WorkItem(542236, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542236")]
         [Fact]
         public void InsertOpenBraceBeforeCodes()
         {
@@ -6349,7 +6458,7 @@ public class Test
             SyntaxTree syntaxTree = SyntaxFactory.ParseSyntaxTree(text);
             Assert.Equal(text, syntaxTree.GetCompilationUnitRoot().ToFullString());
 
-            Assert.Equal("{\r\n", syntaxTree.GetCompilationUnitRoot().GetLeadingTrivia().Node.ToFullString());
+            Assert.Equal($"{{{Environment.NewLine}", syntaxTree.GetCompilationUnitRoot().GetLeadingTrivia().Node.ToFullString());
 
             // The issue (9391) was exhibited while enumerating the diagnostics
             Assert.True(syntaxTree.GetDiagnostics().Select(d => ((IFormattable)d).ToString(null, EnsureEnglishUICulture.PreferredOrNull)).SequenceEqual(new[]
@@ -6367,7 +6476,7 @@ public class Test
             }));
         }
 
-        [WorkItem(542352, "DevDiv")]
+        [WorkItem(542352, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542352")]
         [Fact]
         public void IncompleteTopLevelOperator()
         {
@@ -6395,7 +6504,7 @@ class C { }
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void IncompleteVariableDeclarationAboveDotMemberAccess()
         {
@@ -6420,7 +6529,7 @@ class C
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void IncompleteVariableDeclarationAbovePointerMemberAccess()
         {
@@ -6445,7 +6554,7 @@ class C
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void IncompleteVariableDeclarationAboveBinaryExpression()
         {
@@ -6470,7 +6579,7 @@ class C
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void IncompleteVariableDeclarationAboveMemberAccess_MultiLine()
         {
@@ -6496,7 +6605,7 @@ class C
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void IncompleteVariableDeclarationBeforeMemberAccessOnSameLine()
         {
@@ -6520,7 +6629,7 @@ class C
             }));
         }
 
-        [WorkItem(545647, "DevDiv")]
+        [WorkItem(545647, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545647")]
         [Fact]
         public void EqualsIsNotAmbiguous()
         {
@@ -6541,7 +6650,7 @@ class C
             Assert.Empty(syntaxTree.GetDiagnostics());
         }
 
-        [WorkItem(547120, "DevDiv")]
+        [WorkItem(547120, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/547120")]
         [Fact]
         public void ColonColonInExplicitInterfaceMember()
         {
@@ -6555,25 +6664,25 @@ _ _::this
             syntaxTree.GetDiagnostics().Verify(
                 // (2,4): error CS1003: Syntax error, '.' expected
                 // _ _::this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SyntaxError, "::").WithArguments(".", "::"),
+                Diagnostic(ErrorCode.ERR_SyntaxError, "::").WithArguments(".", "::"),
                 // (3,1): error CS1551: Indexers must have at least one parameter
                 // 
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_IndexerNeedsParam, ""),
+                Diagnostic(ErrorCode.ERR_IndexerNeedsParam, ""),
                 // (2,10): error CS1003: Syntax error, '[' expected
                 // _ _::this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SyntaxError, "").WithArguments("[", ""),
+                Diagnostic(ErrorCode.ERR_SyntaxError, "").WithArguments("[", ""),
                 // (2,10): error CS1003: Syntax error, ']' expected
                 // _ _::this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SyntaxError, "").WithArguments("]", ""),
+                Diagnostic(ErrorCode.ERR_SyntaxError, "").WithArguments("]", ""),
                 // (2,10): error CS1514: { expected
                 // _ _::this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_LbraceExpected, ""),
+                Diagnostic(ErrorCode.ERR_LbraceExpected, ""),
                 // (2,10): error CS1513: } expected
                 // _ _::this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
 
-        [WorkItem(649806, "DevDiv")]
+        [WorkItem(649806, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/649806")]
         [Fact]
         public void Repro649806()
         {
@@ -6584,7 +6693,7 @@ _ _::this
             Assert.Equal(1, diags.Count(d => d.Code == (int)ErrorCode.ERR_AliasQualAsExpression));
         }
 
-        [WorkItem(674564, "DevDiv")]
+        [WorkItem(674564, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/674564")]
         [Fact]
         public void Repro674564()
         {
@@ -6601,7 +6710,7 @@ class C
 
                 // (4,17): error CS1043: { or ; expected
                 //     int P { set . } }
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SemiOrLBraceExpected, "."),
+                Diagnostic(ErrorCode.ERR_SemiOrLBraceExpected, "."),
 
                 // We see this diagnostic because we're trying to skip bad tokens in the block and 
                 // the "expected" token (i.e. the one we report when we see something that's not a
@@ -6610,10 +6719,10 @@ class C
 
                 // (4,17): error CS1513: } expected
                 //     int P { set . } }
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, "."));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, "."));
         }
 
-        [WorkItem(680733, "DevDiv")]
+        [WorkItem(680733, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/680733")]
         [Fact]
         public void Repro680733a()
         {
@@ -6629,7 +6738,7 @@ class Test
             AssertEqualRoundtrip(source);
         }
 
-        [WorkItem(680733, "DevDiv")]
+        [WorkItem(680733, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/680733")]
         [Fact]
         public void Repro680733b()
         {
@@ -6647,7 +6756,7 @@ class Test
             AssertEqualRoundtrip(source);
         }
 
-        [WorkItem(680739, "DevDiv")]
+        [WorkItem(680739, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/680739")]
         [Fact]
         public void Repro680739()
         {
@@ -6655,7 +6764,7 @@ class Test
             AssertEqualRoundtrip(source);
         }
 
-        [WorkItem(675600, "DevDiv")]
+        [WorkItem(675600, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/675600")]
         [Fact]
         public void TestBracesToOperatorDoubleGreaterThan()
         {
@@ -6683,7 +6792,7 @@ class C {}");
             Assert.Equal(source, toString);
         }
 
-        [WorkItem(684816, "DevDiv")]
+        [WorkItem(684816, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/684816")]
         [Fact]
         public void GenericPropertyWithMissingIdentifier()
         {
@@ -6699,22 +6808,22 @@ class C : I
             tree.GetDiagnostics().Verify(
                 // (4,22): error CS1001: Identifier expected
                 //     int I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
+                Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
                 // (4,22): error CS7002: Unexpected use of a generic name
                 //     int I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_UnexpectedGenericName, "<"),
+                Diagnostic(ErrorCode.ERR_UnexpectedGenericName, "<"),
                 // (4,24): error CS1003: Syntax error, '>' expected
                 //     int I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SyntaxError, "{").WithArguments(">", "{"),
+                Diagnostic(ErrorCode.ERR_SyntaxError, "{").WithArguments(">", "{"),
                 // (4,25): error CS1513: } expected
                 //     int I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
                 // (4,25): error CS1513: } expected
                 //     int I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
 
-        [WorkItem(684816, "DevDiv")]
+        [WorkItem(684816, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/684816")]
         [Fact]
         public void GenericEventWithMissingIdentifier()
         {
@@ -6730,25 +6839,25 @@ class C : I
             tree.GetDiagnostics().Verify(
                 // (4,26): error CS1001: Identifier expected
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
+                Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
                 // (4,26): error CS1001: Identifier expected
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
+                Diagnostic(ErrorCode.ERR_IdentifierExpected, "<"),
                 // (4,28): error CS1003: Syntax error, '>' expected
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_SyntaxError, "{").WithArguments(">", "{"),
+                Diagnostic(ErrorCode.ERR_SyntaxError, "{").WithArguments(">", "{"),
                 // (4,26): error CS7002: Unexpected use of a generic name
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_UnexpectedGenericName, "<"),
+                Diagnostic(ErrorCode.ERR_UnexpectedGenericName, "<"),
                 // (4,29): error CS1513: } expected
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
                 // (4,29): error CS1513: } expected
                 //     event D I./*missing*/< {
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
 
-        [WorkItem(684816, "DevDiv")]
+        [WorkItem(684816, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/684816")]
         [Fact]
         public void ExplicitImplementationEventWithColonColon()
         {
@@ -6764,16 +6873,16 @@ class C : I
             tree.GetDiagnostics().Verify(
                 // (4,14): error CS0071: An explicit interface implementation of an event must use event accessor syntax
                 //     event D I::
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_ExplicitEventFieldImpl, "::"),
+                Diagnostic(ErrorCode.ERR_ExplicitEventFieldImpl, "::"),
                 // (4,14): error CS0687: The namespace alias qualifier '::' always resolves to a type or namespace so is illegal here. Consider using '.' instead.
                 //     event D I::
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_AliasQualAsExpression, "::"),
+                Diagnostic(ErrorCode.ERR_AliasQualAsExpression, "::"),
                 // (4,16): error CS1513: } expected
                 //     event D I::
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
 
-        [WorkItem(684816, "DevDiv")]
+        [WorkItem(684816, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/684816")]
         [Fact]
         public void EventNamedThis()
         {
@@ -6789,19 +6898,19 @@ class C
             tree.GetDiagnostics().Verify(
                 // (4,25): error CS1001: Identifier expected
                 //     event System.Action this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_IdentifierExpected, "this"),
+                Diagnostic(ErrorCode.ERR_IdentifierExpected, "this"),
                 // (4,29): error CS1514: { expected
                 //     event System.Action this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_LbraceExpected, ""),
+                Diagnostic(ErrorCode.ERR_LbraceExpected, ""),
                 // (4,29): error CS1513: } expected
                 //     event System.Action this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""),
                 // (4,29): error CS1513: } expected
                 //     event System.Action this
-                CSharpTestBase.Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
+                Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
 
-        [WorkItem(697022, "DevDiv")]
+        [WorkItem(697022, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/697022")]
         [Fact]
         public void GenericEnumWithMissingIdentifiers()
         {
@@ -6816,7 +6925,7 @@ enum
             tree.GetDiagnostics().ToArray();
         }
 
-        [WorkItem(703809, "DevDiv")]
+        [WorkItem(703809, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/703809")]
         [Fact]
         public void ReplaceOmittedArrayRankWithMissingIdentifier()
         {
@@ -6830,7 +6939,7 @@ static
             tree.GetDiagnostics().ToArray();
         }
 
-        [WorkItem(716245, "DevDiv")]
+        [WorkItem(716245, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/716245")]
         [Fact]
         public void ManySkippedTokens()
         {
@@ -6843,7 +6952,7 @@ static
         }
 
 
-        [WorkItem(947819, "DevDiv")]
+        [WorkItem(947819, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/947819")]
         [Fact]
         public void MissingOpenBraceForClass()
         {
@@ -6855,12 +6964,17 @@ static
             var root = SyntaxFactory.ParseSyntaxTree(source).GetRoot();
 
             Assert.Equal(source, root.ToFullString());
+            // Verify incomplete class decls don't eat tokens of surrounding nodes
             var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().Single();
-            Assert.Equal(new Text.TextSpan(20, 9), classDecl.Span);
-            Assert.Equal(new Text.TextSpan(16, 13), classDecl.FullSpan);
+            Assert.False(classDecl.Identifier.IsMissing);
+            Assert.True(classDecl.OpenBraceToken.IsMissing);
+            Assert.True(classDecl.CloseBraceToken.IsMissing);
+            var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Single();
+            Assert.False(ns.OpenBraceToken.IsMissing);
+            Assert.False(ns.CloseBraceToken.IsMissing);
         }
 
-        [WorkItem(947819, "DevDiv")]
+        [WorkItem(947819, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/947819")]
         [Fact]
         public void MissingOpenBraceForStruct()
         {
@@ -6872,12 +6986,16 @@ static
             var root = SyntaxFactory.ParseSyntaxTree(source).GetRoot();
 
             Assert.Equal(source, root.ToFullString());
+            // Verify incomplete struct decls don't eat tokens of surrounding nodes
             var structDecl = root.DescendantNodes().OfType<StructDeclarationSyntax>().Single();
-            Assert.Equal(new Text.TextSpan(20, 14), structDecl.Span);
-            Assert.Equal(new Text.TextSpan(16, 18), structDecl.FullSpan);
+            Assert.True(structDecl.OpenBraceToken.IsMissing);
+            Assert.True(structDecl.CloseBraceToken.IsMissing);
+            var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Single();
+            Assert.False(ns.OpenBraceToken.IsMissing);
+            Assert.False(ns.CloseBraceToken.IsMissing);
         }
 
-        [WorkItem(947819, "DevDiv")]
+        [WorkItem(947819, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/947819")]
         [Fact]
         public void MissingNameForStruct()
         {
@@ -6891,12 +7009,17 @@ static
             var root = SyntaxFactory.ParseSyntaxTree(source).GetRoot();
 
             Assert.Equal(source, root.ToFullString());
+            // Verify incomplete struct decls don't eat tokens of surrounding nodes
             var structDecl = root.DescendantNodes().OfType<StructDeclarationSyntax>().Single();
-            Assert.Equal(new Text.TextSpan(20, 24), structDecl.Span);
-            Assert.Equal(new Text.TextSpan(16, 30), structDecl.FullSpan);
+            Assert.True(structDecl.Identifier.IsMissing);
+            Assert.False(structDecl.OpenBraceToken.IsMissing);
+            Assert.False(structDecl.CloseBraceToken.IsMissing);
+            var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Single();
+            Assert.False(ns.OpenBraceToken.IsMissing);
+            Assert.False(ns.CloseBraceToken.IsMissing);
         }
 
-        [WorkItem(947819, "DevDiv")]
+        [WorkItem(947819, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/947819")]
         [Fact]
         public void MissingNameForClass()
         {
@@ -6910,9 +7033,14 @@ static
             var root = SyntaxFactory.ParseSyntaxTree(source).GetRoot();
 
             Assert.Equal(source, root.ToFullString());
+            // Verify incomplete class decls don't eat tokens of surrounding nodes
             var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().Single();
-            Assert.Equal(new Text.TextSpan(20, 19), classDecl.Span);
-            Assert.Equal(new Text.TextSpan(16, 25), classDecl.FullSpan);
+            Assert.True(classDecl.Identifier.IsMissing);
+            Assert.False(classDecl.OpenBraceToken.IsMissing);
+            Assert.False(classDecl.CloseBraceToken.IsMissing);
+            var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Single();
+            Assert.False(ns.OpenBraceToken.IsMissing);
+            Assert.False(ns.CloseBraceToken.IsMissing);
         }
     }
 }

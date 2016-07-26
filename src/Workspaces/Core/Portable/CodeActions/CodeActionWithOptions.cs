@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.Shared.Utilities;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeActions
@@ -15,7 +16,7 @@ namespace Microsoft.CodeAnalysis.CodeActions
     {
         /// <summary>
         /// Gets the options to use with this code action.
-        /// This method is gauranteed to be called on the UI thread.
+        /// This method is guaranteed to be called on the UI thread.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token.</param>
         /// <returns>An implementation specific object instance that holds options for applying the code action.</returns>
@@ -43,7 +44,8 @@ namespace Microsoft.CodeAnalysis.CodeActions
             return operations;
         }
 
-        internal override async Task<ImmutableArray<CodeActionOperation>> GetOperationsCoreAsync(CancellationToken cancellationToken)
+        internal override async Task<ImmutableArray<CodeActionOperation>> GetOperationsCoreAsync(
+            IProgressTracker progressTracker, CancellationToken cancellationToken)
         {
             var options = this.GetOptions(cancellationToken);
             return (await this.GetOperationsAsync(options, cancellationToken).ConfigureAwait(false)).ToImmutableArray();

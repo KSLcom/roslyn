@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Test.Utilities;
 using Microsoft.CodeAnalysis.Text;
+using Roslyn.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols.Metadata.PE
@@ -180,7 +181,7 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols.Metadata.PE
             Assert.False(p1.HasUnsupportedMetadata);
         }
 
-        [Fact()]
+        [ClrOnlyFact(ClrOnlyReason.Ilasm)]
         public void Test2()
         {
             var iLSource = @"
@@ -391,9 +392,6 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols.Metadata.PE
             Assert.False(vector.HasUnsupportedMetadata);
 
             //unsupported MD in the return type should propagate up to the method.
-            var front = vector.GetMember("front");
-            Assert.True(front.HasUnsupportedMetadata);
-
             var begin = vector.GetMember("begin");
             Assert.True(begin.HasUnsupportedMetadata);
 
@@ -402,10 +400,6 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols.Metadata.PE
             var typeX = compilation1.GetTypeByMetadataName("X");
             //unsupported MD in members doesn't propagate up to the type.
             Assert.False(typeX.HasUnsupportedMetadata);
-
-            //unsupported MD in the return type should propagate up to the method.
-            var tok = typeX.GetMember("Token");
-            Assert.True(tok.HasUnsupportedMetadata);
         }
     }
 }

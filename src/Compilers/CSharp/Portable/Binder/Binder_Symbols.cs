@@ -1,14 +1,15 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using Microsoft.CodeAnalysis.Collections;
+using Microsoft.CodeAnalysis.CSharp.Symbols;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.RuntimeMembers;
+using Roslyn.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
-using Microsoft.CodeAnalysis.CSharp.Symbols;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.RuntimeMembers;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp
 {
@@ -308,10 +309,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                     }
 
                 case SyntaxKind.IdentifierName:
-                    return BindNonGenericSimpleName((IdentifierNameSyntax)syntax, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, qualifierOpt: null);
+                    return BindNonGenericSimpleNamespaceOrTypeOrAliasSymbol((IdentifierNameSyntax)syntax, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, qualifierOpt: null);
 
                 case SyntaxKind.GenericName:
-                    return BindGenericSimpleName((GenericNameSyntax)syntax, diagnostics, basesBeingResolved, qualifierOpt: null);
+                    return BindGenericSimpleNamespaceOrTypeOrAliasSymbol((GenericNameSyntax)syntax, diagnostics, basesBeingResolved, qualifierOpt: null);
 
                 case SyntaxKind.AliasQualifiedName:
                     {
@@ -324,7 +325,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         {
                             return new ExtendedErrorTypeSymbol(left, LookupResultKind.NotATypeOrNamespace, diagnostics.Add(ErrorCode.ERR_ColColWithTypeAlias, node.Alias.Location, node.Alias.Identifier.Text));
                         }
-                        return this.BindSimpleName(node.Name, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, left);
+                        return this.BindSimpleNamespaceOrTypeOrAliasSymbol(node.Name, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, left);
                     }
 
                 case SyntaxKind.QualifiedName:
@@ -358,7 +359,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         for (int i = node.RankSpecifiers.Count - 1; i >= 0; i--)
                         {
                             var a = node.RankSpecifiers[i];
-                            type = new ArrayTypeSymbol(this.Compilation.Assembly, type, ImmutableArray<CustomModifier>.Empty, a.Rank);
+                            type = ArrayTypeSymbol.CreateCSharpArray(this.Compilation.Assembly, type, ImmutableArray<CustomModifier>.Empty, a.Rank);
                         }
 
                         return type;
@@ -384,9 +385,141 @@ namespace Microsoft.CodeAnalysis.CSharp
                         return BindTypeArgument((TypeSyntax)syntax, diagnostics, basesBeingResolved);
                     }
 
+                case SyntaxKind.TupleType:
+                    {
+                        return BindTupleType((TupleTypeSyntax)syntax, diagnostics);
+                    }
+
                 default:
                     throw ExceptionUtilities.UnexpectedValue(syntax.Kind());
             }
+        }
+
+        private TypeSymbol BindTupleType(TupleTypeSyntax syntax, DiagnosticBag diagnostics)
+        {
+            int numElements = syntax.Elements.Count;
+            var types = ArrayBuilder<TypeSymbol>.GetInstance(numElements);
+            var locations = ArrayBuilder<Location>.GetInstance(numElements);
+            ArrayBuilder<string> elementNames = null;
+
+            // set of names already used
+            var uniqueFieldNames = PooledHashSet<string>.GetInstance();
+            bool hasExplicitNames = false;
+
+            for (int i = 0; i < numElements; i++)
+            {
+                var argumentSyntax = syntax.Elements[i];
+
+                var argumentType = BindType(argumentSyntax.Type, diagnostics);
+                types.Add(argumentType);
+
+                if (argumentType.IsRestrictedType())
+                {
+                    Error(diagnostics, ErrorCode.ERR_FieldCantBeRefAny, argumentSyntax, argumentType);
+                }
+
+                string name =  null;
+                IdentifierNameSyntax nameSyntax = argumentSyntax.Name;
+
+                if (nameSyntax != null)
+                {
+                    name = nameSyntax.Identifier.ValueText;
+
+                    // validate name if we have one
+                    hasExplicitNames = true;
+                    CheckTupleMemberName(name, i, nameSyntax, diagnostics, uniqueFieldNames);
+                    locations.Add(nameSyntax.Location);
+                }
+                else
+                {
+                    locations.Add(argumentSyntax.Location);
+                }
+
+                CollectTupleFieldMemberNames(name, i + 1, numElements, ref elementNames);
+            }
+
+            uniqueFieldNames.Free();
+
+            if (hasExplicitNames)
+            {
+                // If the tuple type with names is bound in a declaration
+                // context then we must have the TupleElementNamesAttribute to emit
+                if (syntax.IsTypeInContextWhichNeedsTupleNamesAttribute())
+                {
+                    // Report diagnostics if System.String doesn't exist
+                    this.GetSpecialType(SpecialType.System_String, diagnostics, syntax);
+
+                    if (!Compilation.HasTupleNamesAttributes)
+                    {
+                        var info = new CSDiagnosticInfo(ErrorCode.ERR_TupleElementNamesAttributeMissing,
+                            AttributeDescription.TupleElementNamesAttribute.FullName);
+                        Error(diagnostics, info, syntax);
+                    }
+                }
+            }
+
+            ImmutableArray<TypeSymbol> typesArray = types.ToImmutableAndFree();
+            ImmutableArray<Location> locationsArray = locations.ToImmutableAndFree();
+
+            if (typesArray.Length < 2)
+            {
+                elementNames?.Free();
+                return new ExtendedErrorTypeSymbol(this.Compilation.Assembly.GlobalNamespace, LookupResultKind.NotCreatable, diagnostics.Add(ErrorCode.ERR_TupleTooFewElements, syntax.Location));
+            }
+
+            return TupleTypeSymbol.Create(syntax.Location,
+                                            typesArray,
+                                            locationsArray,
+                                            elementNames == null ?
+                                                default(ImmutableArray<string>) :
+                                                elementNames.ToImmutableAndFree(),
+                                            this.Compilation,
+                                            syntax,
+                                            diagnostics);
+        }
+
+        private static void CollectTupleFieldMemberNames(string name, int position, int tupleSize, ref ArrayBuilder<string> elementNames)
+        {
+            // add the name to the list
+            // names would typically all be there or none at all
+            // but in case we need to handle this in error cases
+            if (elementNames != null)
+            {
+                elementNames.Add(name);
+            }
+            else
+            {
+                if (name != null)
+                {
+                    elementNames = ArrayBuilder<string>.GetInstance(tupleSize);
+                    for (int j = 1; j < position; j++)
+                    {
+                        elementNames.Add(null);
+                    }
+                    elementNames.Add(name);
+                }
+            }
+        }
+
+        private static bool CheckTupleMemberName(string name, int index, CSharpSyntaxNode syntax, DiagnosticBag diagnostics, PooledHashSet<string> uniqueFieldNames)
+        {
+            int reserved = TupleTypeSymbol.IsElementNameReserved(name);
+            if (reserved == 0)
+            {
+                Error(diagnostics, ErrorCode.ERR_TupleReservedMemberNameAnyPosition, syntax, name);
+                return false;
+            }
+            else if (reserved > 0 && reserved != index + 1)
+            {
+                Error(diagnostics, ErrorCode.ERR_TupleReservedMemberName, syntax, name, reserved);
+                return false;
+            }
+            else if (!uniqueFieldNames.Add(name))
+            {
+                Error(diagnostics, ErrorCode.ERR_TupleDuplicateMemberName, syntax);
+                return false;
+            }
+            return true;
         }
 
         private Symbol BindPredefinedTypeSymbol(PredefinedTypeSyntax node, DiagnosticBag diagnostics)
@@ -397,7 +530,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// <summary>
         /// Binds a simple name or the simple name portion of a qualified name. 
         /// </summary>
-        private Symbol BindSimpleName(
+        private Symbol BindSimpleNamespaceOrTypeOrAliasSymbol(
             SimpleNameSyntax syntax,
             DiagnosticBag diagnostics,
             ConsList<Symbol> basesBeingResolved,
@@ -417,10 +550,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return new ExtendedErrorTypeSymbol(qualifierOpt ?? this.Compilation.Assembly.GlobalNamespace, string.Empty, arity: 0, errorInfo: null);
 
                 case SyntaxKind.IdentifierName:
-                    return BindNonGenericSimpleName((IdentifierNameSyntax)syntax, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, qualifierOpt);
+                    return BindNonGenericSimpleNamespaceOrTypeOrAliasSymbol((IdentifierNameSyntax)syntax, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, qualifierOpt);
 
                 case SyntaxKind.GenericName:
-                    return BindGenericSimpleName((GenericNameSyntax)syntax, diagnostics, basesBeingResolved, qualifierOpt);
+                    return BindGenericSimpleNamespaceOrTypeOrAliasSymbol((GenericNameSyntax)syntax, diagnostics, basesBeingResolved, qualifierOpt);
             }
         }
 
@@ -447,7 +580,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             return false;
         }
 
-        protected Symbol BindNonGenericSimpleName(
+        protected Symbol BindNonGenericSimpleNamespaceOrTypeOrAliasSymbol(
             IdentifierNameSyntax node,
             DiagnosticBag diagnostics,
             ConsList<Symbol> basesBeingResolved,
@@ -488,19 +621,14 @@ namespace Microsoft.CodeAnalysis.CSharp
             // If we were looking up the identifier "dynamic" at the topmost level and didn't find anything good,
             // we actually have the type dynamic (assuming /langversion is at least 4).
             if ((object)qualifierOpt == null &&
-                node.Parent != null &&
-                node.Parent.Kind() != SyntaxKind.Attribute && // dynamic not allowed as an attribute type
-                SyntaxFacts.IsInTypeOnlyContext(node) &&
-                node.Identifier.ToString() == "dynamic" &&
+                (node.Parent == null ||
+                 node.Parent.Kind() != SyntaxKind.Attribute && // dynamic not allowed as an attribute type
+                 SyntaxFacts.IsInTypeOnlyContext(node)) &&
+                node.Identifier.ValueText == "dynamic" &&
                 !IsViableType(result) &&
                 ((CSharpParseOptions)node.SyntaxTree.Options).LanguageVersion >= MessageID.IDS_FeatureDynamic.RequiredVersion())
             {
                 bindingResult = Compilation.DynamicType;
-
-                // ACASEY: As far as I can tell, in dev11, the method that reports usage of unavailable features
-                // is called only if the feature IS available.  As a result, it will never be reported unavailable.
-                // CheckFeatureAvailability(node.Identifier.Location, MessageID.IDS_FeatureDynamic, diagnostics);
-
                 ReportUseSiteDiagnosticForDynamic(diagnostics, node);
             }
             else
@@ -551,8 +679,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             if (node.IsTypeInContextWhichNeedsDynamicAttribute())
             {
-                if ((object)this.Compilation.GetWellKnownTypeMember(WellKnownMember.System_Runtime_CompilerServices_DynamicAttribute__ctor) == null ||
-                    (object)this.Compilation.GetWellKnownTypeMember(WellKnownMember.System_Runtime_CompilerServices_DynamicAttribute__ctorTransformFlags) == null)
+                if (!Compilation.HasDynamicEmitAttributes())
                 {
                     // CONSIDER:    Native compiler reports error CS1980 for each syntax node which binds to dynamic type, we do the same by reporting a diagnostic here.
                     //              However, this means we generate multiple duplicate diagnostics, when a single one would suffice.
@@ -568,7 +695,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         // Gets the name lookup options for simple generic or non-generic name.
-        private static LookupOptions GetSimpleNameLookupOptions(NameSyntax node, bool isVerbatimIdentifer)
+        private static LookupOptions GetSimpleNameLookupOptions(NameSyntax node, bool isVerbatimIdentifier)
         {
             if (SyntaxFacts.IsAttributeName(node))
             {
@@ -579,7 +706,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 //  SPEC:   such that its right-most identifier is a verbatim identifier (§2.4.2), then only
                 //  SPEC:   an attribute without a suffix is matched, thus enabling such an ambiguity to be resolved.
 
-                return isVerbatimIdentifer ? LookupOptions.VerbatimNameAttributeTypeOnly : LookupOptions.AttributeTypeOnly;
+                return isVerbatimIdentifier ? LookupOptions.VerbatimNameAttributeTypeOnly : LookupOptions.AttributeTypeOnly;
             }
             else
             {
@@ -630,7 +757,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             return symbol;
         }
 
-        private NamedTypeSymbol BindGenericSimpleName(
+        private NamedTypeSymbol BindGenericSimpleNamespaceOrTypeOrAliasSymbol(
             GenericNameSyntax node,
             DiagnosticBag diagnostics,
             ConsList<Symbol> basesBeingResolved,
@@ -687,7 +814,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             SeparatedSyntaxList<TypeSyntax> typeArguments = node.TypeArgumentList.Arguments;
 
             bool isUnboundTypeExpr = node.IsUnboundGenericName;
-            LookupOptions options = GetSimpleNameLookupOptions(node, isVerbatimIdentifer: false);
+            LookupOptions options = GetSimpleNameLookupOptions(node, isVerbatimIdentifier: false);
 
             NamedTypeSymbol unconstructedType = LookupGenericTypeName(
                 diagnostics, basesBeingResolved, qualifierOpt, node, plainName, node.Arity, options);
@@ -708,7 +835,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                         UnboundArgumentErrorTypeSymbol.CreateTypeArguments(
                             unconstructedType.TypeParameters,
                             node.Arity,
-                            errorInfo: null));
+                            errorInfo: null),
+                        unbound: false);
                 }
                 else
                 {
@@ -894,6 +1022,28 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             Debug.Assert(members.Count > 0);
 
+            if (!hasErrors)
+            {
+                // The common case is that if that members contains a local function symbol,
+                // there is only one element. Still do a foreach for potential error cases.
+                foreach (var member in members)
+                {
+                    if (!(member is LocalFunctionSymbol))
+                    {
+                        continue;
+                    }
+                    Debug.Assert(members.Count == 1 && member.Locations.Length == 1);
+                    var localSymbolLocation = member.Locations[0];
+                    bool usedBeforeDecl =
+                        syntax.SyntaxTree == localSymbolLocation.SourceTree &&
+                        syntax.SpanStart < localSymbolLocation.SourceSpan.Start;
+                    if (usedBeforeDecl)
+                    {
+                        Error(diagnostics, ErrorCode.ERR_VariableUsedBeforeDeclaration, syntax, syntax);
+                    }
+                }
+            }
+
             switch (members[0].Kind)
             {
                 case SymbolKind.Method:
@@ -920,8 +1070,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static Func<Symbol, MethodSymbol> s_toMethodSymbolFunc = s => (MethodSymbol)s;
-        private static Func<Symbol, PropertySymbol> s_toPropertySymbolFunc = s => (PropertySymbol)s;
+        private static readonly Func<Symbol, MethodSymbol> s_toMethodSymbolFunc = s => (MethodSymbol)s;
+        private static readonly Func<Symbol, PropertySymbol> s_toPropertySymbolFunc = s => (PropertySymbol)s;
 
         private NamedTypeSymbol ConstructNamedType(
             NamedTypeSymbol type,
@@ -938,6 +1088,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 type.CheckConstraints(this.Conversions, typeSyntax, typeArgumentsSyntax, this.Compilation, basesBeingResolved, diagnostics);
             }
+
+            type = (NamedTypeSymbol)TupleTypeSymbol.TransformToTupleIfCompatible(type);
 
             return type;
         }
@@ -976,7 +1128,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
 
             // since the name is qualified, it cannot result in a using alias symbol, only a type or namespace
-            var right = this.BindSimpleName(rightName, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, left) as NamespaceOrTypeSymbol;
+            var right = this.BindSimpleNamespaceOrTypeOrAliasSymbol(rightName, diagnostics, basesBeingResolved, suppressUseSiteDiagnostics, left) as NamespaceOrTypeSymbol;
 
             // If left name bound to an unbound generic type
             // and right name bound to a generic type, we must
@@ -995,7 +1147,12 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         internal NamedTypeSymbol GetSpecialType(SpecialType typeId, DiagnosticBag diagnostics, CSharpSyntaxNode node)
         {
-            NamedTypeSymbol typeSymbol = this.Compilation.GetSpecialType(typeId);
+            return GetSpecialType(this.Compilation, typeId, node, diagnostics);
+        }
+
+        internal static NamedTypeSymbol GetSpecialType(CSharpCompilation compilation, SpecialType typeId, CSharpSyntaxNode node, DiagnosticBag diagnostics)
+        {
+            NamedTypeSymbol typeSymbol = compilation.GetSpecialType(typeId);
             Debug.Assert((object)typeSymbol != null, "Expect an error type if special type isn't found");
             ReportUseSiteDiagnostics(typeSymbol, diagnostics, node);
             return typeSymbol;
@@ -1007,22 +1164,30 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// </summary>
         internal Symbol GetSpecialTypeMember(SpecialMember member, DiagnosticBag diagnostics, CSharpSyntaxNode syntax)
         {
-            var memberSymbol = Compilation.GetSpecialTypeMember(member);
-            if ((object)memberSymbol != null)
+            Symbol memberSymbol;
+            return TryGetSpecialTypeMember(this.Compilation, member, syntax, diagnostics, out memberSymbol)
+                ? memberSymbol
+                : null;
+        }
+
+        internal static bool TryGetSpecialTypeMember<TSymbol>(CSharpCompilation compilation, SpecialMember specialMember, CSharpSyntaxNode syntax, DiagnosticBag diagnostics, out TSymbol symbol)
+            where TSymbol : Symbol
+        {
+            symbol = (TSymbol)compilation.GetSpecialTypeMember(specialMember);
+            if ((object)symbol == null)
             {
-                var useSiteDiagnostic = memberSymbol.GetUseSiteDiagnosticForSymbolOrContainingType();
-                if (useSiteDiagnostic != null)
-                {
-                    Symbol.ReportUseSiteDiagnostic(useSiteDiagnostic, diagnostics, syntax.Location);
-                }
-            }
-            else
-            {
-                MemberDescriptor memberDescriptor = SpecialMembers.GetDescriptor(member);
-                diagnostics.Add(new CSDiagnosticInfo(ErrorCode.ERR_MissingPredefinedMember, memberDescriptor.DeclaringTypeMetadataName, memberDescriptor.Name), syntax.Location);
+                MemberDescriptor descriptor = SpecialMembers.GetDescriptor(specialMember);
+                diagnostics.Add(ErrorCode.ERR_MissingPredefinedMember, syntax.Location, descriptor.DeclaringTypeMetadataName, descriptor.Name);
+                return false;
             }
 
-            return memberSymbol;
+            var useSiteDiagnostic = symbol.GetUseSiteDiagnosticForSymbolOrContainingType();
+            if (useSiteDiagnostic != null)
+            {
+                Symbol.ReportUseSiteDiagnostic(useSiteDiagnostic, diagnostics, new SourceLocation(syntax));
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -1125,7 +1290,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private class ConsistentSymbolOrder : IComparer<Symbol>
         {
-            public static ConsistentSymbolOrder Instance = new ConsistentSymbolOrder();
+            public static readonly ConsistentSymbolOrder Instance = new ConsistentSymbolOrder();
             public int Compare(Symbol fst, Symbol snd)
             {
                 if (snd == fst) return 0;
@@ -1279,12 +1444,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 // '{0}' is an ambiguous reference between '{1}' and '{2}'
                                 info = new CSDiagnosticInfo(ErrorCode.ERR_AmbigContext, originalSymbols,
                                     new object[] {
-                                        where,
+                                        (where as NameSyntax)?.ErrorDisplayName() ?? simpleName,
                                         new FormattedSymbol(first, SymbolDisplayFormat.CSharpErrorMessageFormat),
                                         new FormattedSymbol(second, SymbolDisplayFormat.CSharpErrorMessageFormat) });
                             }
                             else
                             {
+                                Debug.Assert(!best.IsFromCorLibrary);
+
                                 // ErrorCode.ERR_SameFullNameAggAgg: The type '{1}' exists in both '{0}' and '{2}'
                                 info = new CSDiagnosticInfo(ErrorCode.ERR_SameFullNameAggAgg, originalSymbols,
                                     new object[] { first.ContainingAssembly, first, second.ContainingAssembly });
@@ -1297,6 +1464,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 {
                                     Debug.Assert(best.IsFromCompilation);
                                     reportError = false;
+                                }
+                                else if (this.Flags.Includes(BinderFlags.IgnoreCorLibraryDuplicatedTypes) &&
+                                    secondBest.IsFromCorLibrary)
+                                {
+                                    // Ignore duplicate types from the cor library if necessary.
+                                    // (Specifically the framework assemblies loaded at runtime in
+                                    // the EE may contain types also available from mscorlib.dll.)
+                                    return first;
                                 }
                             }
                         }
@@ -1407,15 +1582,15 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 //  SPEC:   If an attribute class is found both with and without Attribute suffix, an ambiguity 
                                 //  SPEC:   is present, and a compile-time error results.
 
-                                info = new CSDiagnosticInfo(ErrorCode.ERR_AmbigousAttribute, originalSymbols,
-                                    new object[] { where, first, second });
+                                info = new CSDiagnosticInfo(ErrorCode.ERR_AmbiguousAttribute, originalSymbols,
+                                    new object[] { (where as NameSyntax)?.ErrorDisplayName() ?? simpleName, first, second });
                             }
                             else
                             {
                                 // '{0}' is an ambiguous reference between '{1}' and '{2}'
                                 info = new CSDiagnosticInfo(ErrorCode.ERR_AmbigContext, originalSymbols,
                                     new object[] {
-                                        where,
+                                        (where as NameSyntax)?.ErrorDisplayName() ?? simpleName,
                                         new FormattedSymbol(first, SymbolDisplayFormat.CSharpErrorMessageFormat),
                                         new FormattedSymbol(second, SymbolDisplayFormat.CSharpErrorMessageFormat) });
                             }
@@ -1511,7 +1686,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     node = node.Parent;
                 }
 
-                CSDiagnosticInfo info = NotFound(where, simpleName, arity, where.ToString(), diagnostics, aliasOpt, qualifierOpt, options);
+                CSDiagnosticInfo info = NotFound(where, simpleName, arity, (where as NameSyntax)?.ErrorDisplayName() ?? simpleName, diagnostics, aliasOpt, qualifierOpt, options);
                 return new ExtendedErrorTypeSymbol(qualifierOpt ?? Compilation.Assembly.GlobalNamespace, simpleName, arity, info);
             }
 
@@ -1556,22 +1731,21 @@ namespace Microsoft.CodeAnalysis.CSharp
             return symbol.ContainingAssembly ?? ((NamespaceSymbol)symbol).ConstituentNamespaces.First().ContainingAssembly;
         }
 
+        [Flags]
+        private enum BestSymbolLocation
+        {
+            None,
+            FromSourceModule,
+            FromAddedModule,
+            FromReferencedAssembly,
+            FromCorLibrary,
+        }
+
+        [DebuggerDisplay("Location = {_location}, Index = {_index}")]
         private struct BestSymbolInfo
         {
-            [Flags]
-            private enum BestSymbolFlags
-            {
-                None = 0x00000000,
-                IndexMask = 0x0FFFFFFF,
-                LocationMask = 0x70000000,
-
-                // The following flags are mutually exclusive.
-                FromSourceModule = 0x10000000,
-                FromAddedModule = 0x20000000,
-                FromReferencedAssembly = 0x40000000,
-            }
-
-            private readonly BestSymbolFlags _flags;
+            private readonly BestSymbolLocation _location;
+            private readonly int _index;
 
             /// <summary>
             /// Returns -1 if None.
@@ -1580,12 +1754,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 get
                 {
-                    if (IsNone)
-                    {
-                        return -1;
-                    }
-
-                    return (int)(_flags & BestSymbolFlags.IndexMask);
+                    return IsNone ? -1 : _index;
                 }
             }
 
@@ -1593,7 +1762,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 get
                 {
-                    return (_flags & BestSymbolFlags.FromSourceModule) != 0;
+                    return _location == BestSymbolLocation.FromSourceModule;
                 }
             }
 
@@ -1601,7 +1770,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 get
                 {
-                    return (_flags & BestSymbolFlags.FromAddedModule) != 0;
+                    return _location == BestSymbolLocation.FromAddedModule;
                 }
             }
 
@@ -1609,7 +1778,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 get
                 {
-                    return (_flags & (BestSymbolFlags.FromSourceModule | BestSymbolFlags.FromAddedModule)) != 0;
+                    return (_location == BestSymbolLocation.FromSourceModule) || (_location == BestSymbolLocation.FromAddedModule);
                 }
             }
 
@@ -1617,39 +1786,23 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 get
                 {
-                    return (_flags & BestSymbolFlags.LocationMask) == 0;
+                    return _location == BestSymbolLocation.None;
                 }
             }
 
-            public bool IsFromReferencedAssembly
+            public bool IsFromCorLibrary
             {
                 get
                 {
-                    return (_flags & BestSymbolFlags.FromReferencedAssembly) != 0;
+                    return _location == BestSymbolLocation.FromCorLibrary;
                 }
             }
 
-            private BestSymbolInfo(BestSymbolFlags flags)
+            public BestSymbolInfo(BestSymbolLocation location, int index)
             {
-                _flags = flags;
-            }
-
-            public static BestSymbolInfo FromSourceModule(int index)
-            {
-                Debug.Assert((index & (int)(~BestSymbolFlags.IndexMask)) == 0);
-                return new BestSymbolInfo(BestSymbolFlags.FromSourceModule | (BestSymbolFlags)index);
-            }
-
-            public static BestSymbolInfo FromAddedModule(int index)
-            {
-                Debug.Assert((index & (int)(~BestSymbolFlags.IndexMask)) == 0);
-                return new BestSymbolInfo(BestSymbolFlags.FromAddedModule | (BestSymbolFlags)index);
-            }
-
-            public static BestSymbolInfo FromReferencedAssembly(int index)
-            {
-                Debug.Assert((index & (int)(~BestSymbolFlags.IndexMask)) == 0);
-                return new BestSymbolInfo(BestSymbolFlags.FromReferencedAssembly | (BestSymbolFlags)index);
+                Debug.Assert(location != BestSymbolLocation.None);
+                _location = location;
+                _index = index;
             }
 
             /// <summary>
@@ -1658,8 +1811,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             /// </summary>
             public static bool Sort(ref BestSymbolInfo first, ref BestSymbolInfo second)
             {
-                if (!second.IsNone &&
-                    (first.IsNone || (first._flags & BestSymbolFlags.LocationMask) > (second._flags & BestSymbolFlags.LocationMask)))
+                if (IsSecondLocationBetter(first._location, second._location))
                 {
                     BestSymbolInfo temp = first;
                     first = second;
@@ -1669,6 +1821,15 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 return false;
             }
+
+            /// <summary>
+            /// Returns true if the second is a better location than the first.
+            /// </summary>
+            public static bool IsSecondLocationBetter(BestSymbolLocation firstLocation, BestSymbolLocation secondLocation)
+            {
+                Debug.Assert(secondLocation != 0);
+                return (firstLocation == BestSymbolLocation.None) || (firstLocation > secondLocation);
+            }
         }
 
         /// <summary>
@@ -1676,68 +1837,65 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// </summary>
         private BestSymbolInfo GetBestSymbolInfo(ArrayBuilder<Symbol> symbols, out BestSymbolInfo secondBest)
         {
-            var assemblyBeingBuilt = this.Compilation.SourceAssembly;
-            var moduleBuilt = this.Compilation.SourceModule;
-
             BestSymbolInfo first = default(BestSymbolInfo);
             BestSymbolInfo second = default(BestSymbolInfo);
+            var compilation = this.Compilation;
 
             for (int i = 0; i < symbols.Count; i++)
             {
                 var symbol = symbols[i];
-
-                BestSymbolInfo third;
+                BestSymbolLocation location;
 
                 if (symbol.Kind == SymbolKind.Namespace)
                 {
-                    var ns = ((NamespaceSymbol)symbol).ConstituentNamespaces;
-                    third = default(BestSymbolInfo);
-
-                    for (int j = 0; j < ns.Length; j++)
+                    location = BestSymbolLocation.None;
+                    foreach (var ns in ((NamespaceSymbol)symbol).ConstituentNamespaces)
                     {
-                        if (ns[j].ContainingAssembly == assemblyBeingBuilt)
+                        var current = GetLocation(compilation, ns);
+                        if (BestSymbolInfo.IsSecondLocationBetter(location, current))
                         {
-                            if (ns[j].ContainingModule == moduleBuilt)
+                            location = current;
+                            if (location == BestSymbolLocation.FromSourceModule)
                             {
-                                third = BestSymbolInfo.FromSourceModule(i);
                                 break;
                             }
-                            else if (!third.IsFromAddedModule)
-                            {
-                                Debug.Assert(!third.IsFromCompilation);
-                                third = BestSymbolInfo.FromAddedModule(i);
-                            }
                         }
-                        else if (third.IsNone)
-                        {
-                            third = BestSymbolInfo.FromReferencedAssembly(i);
-                        }
-                    }
-                }
-                else if (symbol.ContainingAssembly == assemblyBeingBuilt)
-                {
-                    if (symbol.ContainingModule == moduleBuilt)
-                    {
-                        third = BestSymbolInfo.FromSourceModule(i);
-                    }
-                    else
-                    {
-                        third = BestSymbolInfo.FromAddedModule(i);
                     }
                 }
                 else
                 {
-                    third = BestSymbolInfo.FromReferencedAssembly(i);
+                    location = GetLocation(compilation, symbol);
                 }
 
+                var third = new BestSymbolInfo(location, i);
                 if (BestSymbolInfo.Sort(ref second, ref third))
                 {
                     BestSymbolInfo.Sort(ref first, ref second);
                 }
             }
 
+            Debug.Assert(!first.IsNone);
+            Debug.Assert(!second.IsNone);
+
             secondBest = second;
             return first;
+        }
+
+        private static BestSymbolLocation GetLocation(CSharpCompilation compilation, Symbol symbol)
+        {
+            var containingAssembly = symbol.ContainingAssembly;
+            if (containingAssembly == compilation.SourceAssembly)
+            {
+                return (symbol.ContainingModule == compilation.SourceModule) ?
+                    BestSymbolLocation.FromSourceModule :
+                    BestSymbolLocation.FromAddedModule;
+            }
+            else
+            {
+                return (containingAssembly == containingAssembly.CorLibrary) ?
+                    BestSymbolLocation.FromCorLibrary :
+                    BestSymbolLocation.FromReferencedAssembly;
+            }
         }
 
         /// <remarks>
@@ -1753,6 +1911,13 @@ namespace Microsoft.CodeAnalysis.CSharp
             AssemblySymbol forwardedToAssembly;
             bool encounteredForwardingCycle;
             string fullName;
+
+            // for attributes, suggest both, but not for verbatim name
+            if (options.IsAttributeTypeLookup() && !options.IsVerbatimNameAttributeTypeLookup())
+            {
+                // just recurse one level, so cheat and OR verbatim name option :)
+                NotFound(where, simpleName, arity, whereText + "Attribute", diagnostics, aliasOpt, qualifierOpt, options | LookupOptions.VerbatimNameAttributeTypeOnly);
+            }
 
             if ((object)qualifierOpt != null)
             {
@@ -1816,7 +1981,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return diagnostics.Add(ErrorCode.ERR_AliasNotFound, location, whereText);
             }
 
-            if (whereText == "var" && !options.IsAttributeTypeLookup())
+            if ((where as IdentifierNameSyntax)?.Identifier.Text == "var" && !options.IsAttributeTypeLookup())
             {
                 var code = (where.Parent is QueryClauseSyntax) ? ErrorCode.ERR_TypeVarNotFoundRangeVariable : ErrorCode.ERR_TypeVarNotFound;
                 return diagnostics.Add(code, location);
@@ -1850,7 +2015,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// </remarks>
         private AssemblySymbol GetForwardedToAssembly(string fullName, int arity, out bool encounteredCycle)
         {
-            Debug.Assert(arity == 0 || fullName.EndsWith("`" + arity));
+            Debug.Assert(arity == 0 || fullName.EndsWith("`" + arity, StringComparison.Ordinal));
 
             encounteredCycle = false;
 
@@ -1918,7 +2083,24 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         internal static void CheckFeatureAvailability(Location location, MessageID feature, DiagnosticBag diagnostics)
         {
-            LanguageVersion availableVersion = ((CSharpParseOptions)location.SourceTree.Options).LanguageVersion;
+            var options = (CSharpParseOptions)location.SourceTree.Options;
+            if (options.IsFeatureEnabled(feature))
+            {
+                return;
+            }
+
+            string requiredFeature = feature.RequiredFeature();
+            if (requiredFeature != null)
+            {
+                if (!options.IsFeatureEnabled(feature))
+                {
+                    diagnostics.Add(ErrorCode.ERR_FeatureIsExperimental, location, feature.Localize(), requiredFeature);
+                }
+
+                return;
+            }
+
+            LanguageVersion availableVersion = options.LanguageVersion;
             LanguageVersion requiredVersion = feature.RequiredVersion();
             if (requiredVersion > availableVersion)
             {

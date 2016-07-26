@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.Text;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp
 {
@@ -18,13 +19,18 @@ namespace Microsoft.CodeAnalysis.CSharp
             var rewrittenIncrement = (BoundStatement)Visit(node.Increment);
             var rewrittenBody = (BoundStatement)Visit(node.Body);
 
+            // EnC: We need to insert a hidden sequence point to handle function remapping in case 
+            // the containing method is edited while methods invoked in the condition are being executed.
+            if (rewrittenCondition != null && this.Instrument)
+            {
+                rewrittenCondition = _instrumenter.InstrumentForStatementCondition(node, rewrittenCondition, _factory);
+            }
+
             return RewriteForStatement(
-                node.Syntax,
+                node,
                 node.OuterLocals,
                 rewrittenInitializer,
-                AddConditionSequencePoint(rewrittenCondition, node),
-                node.Condition?.Syntax,
-                default(TextSpan),
+                rewrittenCondition,
                 rewrittenIncrement,
                 rewrittenBody,
                 node.BreakLabel,
@@ -32,18 +38,17 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         private BoundStatement RewriteForStatement(
-            CSharpSyntaxNode syntax,
+            BoundLoopStatement original,
             ImmutableArray<LocalSymbol> outerLocals,
             BoundStatement rewrittenInitializer,
             BoundExpression rewrittenCondition,
-            CSharpSyntaxNode conditionSyntaxOpt,
-            TextSpan conditionSpanOpt,
             BoundStatement rewrittenIncrement,
             BoundStatement rewrittenBody,
             GeneratedLabelSymbol breakLabel,
             GeneratedLabelSymbol continueLabel,
             bool hasErrors)
         {
+            Debug.Assert(original.Kind == BoundKind.ForStatement || original.Kind == BoundKind.ForEachStatement);
             Debug.Assert(rewrittenBody != null);
 
             // The sequence point behavior exhibited here is different from that of the native compiler.  In the native
@@ -52,7 +57,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             // for([|int i = 0, j = 0|]; ; [|i++, j++|])
             //
             // then all the initializers are treated as a single sequence point, as are
-            // all the loop incrementers.
+            // all the loop incrementors.
             //
             // We now make each one individually a sequence point:
             //
@@ -63,8 +68,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             // can contain lambdas whose bodies need to have sequence points inserted, so we
             // need to make sure we visit the children. But we'll also need to make sure that
             // we do not generate one sequence point for each statement in the initializers
-            // and the incrementers.
+            // and the incrementors.
 
+            CSharpSyntaxNode syntax = original.Syntax;
             var statementBuilder = ArrayBuilder<BoundStatement>.GetInstance();
             if (rewrittenInitializer != null)
             {
@@ -95,11 +101,23 @@ namespace Microsoft.CodeAnalysis.CSharp
             //  initializer;
             //  goto end;
 
-            // Mark the initial jump as hidden.
-            // We do it to tell that this is not a part of previous statement.
-            // This jump may be a target of another jump (for example if loops are nested) and that will make 
-            // impression of the previous statement being re-executed
-            var gotoEnd = new BoundSequencePoint(null, new BoundGotoStatement(syntax, endLabel));
+            BoundStatement gotoEnd = new BoundGotoStatement(syntax, endLabel);
+
+            if (this.Instrument)
+            {
+                switch (original.Kind)
+                {
+                    case BoundKind.ForEachStatement:
+                        gotoEnd = _instrumenter.InstrumentForEachStatementGotoEnd((BoundForEachStatement)original, gotoEnd);
+                        break;
+                    case BoundKind.ForStatement:
+                        gotoEnd = _instrumenter.InstrumentForStatementGotoEnd((BoundForStatement)original, gotoEnd);
+                        break;
+                    default:
+                        throw ExceptionUtilities.UnexpectedValue(original.Kind);
+                }
+            }
+
             statementBuilder.Add(gotoEnd);
 
             // start:
@@ -129,16 +147,18 @@ namespace Microsoft.CodeAnalysis.CSharp
                 branchBack = new BoundGotoStatement(syntax, startLabel);
             }
 
-            if (this.GenerateDebugInfo)
+            if (this.Instrument)
             {
-                if (!conditionSpanOpt.IsEmpty)
+                switch (original.Kind)
                 {
-                    branchBack = new BoundSequencePointWithSpan(syntax, branchBack, conditionSpanOpt);
-                }
-                else
-                {
-                    // hidden sequence point if there is no condition
-                    branchBack = new BoundSequencePoint(conditionSyntaxOpt, branchBack);
+                    case BoundKind.ForEachStatement:
+                        branchBack = _instrumenter.InstrumentForEachStatementConditionalGotoStart((BoundForEachStatement)original, branchBack);
+                        break;
+                    case BoundKind.ForStatement:
+                        branchBack = _instrumenter.InstrumentForStatementConditionalGotoStart((BoundForStatement)original, branchBack);
+                        break;
+                    default:
+                        throw ExceptionUtilities.UnexpectedValue(original.Kind);
                 }
             }
 
@@ -148,7 +168,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             statementBuilder.Add(new BoundLabelStatement(syntax, breakLabel));
 
             var statements = statementBuilder.ToImmutableAndFree();
-            return new BoundBlock(syntax, outerLocals, statements, hasErrors);
+            return new BoundBlock(syntax, outerLocals, ImmutableArray<LocalFunctionSymbol>.Empty, statements, hasErrors);
         }
     }
 }

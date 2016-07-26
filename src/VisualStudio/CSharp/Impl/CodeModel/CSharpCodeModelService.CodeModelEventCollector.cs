@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -27,36 +28,12 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
             {
             }
 
-            private static IReadOnlyList<TNode> GetValidMembers<TNode>(SyntaxList<TNode> members)
-                where TNode : SyntaxNode
+            private IReadOnlyList<MemberDeclarationSyntax> GetValidMembers(SyntaxNode node)
             {
-                var builder = ImmutableArray.CreateBuilder<TNode>(initialCapacity: members.Count);
-
-                foreach (var member in members)
-                {
-                    if (member != null && !member.IsKind(SyntaxKind.IncompleteMember))
-                    {
-                        builder.Add(member);
-                    }
-                }
-
-                return builder.ToImmutable();
-            }
-
-            private static IReadOnlyList<TNode> GetValidMembers<TNode>(SeparatedSyntaxList<TNode> members)
-                where TNode : SyntaxNode
-            {
-                var builder = ImmutableArray.CreateBuilder<TNode>(initialCapacity: members.Count);
-
-                foreach (var member in members)
-                {
-                    if (member != null && !member.IsKind(SyntaxKind.IncompleteMember))
-                    {
-                        builder.Add(member);
-                    }
-                }
-
-                return builder.ToImmutable();
+                return CSharpCodeModelService
+                    .GetChildMemberNodes(node)
+                    .Where(n => !n.IsKind(SyntaxKind.IncompleteMember))
+                    .ToArray();
             }
 
             private void CompareCompilationUnits(
@@ -70,8 +47,8 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
 
                 CompareChildren(
                     CompareNamespacesOrTypes,
-                    GetValidMembers(oldCompilationUnit.Members),
-                    GetValidMembers(newCompilationUnit.Members),
+                    GetValidMembers(oldCompilationUnit),
+                    GetValidMembers(newCompilationUnit),
                     (SyntaxNode)null,
                     CodeModelEventType.Unknown,
                     eventQueue);
@@ -508,8 +485,8 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                 {
                     var change = CompareRenamedDeclarations(
                         CompareNamespacesOrTypes,
-                        GetValidMembers(oldNamespace.Members),
-                        GetValidMembers(newNamespace.Members),
+                        GetValidMembers(oldNamespace),
+                        GetValidMembers(newNamespace),
                         oldNamespace,
                         newNamespace,
                         newNodeParent,
@@ -525,8 +502,8 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
 
                 return CompareChildren(
                     CompareNamespacesOrTypes,
-                    GetValidMembers(oldNamespace.Members),
-                    GetValidMembers(newNamespace.Members),
+                    GetValidMembers(oldNamespace),
+                    GetValidMembers(newNamespace),
                     newNamespace,
                     CodeModelEventType.Unknown,
                     eventQueue);
@@ -556,13 +533,8 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                     var oldType = (BaseTypeDeclarationSyntax)oldMember;
                     var newType = (BaseTypeDeclarationSyntax)newMember;
 
-                    var oldMembers = oldType is TypeDeclarationSyntax
-                        ? GetValidMembers(((TypeDeclarationSyntax)oldType).Members)
-                        : GetValidMembers(((EnumDeclarationSyntax)oldType).Members);
-
-                    var newMembers = newType is TypeDeclarationSyntax
-                        ? GetValidMembers(((TypeDeclarationSyntax)newType).Members)
-                        : GetValidMembers(((EnumDeclarationSyntax)newType).Members);
+                    var oldMembers = GetValidMembers(oldType);
+                    var newMembers = GetValidMembers(newType);
 
                     bool same = true;
 
@@ -570,7 +542,15 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                     // In that case, we shouldn't do any other checks and instead return immediately.
                     if (!StringComparer.Ordinal.Equals(oldType.Identifier.ToString(), newType.Identifier.ToString()))
                     {
-                        var change = CompareRenamedDeclarations(CompareMemberDeclarations, oldMembers, newMembers, oldType, newType, newNodeParent, eventQueue);
+                        var change = CompareRenamedDeclarations(
+                            CompareMemberDeclarations,
+                            oldMembers,
+                            newMembers,
+                            oldType,
+                            newType,
+                            newNodeParent,
+                            eventQueue);
+
                         if (change == DeclarationChange.WholeDeclaration)
                         {
                             return false;
@@ -600,7 +580,13 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                         CodeModelEventType.Unknown,
                         eventQueue);
 
-                    same &= CompareChildren(CompareMemberDeclarations, oldMembers, newMembers, newType, CodeModelEventType.Unknown, eventQueue);
+                    same &= CompareChildren(
+                        CompareMemberDeclarations,
+                        oldMembers,
+                        newMembers,
+                        newType,
+                        CodeModelEventType.Unknown,
+                        eventQueue);
 
                     return same;
                 }
@@ -727,9 +713,9 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                 return false;
             }
 
-            private bool CompareModifiers(MemberDeclarationSyntax oldMember, MemberDeclarationSyntax newMemmber)
+            private bool CompareModifiers(MemberDeclarationSyntax oldMember, MemberDeclarationSyntax newMember)
             {
-                return oldMember.GetModifierFlags() == newMemmber.GetModifierFlags();
+                return oldMember.GetModifierFlags() == newMember.GetModifierFlags();
             }
 
             private bool CompareModifiers(ParameterSyntax oldParameter, ParameterSyntax newParameter)
@@ -893,18 +879,12 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                 {
                     foreach (var attribute in ((AttributeListSyntax)node).Attributes)
                     {
-                        if (parent is BaseFieldDeclarationSyntax)
-                        {
-                            foreach (var variableDeclarator in ((BaseFieldDeclarationSyntax)parent).Declaration.Variables)
-                            {
-                                eventQueue.EnqueueAddEvent(attribute, variableDeclarator);
-                            }
-                        }
-                        else
-                        {
-                            eventQueue.EnqueueAddEvent(attribute, parent);
-                        }
+                        AddEventToEventQueueForAttributes(attribute, parent, eventQueue.EnqueueAddEvent);
                     }
+                }
+                else if (node is AttributeSyntax)
+                {
+                    AddEventToEventQueueForAttributes((AttributeSyntax)node, parent, eventQueue.EnqueueAddEvent);
                 }
                 else
                 {
@@ -935,22 +915,31 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                 {
                     foreach (var attribute in ((AttributeListSyntax)node).Attributes)
                     {
-                        if (parent is BaseFieldDeclarationSyntax)
-                        {
-                            foreach (var variableDeclarator in ((BaseFieldDeclarationSyntax)parent).Declaration.Variables)
-                            {
-                                eventQueue.EnqueueChangeEvent(attribute, variableDeclarator, eventType);
-                            }
-                        }
-                        else
-                        {
-                            eventQueue.EnqueueChangeEvent(attribute, parent, eventType);
-                        }
+                        ChangeEventQueueForAttributes(attribute, parent, eventType, eventQueue);
                     }
+                }
+                else if (node is AttributeSyntax)
+                {
+                    ChangeEventQueueForAttributes((AttributeSyntax)node, parent, eventType, eventQueue);
                 }
                 else
                 {
                     eventQueue.EnqueueChangeEvent(node, parent, eventType);
+                }
+            }
+
+            private static void ChangeEventQueueForAttributes(AttributeSyntax attribute, SyntaxNode parent, CodeModelEventType eventType, CodeModelEventQueue eventQueue)
+            {
+                if (parent is BaseFieldDeclarationSyntax)
+                {
+                    foreach (var variableDeclarator in ((BaseFieldDeclarationSyntax)parent).Declaration.Variables)
+                    {
+                        eventQueue.EnqueueChangeEvent(attribute, variableDeclarator, eventType);
+                    }
+                }
+                else
+                {
+                    eventQueue.EnqueueChangeEvent(attribute, parent, eventType);
                 }
             }
 
@@ -977,22 +966,31 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.CodeModel
                 {
                     foreach (var attribute in ((AttributeListSyntax)node).Attributes)
                     {
-                        if (parent is BaseFieldDeclarationSyntax)
-                        {
-                            foreach (var variableDeclarator in ((BaseFieldDeclarationSyntax)parent).Declaration.Variables)
-                            {
-                                eventQueue.EnqueueRemoveEvent(attribute, variableDeclarator);
-                            }
-                        }
-                        else
-                        {
-                            eventQueue.EnqueueRemoveEvent(attribute, parent);
-                        }
+                        AddEventToEventQueueForAttributes(attribute, parent, eventQueue.EnqueueRemoveEvent);
                     }
+                }
+                else if (node is AttributeSyntax)
+                {
+                    AddEventToEventQueueForAttributes((AttributeSyntax)node, parent, eventQueue.EnqueueRemoveEvent);
                 }
                 else
                 {
                     eventQueue.EnqueueRemoveEvent(node, parent);
+                }
+            }
+
+            private void AddEventToEventQueueForAttributes(AttributeSyntax attribute, SyntaxNode parent, Action<SyntaxNode, SyntaxNode> enqueueAddOrRemoveEvent)
+            {
+                if (parent is BaseFieldDeclarationSyntax)
+                {
+                    foreach (var variableDeclarator in ((BaseFieldDeclarationSyntax)parent).Declaration.Variables)
+                    {
+                        enqueueAddOrRemoveEvent(attribute, variableDeclarator);
+                    }
+                }
+                else
+                {
+                    enqueueAddOrRemoveEvent(attribute, parent);
                 }
             }
         }

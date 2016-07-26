@@ -37,7 +37,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                 }
 
                 var projectId = graphNode.GetValue<ProjectId>(RoslynGraphProperties.ContextProjectId);
-                var symbolId = graphNode.GetValue<SymbolKey>(RoslynGraphProperties.SymbolId);
+                var symbolId = graphNode.GetValue<SymbolKey?>(RoslynGraphProperties.SymbolId);
 
                 if (projectId != null)
                 {
@@ -60,15 +60,28 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                         return;
                     }
 
-                    Task.Factory.SafeStartNew(
-                        () => NavigateOnForegroundThread(sourceLocation, symbolId, project, document),
-                        CancellationToken.None,
-                        ForegroundTaskScheduler);
+                    if (IsForeground())
+                    {
+                        // If we are already on the UI thread, invoke NavigateOnForegroundThread
+                        // directly to preserve any existing NewDocumentStateScope.
+                        NavigateOnForegroundThread(sourceLocation, symbolId, project, document);
+                    }
+                    else
+                    {
+                        // Navigation must be performed on the UI thread. If we are invoked from a
+                        // background thread then the current NewDocumentStateScope is unrelated to
+                        // this navigation and it is safe to continue on the UI thread 
+                        // asynchronously.
+                        Task.Factory.SafeStartNew(
+                            () => NavigateOnForegroundThread(sourceLocation, symbolId, project, document),
+                            CancellationToken.None,
+                            ForegroundTaskScheduler);
+                    }
                 }
             }
         }
 
-        private void NavigateOnForegroundThread(SourceLocation sourceLocation, SymbolKey symbolId, Project project, Document document)
+        private void NavigateOnForegroundThread(SourceLocation sourceLocation, SymbolKey? symbolId, Project project, Document document)
         {
             AssertIsForeground();
 
@@ -76,7 +89,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             if (symbolId != null)
             {
                 var symbolNavigationService = _workspace.Services.GetService<ISymbolNavigationService>();
-                var symbol = symbolId.Resolve(project.GetCompilationAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None)).Symbol;
+                var symbol = symbolId.Value.Resolve(project.GetCompilationAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None)).Symbol;
 
                 // Do not allow third party navigation to types or constructors
                 if (symbol != null &&

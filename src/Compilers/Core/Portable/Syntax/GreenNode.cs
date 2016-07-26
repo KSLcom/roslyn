@@ -73,7 +73,7 @@ namespace Microsoft.CodeAnalysis
             {
                 foreach (var annotation in annotations)
                 {
-                    if (annotation == null) throw new ArgumentException(paramName: "annotations", message: "" /*CSharpResources.ElementsCannotBeNull*/);
+                    if (annotation == null) throw new ArgumentException(paramName: nameof(annotations), message: "" /*CSharpResources.ElementsCannotBeNull*/);
                 }
 
                 this.flags |= NodeFlags.ContainsAnnotations;
@@ -88,7 +88,7 @@ namespace Microsoft.CodeAnalysis
             {
                 foreach (var annotation in annotations)
                 {
-                    if (annotation == null) throw new ArgumentException(paramName: "annotations", message: "" /*CSharpResources.ElementsCannotBeNull*/);
+                    if (annotation == null) throw new ArgumentException(paramName: nameof(annotations), message: "" /*CSharpResources.ElementsCannotBeNull*/);
                 }
 
                 this.flags |= NodeFlags.ContainsAnnotations;
@@ -206,8 +206,7 @@ namespace Microsoft.CodeAnalysis
             FactoryContextIsInQuery = 1 << 7,
             FactoryContextIsInIterator = FactoryContextIsInQuery,  // VB does not use "InQuery", but uses "InIterator" instead
 
-            FactoryContextMask = FactoryContextIsInAsync | FactoryContextIsInQuery,
-            InheritMask = byte.MaxValue & ~FactoryContextMask,
+            InheritMask = ContainsDiagnostics | ContainsStructuredTrivia | ContainsDirectives | ContainsSkippedText | ContainsAnnotations | IsNotMissing,
         }
 
         internal NodeFlags Flags
@@ -474,7 +473,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (string.IsNullOrWhiteSpace(annotationKind))
             {
-                throw new ArgumentNullException("annotationKind");
+                throw new ArgumentNullException(nameof(annotationKind));
             }
 
             var annotations = this.GetAnnotations();
@@ -502,7 +501,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (annotationKinds == null)
             {
-                throw new ArgumentNullException("annotationKinds");
+                throw new ArgumentNullException(nameof(annotationKinds));
             }
 
             var annotations = this.GetAnnotations();

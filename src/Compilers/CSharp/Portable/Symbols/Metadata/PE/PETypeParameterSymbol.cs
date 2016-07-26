@@ -152,7 +152,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
 
             var moduleSymbol = containingType.ContainingPEModule;
 
-            Handle[] constraints;
+            EntityHandle[] constraints;
 
             try
             {
@@ -194,6 +194,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                     {
                         continue;
                     }
+
+                    typeSymbol = TupleTypeDecoder.DecodeTupleTypesIfApplicable(typeSymbol,
+                                                                               constraint,
+                                                                               moduleSymbol);
 
                     symbolsBuilder.Add(typeSymbol);
                 }

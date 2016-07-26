@@ -47,8 +47,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.LanguageService
                 return VSConstants.E_FAIL;
             }
 
-            var text = document.GetTextAsync(cancellationToken).WaitAndGetResult(cancellationToken);
-            var root = document.GetSyntaxRootAsync(cancellationToken).WaitAndGetResult(cancellationToken);
+            var root = document.GetSyntaxRootSynchronously(cancellationToken);
+            var text = root.SyntaxTree.GetText(cancellationToken);
 
             var ts = selections.Single();
             int start = text.Lines[ts.iStartLine].Start + ts.iStartIndex;
@@ -61,7 +61,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.LanguageService
             var rules = ruleFactory.CreateRule(document, start).Concat(Formatter.GetDefaultFormattingRules(document));
 
             // use formatting that return text changes rather than tree rewrite which is more expensive
-            var originalChanges = Formatter.GetFormattedTextChanges(root, adjustedSpan, document.Project.Solution.Workspace, rules: rules, cancellationToken: cancellationToken);
+            var originalChanges = Formatter.GetFormattedTextChanges(root, SpecializedCollections.SingletonEnumerable(adjustedSpan), document.Project.Solution.Workspace, document.Options, rules, cancellationToken);
 
             var originalSpan = RoslynTextSpan.FromBounds(start, end);
             var formattedChanges = ruleFactory.FilterFormattedChanges(document, originalSpan, originalChanges);
@@ -81,7 +81,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.LanguageService
         {
             // HACK: The formatting engine is inclusive in it's spans, so it won't insert
             // adjust the indentation if there is a token right at the spans we start at.
-            // Instead, we make sure we include preceeding indentation.
+            // Instead, we make sure we include preceding indentation.
             var prevToken = root.FindToken(start).GetPreviousToken();
             if (prevToken != default(SyntaxToken))
             {
@@ -94,7 +94,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.LanguageService
                 end = nextToken.Span.End;
             }
 
-            return RoslynTextSpan.FromBounds((int)start, end);
+            return RoslynTextSpan.FromBounds(start, end);
         }
 
         public int GetDataTip(IVsTextLayer textLayer, TextSpan[] selection, TextSpan[] tipSpan, out string text)

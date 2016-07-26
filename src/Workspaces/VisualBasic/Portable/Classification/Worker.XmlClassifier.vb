@@ -6,9 +6,9 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Namespace Microsoft.CodeAnalysis.VisualBasic.Classification
     Partial Friend Class Worker
         Private Class XmlClassifier
-            Private _worker As Worker
+            Private ReadOnly _worker As Worker
 
-            Sub New(worker As Worker)
+            Public Sub New(worker As Worker)
                 _worker = worker
             End Sub
 
@@ -22,7 +22,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Classification
             End Sub
 
             Friend Sub ClassifyNode(node As SyntaxNode)
-                If Not _worker._textSpan.OverlapsWith(node.Span) Then
+                ' Note: Use FullSpan in case we need to classify trivia around the span of the node.
+                If Not _worker._textSpan.OverlapsWith(node.FullSpan) Then
                     Return
                 End If
 
@@ -309,7 +310,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Classification
                 ' x.<foo>, x...<foo> or x.@foo). Note that the name can be an XmlName in the
                 ' case of an attribute, or an XmlBracketName, in which case, the brackets need
                 ' to be classified as well
-                Dim lastChild = syntax.ChildNodesAndTokens().LastOrDefault()
+                Dim childNodesAndTokens = syntax.ChildNodesAndTokens()
+                Dim lastChild = If(childNodesAndTokens.IsEmpty, Nothing, childNodesAndTokens(childNodesAndTokens.Count - 1))
                 If lastChild.Kind() <> SyntaxKind.None Then
                     Select Case lastChild.Kind()
                         Case SyntaxKind.XmlName

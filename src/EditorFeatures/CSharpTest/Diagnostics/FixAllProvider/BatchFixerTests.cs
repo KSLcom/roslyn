@@ -23,7 +23,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Diagnostics.SimplifyTyp
         [DiagnosticAnalyzer(LanguageNames.CSharp)]
         private class QualifyWithThisAnalyzer : DiagnosticAnalyzer
         {
-            public static readonly DiagnosticDescriptor Descriptor = new TriggerDiagnosticDescriptor("QualifyWithThis");
+            public static readonly DiagnosticDescriptor Descriptor = DescriptorFactory.CreateSimpleDescriptor("QualifyWithThis");
 
             public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
             {
@@ -79,7 +79,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Diagnostics.SimplifyTyp
                     var newRoot = root.ReplaceNode(node, newNode);
                     var newDocument = context.Document.WithSyntaxRoot(newRoot);
 
-                    // Disable RS0005 as this is test code and we don't need telemtry for created code action.
+                    // Disable RS0005 as this is test code and we don't need telemetry for created code action.
 #pragma warning disable RS0005 // Do not use generic CodeAction.Create to create CodeAction
                     var fix = CodeAction.Create("QualifyWithThisFix", _ => Task.FromResult(newDocument));
 #pragma warning restore RS0005 // Do not use generic CodeAction.Create to create CodeAction
@@ -96,9 +96,9 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.UnitTests.Diagnostics.SimplifyTyp
 
         #region "Fix all occurrences tests"
 
-        [Fact(Skip = "https://github.com/dotnet/roslyn/issues/320")]
+        [Fact, WorkItem(320, "https://github.com/dotnet/roslyn/issues/320")]
         [Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)]
-        public void TestFixAllInDocument_QualifyWithThis()
+        public async Task TestFixAllInDocument_QualifyWithThis()
         {
             var input = @"
 <Workspace>
@@ -152,9 +152,9 @@ class C
     </Project>
 </Workspace>";
 
-            Test(input, expected, isLine: false, compareTokens: false);
+            await TestAsync(input, expected, compareTokens: false);
         }
-        
+
         #endregion
     }
 }

@@ -20,21 +20,6 @@ namespace Microsoft.Cci
             this.Context = context;
         }
 
-        public void Visit(IEnumerable<ITypeExport> typeExports)
-        {
-            foreach (ITypeExport typeExport in typeExports)
-            {
-                this.Visit(typeExport);
-            }
-        }
-
-        public virtual void Visit(ITypeExport typeExport)
-        {
-            this.Visit(typeExport.ExportedType);
-            this.Visit(typeExport.GetAttributes(Context));
-            typeExport.Dispatch(this);
-        }
-
         public virtual void Visit(IArrayTypeReference arrayTypeReference)
         {
             this.Visit(arrayTypeReference.GetElementType(Context));
@@ -378,11 +363,11 @@ namespace Microsoft.Cci
         {
         }
 
-        public virtual void VisitNestedTypes(IEnumerable<INamedTypeDefinition> nestedTypes)
+        public void VisitNestedTypes(IEnumerable<INamedTypeDefinition> nestedTypes)
         {
             foreach (ITypeDefinitionMember nestedType in nestedTypes)
             {
-                this.Visit((ITypeDefinitionMember)nestedType);
+                this.Visit(nestedType);
             }
         }
 
@@ -554,6 +539,15 @@ namespace Microsoft.Cci
             foreach (ITypeReference typeReference in typeReferences)
             {
                 this.Visit(typeReference);
+            }
+        }
+
+        public void Visit(IEnumerable<TypeReferenceWithAttributes> typeRefsWithAttributes)
+        {
+            foreach (var typeRefWithAttributes in typeRefsWithAttributes)
+            {
+                this.Visit(typeRefWithAttributes.TypeRef);
+                this.Visit(typeRefWithAttributes.Attributes);
             }
         }
 

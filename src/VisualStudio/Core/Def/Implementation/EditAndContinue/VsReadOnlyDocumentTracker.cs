@@ -1,15 +1,16 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.EditAndContinue;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
+using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Editor;
+using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
+using Microsoft.VisualStudio.LanguageServices.Implementation.Venus;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.TextManager.Interop;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
 {
@@ -18,10 +19,13 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
         private readonly IEditAndContinueWorkspaceService _encService;
         private readonly IVsEditorAdaptersFactoryService _adapters;
         private readonly Workspace _workspace;
+        private readonly AbstractProject _vsProject;
 
         private bool _isDisposed;
 
-        public VsReadOnlyDocumentTracker(IEditAndContinueWorkspaceService encService, IVsEditorAdaptersFactoryService adapters)
+        internal static readonly TraceLog log = new TraceLog(2048, "VsReadOnlyDocumentTracker");
+
+        public VsReadOnlyDocumentTracker(IEditAndContinueWorkspaceService encService, IVsEditorAdaptersFactoryService adapters, AbstractProject vsProject)
             : base(assertIsForeground: true)
         {
             Debug.Assert(encService.DebuggingSession != null);
@@ -29,6 +33,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
             _encService = encService;
             _adapters = adapters;
             _workspace = encService.DebuggingSession.InitialSolution.Workspace;
+            _vsProject = vsProject;
 
             _workspace.DocumentOpened += OnDocumentOpened;
             UpdateWorkspaceDocuments();
@@ -80,12 +85,31 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
 
         private void SetReadOnly(Document document)
         {
-            SessionReadOnlyReason sessionReason;
-            ProjectReadOnlyReason projectReason;
-            SetReadOnly(document.Id, _encService.IsProjectReadOnly(document.Project.Name, out sessionReason, out projectReason));
+            // Only set documents read-only if they're part of a project that supports Enc.
+            var workspace = document.Project.Solution.Workspace as VisualStudioWorkspaceImpl;
+            var project = workspace?.ProjectTracker?.GetProject(document.Project.Id);
+
+            if (project?.EditAndContinueImplOpt != null)
+            {
+                SessionReadOnlyReason sessionReason;
+                ProjectReadOnlyReason projectReason;
+                SetReadOnly(document.Id, _encService.IsProjectReadOnly(document.Project.Id, out sessionReason, out projectReason) && AllowsReadOnly(document.Id));
+            }
         }
 
-        private void SetReadOnly(DocumentId documentId, bool value)
+        private bool AllowsReadOnly(DocumentId documentId)
+        {
+            // All documents of regular running projects are read-only until the debugger breaks the app.
+            // However, ASP.NET doesn’t want its views (aspx, cshtml, or vbhtml) to be read-only, so they can be editable
+            // while the code is running and get refreshed next time the web page is hit.
+
+            // Note that Razor-like views are modelled as a ContainedDocument but normal code including code-behind are modelled as a StandardTextDocument.
+            var visualStudioWorkspace = _vsProject.Workspace as VisualStudioWorkspaceImpl;
+            var containedDocument = visualStudioWorkspace?.GetHostDocument(documentId) as ContainedDocument;
+            return containedDocument == null;
+        }
+
+        internal void SetReadOnly(DocumentId documentId, bool value)
         {
             AssertIsForeground();
             Debug.Assert(!_isDisposed);
@@ -93,17 +117,19 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
             var textBuffer = GetTextBuffer(_workspace, documentId);
             if (textBuffer != null)
             {
-                SetReadOnlyFlag(textBuffer, value);
+                var vsBuffer = _adapters.GetBufferAdapter(textBuffer);
+                if (vsBuffer != null)
+                {
+                    SetReadOnlyFlag(vsBuffer, value);
+                }
             }
         }
 
-        private void SetReadOnlyFlag(ITextBuffer buffer, bool value)
+        private void SetReadOnlyFlag(IVsTextBuffer buffer, bool value)
         {
-            var vsBuffer = _adapters.GetBufferAdapter(buffer);
-
             uint oldFlags;
             uint newFlags;
-            vsBuffer.GetStateFlags(out oldFlags);
+            buffer.GetStateFlags(out oldFlags);
             if (value)
             {
                 newFlags = oldFlags | (uint)BUFFERSTATEFLAGS.BSF_USER_READONLY;
@@ -115,13 +141,20 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.EditAndContinue
 
             if (oldFlags != newFlags)
             {
-                vsBuffer.SetStateFlags(newFlags);
+                buffer.SetStateFlags(newFlags);
             }
         }
 
         private static ITextBuffer GetTextBuffer(Workspace workspace, DocumentId documentId)
         {
             var doc = workspace.CurrentSolution.GetDocument(documentId);
+            if (doc == null)
+            {
+                // TODO (https://github.com/dotnet/roslyn/issues/1204): this check should be unnecessary.
+                log.Write($"GetTextBuffer: document not found for '{documentId?.GetDebuggerDisplay()}'");
+                return null;
+            }
+
             SourceText text;
             if (!doc.TryGetText(out text))
             {

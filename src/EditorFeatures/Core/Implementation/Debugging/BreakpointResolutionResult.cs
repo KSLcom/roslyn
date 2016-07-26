@@ -1,16 +1,15 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.Debugging
 {
     internal class BreakpointResolutionResult
     {
-        public Document Document { get; private set; }
-        public TextSpan TextSpan { get; private set; }
-        public string LocationNameOpt { get; private set; }
-        public bool IsLineBreakpoint { get; private set; }
+        public Document Document { get; }
+        public TextSpan TextSpan { get; }
+        public string LocationNameOpt { get; }
+        public bool IsLineBreakpoint { get; }
 
         private BreakpointResolutionResult(Document document, TextSpan textSpan, string locationNameOpt, bool isLineBreakpoint)
         {

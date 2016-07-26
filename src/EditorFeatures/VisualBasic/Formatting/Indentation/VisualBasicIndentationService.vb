@@ -4,30 +4,36 @@ Imports System.Composition
 Imports System.Threading
 Imports Microsoft.CodeAnalysis.Editor.Implementation.SmartIndent
 Imports Microsoft.CodeAnalysis.Formatting.Rules
-Imports Microsoft.CodeAnalysis.Host
 Imports Microsoft.CodeAnalysis.Host.Mef
+Imports Microsoft.CodeAnalysis.LanguageServices
 Imports Microsoft.CodeAnalysis.Options
+Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.Text.Shared.Extensions
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
-Imports Microsoft.VisualStudio.Text
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Formatting.Indentation
-    <ExportLanguageService(GetType(IIndentationService), LanguageNames.VisualBasic), [Shared]>
+    <ExportLanguageService(GetType(ISynchronousIndentationService), LanguageNames.VisualBasic), [Shared]>
     Partial Friend Class VisualBasicIndentationService
         Inherits AbstractIndentationService
 
-        Private Shared ReadOnly instance As IFormattingRule = New SpecialFormattingRule()
+        Private Shared ReadOnly s_instance As IFormattingRule = New SpecialFormattingRule()
 
         Protected Overrides Function GetSpecializedIndentationFormattingRule() As IFormattingRule
-            Return instance
+            Return s_instance
         End Function
 
-        Protected Overrides Function GetIndenter(document As Document, lineToBeIndented As ITextSnapshotLine, formattingRules As IEnumerable(Of IFormattingRule), optionSet As OptionSet, cancellationToken As CancellationToken) As AbstractIndenter
-            Return New Indenter(document, formattingRules, optionSet, lineToBeIndented, cancellationToken)
+        Protected Overrides Function GetIndenter(syntaxFacts As ISyntaxFactsService,
+                                                 syntaxTree As SyntaxTree,
+                                                 lineToBeIndented As TextLine,
+                                                 formattingRules As IEnumerable(Of IFormattingRule),
+                                                 optionSet As OptionSet,
+                                                 cancellationToken As CancellationToken) As AbstractIndenter
+            Return New Indenter(syntaxFacts, syntaxTree, formattingRules, optionSet, lineToBeIndented, cancellationToken)
         End Function
 
         Protected Overrides Function ShouldUseSmartTokenFormatterInsteadOfIndenter(formattingRules As IEnumerable(Of IFormattingRule),
-                                                                                   root As SyntaxNode, line As ITextSnapshotLine,
+                                                                                   root As SyntaxNode,
+                                                                                   line As TextLine,
                                                                                    optionSet As OptionSet,
                                                                                    cancellationToken As CancellationToken) As Boolean
             Return ShouldUseSmartTokenFormatterInsteadOfIndenter(formattingRules, DirectCast(root, CompilationUnitSyntax), line, optionSet, cancellationToken)
@@ -36,7 +42,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Formatting.Indentation
         Public Overloads Shared Function ShouldUseSmartTokenFormatterInsteadOfIndenter(
                 formattingRules As IEnumerable(Of IFormattingRule),
                 root As CompilationUnitSyntax,
-                line As ITextSnapshotLine,
+                line As TextLine,
                 optionSet As OptionSet,
                 CancellationToken As CancellationToken,
                 Optional neverUseWhenHavingMissingToken As Boolean = True) As Boolean
@@ -81,7 +87,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Formatting.Indentation
 
             ' now, regular case. ask formatting rule to see whether we should use token formatter or not
             Dim lineOperation = FormattingOperations.GetAdjustNewLinesOperation(formattingRules, previousToken, token, optionSet)
-            If lineOperation IsNot Nothing Then
+            If lineOperation IsNot Nothing AndAlso lineOperation.Option <> AdjustNewLinesOption.ForceLinesIfOnSingleLine Then
                 Return True
             End If
 
@@ -90,7 +96,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Formatting.Indentation
 
             Dim currentNode = startNode
             Do While currentNode IsNot Nothing
-                Dim operations = FormattingOperations.GetAlignTokensOperations(formattingRules, currentNode, optionSet)
+                Dim operations = FormattingOperations.GetAlignTokensOperations(
+                    formattingRules, currentNode, lastToken:=Nothing, optionSet:=optionSet)
 
                 If Not operations.Any() Then
                     currentNode = currentNode.Parent

@@ -567,7 +567,7 @@ class C
 ");
         }
 
-        [WorkItem(530445, "DevDiv")]
+        [WorkItem(530445, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/530445")]
         [Fact]
         public void TestFieldInitializersInOptimizedMode6()
         {
@@ -644,7 +644,7 @@ a.a = 1
                 expectedOutput.AppendLine(i.ToString());
             }
 
-            var compilation = CreateCompilationWithMscorlib(trees, options: TestOptions.ReleaseExe);
+            var compilation = CreateCompilationWithMscorlib45(trees, options: TestOptions.ReleaseExe);
 
             CompileAndVerify(compilation, expectedOutput: expectedOutput.ToString());
         }

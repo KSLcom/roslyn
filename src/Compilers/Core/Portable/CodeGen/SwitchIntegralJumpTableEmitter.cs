@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Reflection.Metadata;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeGen
@@ -38,7 +39,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         // threshold at which binary search stops partitioning.
         // if a search leaf has less than LinearSearchThreshold buckets
         // we just go through buckets linearly.
-        // We chose 3 here because it is where number of branches to reach fallthrough 
+        // We chose 3 here because it is where number of branches to reach fall-through 
         // is the same for linear and binary search.
         private const int LinearSearchThreshold = 3;
 
@@ -101,7 +102,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             int startLabelIndex;
 
             // Check for a label with ConstantValue.Null.
-            // Soring ensures that if we do have one, it will be
+            // Sorting ensures that if we do have one, it will be
             // the first label in the sorted list.
             if (sortedCaseLabels[0].Key != ConstantValue.Null)
             {
@@ -117,13 +118,17 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
             if (startLabelIndex <= endLabelIndex)
             {
-                // We have atleast one non-null case label, emit jump table
+                // We have at least one non-null case label, emit jump table
 
                 // (b) Generate switch buckets
                 ImmutableArray<SwitchBucket> switchBuckets = this.GenerateSwitchBuckets(startLabelIndex, endLabelIndex);
 
                 // (c) Emit switch buckets
                 this.EmitSwitchBuckets(switchBuckets, 0, switchBuckets.Length - 1);
+            }
+            else
+            {
+                _builder.EmitBranch(ILOpCode.Br, _fallThroughLabel);
             }
         }
 
@@ -294,7 +299,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
             // NOTE:    Typically marking a synthetic label needs a hidden sequence point.
             // NOTE:    Otherwise if you step (F11) to this label debugger may highlight previous (lexically) statement.
-            // NOTE:    We do not need a hiden point in this implementation since we do not interleave jump table
+            // NOTE:    We do not need a hidden point in this implementation since we do not interleave jump table
             // NOTE:    and cases so the "previous" statement will always be "switch".
 
             //  secondHalfLabel:
@@ -394,7 +399,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         private void EmitCondBranchForSwitch(ILOpCode branchCode, ConstantValue constant, object targetLabel)
         {
-            Debug.Assert(branchCode.IsBranchToLabel());
+            Debug.Assert(branchCode.IsBranch());
             Debug.Assert(constant != null &&
                 SwitchConstantValueHelper.IsValidSwitchCaseLabelConstant(constant));
             Debug.Assert(targetLabel != null);
@@ -449,8 +454,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
                     return ILOpCode.Ble_un;
 
                 default:
-                    Debug.Assert(false, "Unhandled branch opcode for switch emitter");
-                    return ILOpCode.Nop;
+                    throw ExceptionUtilities.UnexpectedValue(branchCode);
             }
         }
 

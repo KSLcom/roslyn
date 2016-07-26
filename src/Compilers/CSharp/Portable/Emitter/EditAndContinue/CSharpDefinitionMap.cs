@@ -1,17 +1,14 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
 using Microsoft.CodeAnalysis.CodeGen;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE;
 using Microsoft.CodeAnalysis.Emit;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Emit
 {
@@ -35,6 +32,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             Debug.Assert(metadataDecoder != null);
             _metadataDecoder = metadataDecoder;
         }
+
+        internal override CommonMessageProvider MessageProvider => CSharp.MessageProvider.Instance;
 
         internal bool TryGetAnonymousTypeName(NamedTypeSymbol template, out string name, out int index)
         {
@@ -123,6 +122,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             out IReadOnlyDictionary<Cci.ITypeReference, int> awaiterMap,
             out int awaiterSlotCount)
         {
+            // we are working with PE symbols
+            Debug.Assert(stateMachineType.ContainingAssembly is PEAssemblySymbol);
+
             var hoistedLocals = new Dictionary<EncHoistedLocalInfo, int>();
             var awaiters = new Dictionary<Cci.ITypeReference, int>();
             int maxAwaiterSlotIndex = -1;
@@ -192,7 +194,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             return result;
         }
 
-        protected override ITypeSymbol TryGetStateMachineType(Handle methodHandle)
+        protected override ITypeSymbol TryGetStateMachineType(EntityHandle methodHandle)
         {
             string typeName;
             if (_metadataDecoder.Module.HasStringValuedAttribute(methodHandle, AttributeDescription.AsyncStateMachineAttribute, out typeName) ||

@@ -206,7 +206,7 @@ public class Program
                 Diagnostic(ErrorCode.WRN_FinalizeMethod, "Finalize"));
         }
 
-        [WorkItem(542828, "DevDiv")]
+        [WorkItem(542828, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542828")]
         [Fact]
         public void BaseTypeHasNonVirtualFinalize()
         {
@@ -262,7 +262,7 @@ public class Program
                 Diagnostic(ErrorCode.WRN_FinalizeMethod, "Finalize"));
         }
 
-        [WorkItem(542828, "DevDiv")]
+        [WorkItem(542828, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542828")]
         [Fact]
         public void GenericBaseTypeHasNonVirtualFinalize()
         {
@@ -516,7 +516,7 @@ public class M<T> : L<T>
             Assert.False(globalNamespace.GetMember<NamedTypeSymbol>("D").GetMember<MethodSymbol>("Finalize").IsRuntimeFinalizer()); //same but has "newslot"
         }
 
-        [WorkItem(528903, "DevDiv")] // Won't fix - test just captures behavior.
+        [WorkItem(528903, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/528903")] // Won't fix - test just captures behavior.
         [Fact]
         public void DestructorOverridesPublicFinalize()
         {
@@ -539,11 +539,29 @@ public class B : A
                 //     public virtual void Finalize() { }
                 Diagnostic(ErrorCode.WRN_FinalizeMethod, "Finalize"));
 
-            // PeVerify fails
-            Assert.Throws<PeVerifyException>(() => CompileAndVerify(compilation));
+            // We produce unverifiable code here as per bug resolution (compat concerns, not common case).
+            CompileAndVerify(compilation, verify: false).VerifyIL("B.Finalize",
+
+                @"
+{
+  // Code size       10 (0xa)
+  .maxstack  1
+  .try
+  {
+    IL_0000:  leave.s    IL_0009
+  }
+  finally
+  {
+    IL_0002:  ldarg.0
+    IL_0003:  call       ""void object.Finalize()""
+    IL_0008:  endfinally
+  }
+  IL_0009:  ret
+}
+");
         }
 
-        [WorkItem(528907, "DevDiv")]
+        [WorkItem(528907, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/528907")]
         [Fact]
         public void BaseTypeHasGenericFinalize()
         {
@@ -580,7 +598,7 @@ public class B : A
 ");
         }
 
-        [WorkItem(528903, "DevDiv")]
+        [WorkItem(528903, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/528903")]
         [Fact]
         public void MethodImplEntry()
         {
@@ -590,7 +608,7 @@ public class A
     ~A() { }
 }
 ";
-            CompileAndVerify(text, assemblyValidator: (assembly, _) =>
+            CompileAndVerify(text, assemblyValidator: (assembly) =>
             {
                 var peFileReader = assembly.GetMetadataReader();
 
@@ -616,7 +634,7 @@ public class A
                 // Find the handle for System.Object's destructor.
                 MemberReferenceHandle handleDestructorObject = peFileReader.MemberReferences.AsEnumerable().
                     Select(handle => new { handle = handle, row = peFileReader.GetMemberReference(handle) }).
-                    Single(pair => pair.row.Parent == (Handle)handleObject &&
+                    Single(pair => pair.row.Parent == (EntityHandle)handleObject &&
                         peFileReader.GetString(pair.row.Name) == WellKnownMemberNames.DestructorName).handle;
 
 
@@ -629,10 +647,10 @@ public class A
                 Assert.Equal(handleA, methodImpl.Type);
 
                 // The MethodDeclaration column should point to System.Object.Finalize.
-                Assert.Equal((Handle)handleDestructorObject, methodImpl.MethodDeclaration);
+                Assert.Equal((EntityHandle)handleDestructorObject, methodImpl.MethodDeclaration);
 
                 // The MethodDeclarationColumn should point to A's destructor.
-                Assert.Equal((Handle)handleDestructorA, methodImpl.MethodBody);
+                Assert.Equal((EntityHandle)handleDestructorA, methodImpl.MethodBody);
             });
         }
 

@@ -16,7 +16,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
     {
         private const string RegistryKey = @"Software\Microsoft\ExpressionEvaluator";
         private const string RegistryValue = "EnableFailFast";
-        private static readonly bool s_isFailFastEnabled;
+        internal static bool IsFailFastEnabled;
 
         static ExpressionEvaluatorFatalError()
         {
@@ -24,22 +24,25 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             {
                 // Microsoft.Win32.Registry is not supported on OneCore/CoreSystem,
                 // so we have to check to see if it's there at runtime.
-                var registry = typeof(object).Assembly.GetType("Microsoft.Win32.Registry");
-                if (registry != null)
+                var registryType = typeof(object).GetTypeInfo().Assembly.GetType("Microsoft.Win32.Registry");
+                if (registryType != null)
                 {
-                    var hKeyCurrentUserField = registry.GetField("CurrentUser", BindingFlags.Static | BindingFlags.Public);
-                    using (var currentUserKey = (IDisposable)hKeyCurrentUserField.GetValue(null))
+                    var hKeyCurrentUserField = registryType.GetTypeInfo().GetDeclaredField("CurrentUser");
+                    if (hKeyCurrentUserField != null && hKeyCurrentUserField.IsStatic)
                     {
-                        var openSubKeyMethod = currentUserKey.GetType().GetMethod("OpenSubKey", new Type[] { typeof(string), typeof(bool) });
-                        using (var eeKey = (IDisposable)openSubKeyMethod.Invoke(currentUserKey, new object[] { RegistryKey, /*writable*/ false }))
+                        using (var currentUserKey = (IDisposable)hKeyCurrentUserField.GetValue(null))
                         {
-                            if (eeKey != null)
+                            var openSubKeyMethod = currentUserKey.GetType().GetTypeInfo().GetDeclaredMethod("OpenSubKey", new Type[] { typeof(string), typeof(bool) });
+                            using (var eeKey = (IDisposable)openSubKeyMethod.Invoke(currentUserKey, new object[] { RegistryKey, /*writable*/ false }))
                             {
-                                var getValueMethod = eeKey.GetType().GetMethod("GetValue", new Type[] { typeof(string) });
-                                var value = getValueMethod.Invoke(eeKey, new object[] { RegistryValue });
-                                if ((value != null) && (value is int))
+                                if (eeKey != null)
                                 {
-                                    s_isFailFastEnabled = ((int)value == 1);
+                                    var getValueMethod = eeKey.GetType().GetTypeInfo().GetDeclaredMethod("GetValue", new Type[] { typeof(string) });
+                                    var value = getValueMethod.Invoke(eeKey, new object[] { RegistryValue });
+                                    if ((value != null) && (value is int))
+                                    {
+                                        IsFailFastEnabled = ((int)value == 1);
+                                    }
                                 }
                             }
                         }
@@ -54,7 +57,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         internal static bool CrashIfFailFastEnabled(Exception exception)
         {
-            if (!s_isFailFastEnabled)
+            if (!IsFailFastEnabled)
             {
                 return false;
             }
@@ -80,21 +83,6 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             }
 
             return FatalError.Report(exception);
-        }
-
-        internal delegate bool NonFatalExceptionHandler(Exception exception, string implementationName);
-
-        internal static bool ReportNonFatalException(Exception exception, NonFatalExceptionHandler handler)
-        {
-            if (CrashIfFailFastEnabled(exception))
-            {
-                throw ExceptionUtilities.Unreachable;
-            }
-
-            // Ignore the return value, because we always want to continue after reporting the Exception.
-            handler(exception, nameof(ExpressionEvaluatorFatalError));
-
-            return true;
         }
     }
 }

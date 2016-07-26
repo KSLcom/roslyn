@@ -1,5 +1,7 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
+
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.Simplification
     Public Class ParenthesisSimplificationTests
         Inherits AbstractSimplificationTests
@@ -7,7 +9,7 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.Simplification
 #Region "VB Array Literal tests"
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_DontRemoveInJaggedArrayLiteral()
+        Public Async Function TestVisualBasic_DontRemoveInJaggedArrayLiteral() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -30,12 +32,12 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_DontRemoveInCollectionInitializer()
+        Public Async Function TestVisualBasic_DontRemoveInCollectionInitializer() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -60,12 +62,12 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_RemoveInCollectionInitializer1()
+        Public Async Function TestVisualBasic_RemoveInCollectionInitializer1() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -90,12 +92,12 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_RemoveInCollectionInitializer2()
+        Public Async Function TestVisualBasic_RemoveInCollectionInitializer2() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -120,12 +122,12 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_RemoveInCollectionInitializer3()
+        Public Async Function TestVisualBasic_RemoveInCollectionInitializer3() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -150,16 +152,16 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
 #End Region
 
 #Region "VB Binary Expressions"
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_SimplifyOnLeftSideOfBinaryExpression()
+        Public Async Function TestVisualBasic_SimplifyOnLeftSideOfBinaryExpression() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -186,13 +188,13 @@ Module Program
 End Module
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_SimplifyOnRightSideOfBinaryExpressionIfOperatorsAreCommutative()
+        Public Async Function TestVisualBasic_SimplifyOnRightSideOfBinaryExpressionIfOperatorsAreCommutative() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -219,13 +221,13 @@ Module Program
 End Module
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub VisualBasic_DontSimplifyOnRightSideOfBinaryExpressionIfOperatorsAreNotCommutative()
+        Public Async Function TestVisualBasic_DontSimplifyOnRightSideOfBinaryExpressionIfOperatorsAreNotCommutative() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -252,14 +254,14 @@ Module Program
 End Module
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
 
-        <WorkItem(738826)>
+        <WorkItem(738826, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/738826")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub SimplifyParenthesisedGetTypeOperator()
+        Public Async Function TestSimplifyParenthesisedGetTypeOperator() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -288,12 +290,12 @@ Module M
 End Module
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub SimplifyParenthesisedAroundNameOfExpression()
+        Public Async Function TestSimplifyParenthesisedAroundNameOfExpression() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -316,16 +318,16 @@ Class C
 End Class
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
 
 #End Region
 
 #Region "C#"
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_Unnecessary_Parenthesis_in_Array_Index()
+        Public Async Function TestCSharp_Unnecessary_Parenthesis_in_Array_Index() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -366,13 +368,13 @@ class Foo{
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(619292)>
+        <WorkItem(619292, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/619292")>
         <Fact(), Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_RemoveParensInJaggedArrayLiteral()
+        Public Async Function TestCSharp_RemoveParensInJaggedArrayLiteral() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -409,13 +411,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(619294)>
+        <WorkItem(619294, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/619294")>
         <Fact(), Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_RemoveParensInCollectionInitializer()
+        Public Async Function TestCSharp_RemoveParensInCollectionInitializer() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -444,12 +446,12 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_RemoveParensInCollectionInitializer2()
+        Public Async Function TestCSharp_RemoveParensInCollectionInitializer2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -482,12 +484,12 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_RemoveParensOnVariableDeclaration()
+        Public Async Function TestCSharp_RemoveParensOnVariableDeclaration() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -514,13 +516,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesAroundExpressionInQueryClause()
+        Public Async Function TestCSharp_SimplifyParenthesesAroundExpressionInQueryClause() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -559,12 +561,12 @@ class foo
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideExceptionFilter()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideExceptionFilter() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -601,12 +603,12 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation1()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation1() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -633,12 +635,12 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation2()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation2() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -665,13 +667,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <WorkItem(724, "#724")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation3()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation3() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -698,13 +700,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <WorkItem(724, "#724")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation4()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation4() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -733,13 +735,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <WorkItem(724, "#724")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation5()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation5() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -768,13 +770,13 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
         <WorkItem(724, "#724")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyParenthesesInsideInterpolation6()
+        Public Async Function TestCSharp_SimplifyParenthesesInsideInterpolation6() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -805,17 +807,17 @@ class C
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
 #End Region
 
 #Region "C# Binary Expressions"
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyOnLeftSideOfBinaryExpression()
+        Public Async Function TestCSharp_SimplifyOnLeftSideOfBinaryExpression() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -846,13 +848,13 @@ class Program
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyOnRightSideOfBinaryExpressionIfOperatorsAreCommutative()
+        Public Async Function TestCSharp_SimplifyOnRightSideOfBinaryExpressionIfOperatorsAreCommutative() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -883,13 +885,13 @@ class Program
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyOnRightSideOfBinaryExpressionForAssignment()
+        Public Async Function TestCSharp_SimplifyOnRightSideOfBinaryExpressionForAssignment() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -922,13 +924,13 @@ class Program
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_SimplifyOnRightSideOfBinaryExpressionForNullCoalescing()
+        Public Async Function TestCSharp_SimplifyOnRightSideOfBinaryExpressionForNullCoalescing() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -963,13 +965,13 @@ class Program
 }
 </code>
 
-            Test(input, expected)
+            Await TestAsync(input, expected)
 
-        End Sub
+        End Function
 
-        <WorkItem(633582)>
+        <WorkItem(633582, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/633582")>
         <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
-        Public Sub CSharp_DontSimplifyOnRightSideOfBinaryExpressionIfOperatorsAreNotCommutative()
+        Public Async Function TestCSharp_DontSimplifyOnRightSideOfBinaryExpressionIfOperatorsAreNotCommutative() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -1000,11 +1002,340 @@ class Program
 }
 </code>
 
-            Test(input, expected)
-
-        End Sub
-
+            Await TestAsync(input, expected)
+        End Function
 #End Region
 
+        <WorkItem(2211, "https://github.com/dotnet/roslyn/issues/2211")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestCSharp_DontRemoveParensAroundConditionalAccessExpressionIfParentIsMemberAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="C#" CommonReferences="true">
+        <Document>
+using System;
+using System.Collections.Generic;
+
+class Program
+{
+    static void Main()
+    {
+        var x = new List&lt;int&gt;();
+        int i = {|Simplify:({|Simplify:(int?)x?.Count|})|}.GetValueOrDefault();
+    }
+}
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+using System;
+using System.Collections.Generic;
+
+class Program
+{
+    static void Main()
+    {
+        var x = new List&lt;int&gt;();
+        int i = (x?.Count).GetValueOrDefault();
+    }
+}
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(2211, "https://github.com/dotnet/roslyn/issues/2211")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_DontRemoveParensAroundConditionalAccessExpressionIfParentIsMemberAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System
+Imports System.Collections.Generic
+
+Module Program
+    Sub Main()
+        Dim x = New List(Of Integer)
+        Dim i = {|Simplify:({|Simplify:CType(x?.Count, Integer?)|})|}.GetValueOrDefault()
+    End Sub
+End Module
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System
+Imports System.Collections.Generic
+
+Module Program
+    Sub Main()
+        Dim x = New List(Of Integer)
+        Dim i = (x?.Count).GetValueOrDefault()
+    End Sub
+End Module
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_RemoveParenthesesAroundEmptyXmlElement() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = {|Simplify:(&lt;xml/&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = &lt;xml/&gt;
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_RemoveParenthesesAroundEmptyXmlElementInInvocation() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M(xml as XElement)
+        Dim x = M({|Simplify:(&lt;xml/&gt;)|})
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M(xml as XElement)
+        Dim x = M(&lt;xml/&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_RemoveParenthesesAroundXmlElement() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = {|Simplify:(&lt;xml&gt;&lt;/xml&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = &lt;xml&gt;&lt;/xml&gt;
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_RemoveParenthesesAroundXmlElementInInvocation() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M(xml as XElement)
+        Dim x = M({|Simplify:(&lt;xml&gt;&lt;/xml&gt;)|})
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M(xml as XElement)
+        Dim x = M(&lt;xml&gt;&lt;/xml&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_DontRemoveParenthesesAroundEmptyXmlElementWhenPreviousTokenIsLessThan() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &lt; {|Simplify:(&lt;xml/&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &lt; (&lt;xml/&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_DontRemoveParenthesesAroundEmptyXmlElementWhenPreviousTokenIsGreaterThan() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &gt; {|Simplify:(&lt;xml/&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &gt; (&lt;xml/&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_DontRemoveParenthesesAroundXmlElementWhenPreviousTokenIsLessThan() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &lt; {|Simplify:(&lt;xml&gt;&lt;/xml&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &lt; (&lt;xml&gt;&lt;/xml&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WorkItem(4490, "https://github.com/dotnet/roslyn/issues/4490")>
+        <Fact, Trait(Traits.Feature, Traits.Features.Simplification)>
+        Public Async Function TestVisualBasic_DontRemoveParenthesesAroundXmlElementWhenPreviousTokenIsGreaterThan() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &gt; {|Simplify:(&lt;xml&gt;&lt;/xml&gt;)|}
+    End Sub
+End Class
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code>
+Imports System.Xml.Linq
+
+Class C
+    Sub M()
+        Dim x = 1 &gt; (&lt;xml&gt;&lt;/xml&gt;)
+    End Sub
+End Class
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
     End Class
 End Namespace

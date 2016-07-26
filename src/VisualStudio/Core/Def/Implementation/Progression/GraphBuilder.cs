@@ -23,7 +23,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
     internal sealed partial class GraphBuilder
     {
         private readonly Graph _graph = new Graph();
-        private readonly AsyncSemaphore _gate = new AsyncSemaphore(initialCount: 1);
+        private readonly SemaphoreSlim _gate = new SemaphoreSlim(initialCount: 1);
 
         private readonly ISet<GraphNode> _createdNodes = new HashSet<GraphNode>();
         private readonly IList<Tuple<GraphNode, GraphProperty, object>> _deferredPropertySets = new List<Tuple<GraphNode, GraphProperty, object>>();
@@ -115,8 +115,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                 _nodeToContextProjectMap.Add(inputNode, project);
 
                 var compilation = await project.GetCompilationAsync(_cancellationToken).ConfigureAwait(false);
-                var symbolId = inputNode[RoslynGraphProperties.SymbolId] as SymbolKey;
-                var symbol = symbolId.Resolve(compilation).Symbol;
+                var symbolId = (SymbolKey?)inputNode[RoslynGraphProperties.SymbolId];
+                var symbol = symbolId.Value.Resolve(compilation).Symbol;
                 if (symbol != null)
                 {
                     _nodeToSymbolMap.Add(inputNode, symbol);
@@ -172,7 +172,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
 
         public Task<GraphNode> AddNodeForSymbolAsync(ISymbol symbol, GraphNode relatedNode)
         {
-            // The lack of a lock here is acceptable, since each of the functions lock, and GetContextProject/GetContextDcoument
+            // The lack of a lock here is acceptable, since each of the functions lock, and GetContextProject/GetContextDocument
             // never change for the same input.
             return AddNodeForSymbolAsync(symbol, GetContextProject(relatedNode), GetContextDocument(relatedNode));
         }
@@ -205,7 +205,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             {
                 GraphNode node = await GetOrCreateNodeAsync(_graph, symbol, _solution, _cancellationToken).ConfigureAwait(false);
 
-                node[RoslynGraphProperties.SymbolId] = symbol.GetSymbolKey();
+                node[RoslynGraphProperties.SymbolId] = (SymbolKey?)symbol.GetSymbolKey();
                 node[RoslynGraphProperties.ContextProjectId] = GetContextProjectId(contextProject, symbol);
                 node[RoslynGraphProperties.ExplicitInterfaceImplementations] = symbol.ExplicitInterfaceImplementations().Select(s => s.GetSymbolKey()).ToList();
                 node[RoslynGraphProperties.DeclaredAccessibility] = symbol.DeclaredAccessibility;

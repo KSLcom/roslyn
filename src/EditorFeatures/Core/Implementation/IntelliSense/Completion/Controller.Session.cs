@@ -1,12 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Completion.Rules;
-using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
+using Microsoft.CodeAnalysis.Completion;
 using Microsoft.VisualStudio.Text;
 using Roslyn.Utilities;
 
@@ -18,22 +12,19 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
         {
             #region Fields that can be accessed from either thread
 
-            private readonly IList<ICompletionRules> _completionRules;
-
             // When we issue filter tasks, provide them with a (monotonically increasing) id.  That
-            // way, when they run we can bail on computation if they've been superceded by another
+            // way, when they run we can bail on computation if they've been superseded by another
             // filter task.  
             private int _filterId;
 
             #endregion
 
-            public Session(Controller controller, ModelComputation<Model> computation, IEnumerable<ICompletionRules> completionRules, ICompletionPresenterSession presenterSession)
+            public Session(Controller controller, ModelComputation<Model> computation, ICompletionPresenterSession presenterSession)
                 : base(controller, computation, presenterSession)
             {
-                _completionRules = completionRules.ToList();
-
                 this.PresenterSession.ItemCommitted += OnPresenterSessionItemCommitted;
                 this.PresenterSession.ItemSelected += OnPresenterSessionItemSelected;
+                this.PresenterSession.FilterStateChanged += OnPresenterSessionCompletionItemFilterStateChanged;
             }
 
             private ITextBuffer SubjectBuffer
@@ -75,6 +66,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
                 AssertIsForeground();
                 this.PresenterSession.ItemSelected -= OnPresenterSessionItemSelected;
                 this.PresenterSession.ItemCommitted -= OnPresenterSessionItemCommitted;
+                this.PresenterSession.FilterStateChanged -= OnPresenterSessionCompletionItemFilterStateChanged;
                 base.Stop();
             }
 
@@ -84,20 +76,34 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
                 return Controller.GetCaretPointInViewBuffer();
             }
 
-            private void OnPresenterSessionItemCommitted(object sender, CompletionItemEventArgs e)
+            private void OnPresenterSessionItemCommitted(object sender, PresentationItemEventArgs e)
             {
                 AssertIsForeground();
                 Contract.ThrowIfFalse(ReferenceEquals(this.PresenterSession, sender));
 
-                this.Controller.CommitItem(e.CompletionItem);
+                this.Controller.CommitItem(e.PresentationItem);
             }
 
-            private void OnPresenterSessionItemSelected(object sender, CompletionItemEventArgs e)
+            private void OnPresenterSessionItemSelected(object sender, PresentationItemEventArgs e)
             {
                 AssertIsForeground();
                 Contract.ThrowIfFalse(ReferenceEquals(this.PresenterSession, sender));
 
-                SetModelSelectedItem(m => e.CompletionItem.IsBuilder ? m.DefaultBuilder : e.CompletionItem);
+                SetModelSelectedItem(m => e.PresentationItem.IsSuggestionModeItem ? m.DefaultSuggestionModeItem : e.PresentationItem);
+            }
+
+            private void OnPresenterSessionCompletionItemFilterStateChanged(
+                object sender, CompletionItemFilterStateChangedEventArgs e)
+            {
+                AssertIsForeground();
+                Contract.ThrowIfFalse(ReferenceEquals(this.PresenterSession, sender));
+
+                // Update the filter state for the model.  Note: if we end up filtering everything
+                // out we do *not* want to dismiss the completion list. 
+                this.FilterModel(CompletionFilterReason.ItemFiltersChanged,
+                    dismissIfEmptyAllowed: false,
+                    recheckCaretPosition: false,
+                    filterState: e.FilterState);
             }
         }
     }

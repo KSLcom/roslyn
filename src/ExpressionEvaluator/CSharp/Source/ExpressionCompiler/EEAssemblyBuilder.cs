@@ -10,12 +10,15 @@ using Microsoft.CodeAnalysis.ExpressionEvaluator;
 using Roslyn.Utilities;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Reflection.Metadata;
 
 namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 {
     internal sealed class EEAssemblyBuilder : PEAssemblyBuilderBase
     {
-        private readonly ImmutableHashSet<MethodSymbol> _methods;
+        internal readonly ImmutableHashSet<MethodSymbol> Methods;
+
+        private readonly NamedTypeSymbol _dynamicOperationContextType;
 
         public EEAssemblyBuilder(
             SourceAssemblySymbol sourceAssembly,
@@ -23,6 +26,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             ImmutableArray<MethodSymbol> methods,
             ModulePropertiesForSerialization serializationProperties,
             ImmutableArray<NamedTypeSymbol> additionalTypes,
+            NamedTypeSymbol dynamicOperationContextType,
             CompilationTestData testData) :
             base(
                   sourceAssembly,
@@ -30,10 +34,10 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                   outputKind: OutputKind.DynamicallyLinkedLibrary,
                   serializationProperties: serializationProperties,
                   manifestResources: SpecializedCollections.EmptyEnumerable<ResourceDescription>(),
-                  assemblySymbolMapper: null,
                   additionalTypes: additionalTypes)
         {
-            _methods = ImmutableHashSet.CreateRange(methods);
+            Methods = ImmutableHashSet.CreateRange(methods);
+            _dynamicOperationContextType = dynamicOperationContextType;
 
             if (testData != null)
             {
@@ -61,18 +65,22 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             return base.TranslateModule(symbol, diagnostics);
         }
 
+        internal override bool IgnoreAccessibility => true;
+
+        internal override NamedTypeSymbol DynamicOperationContextType => _dynamicOperationContextType;
+
         public override int CurrentGenerationOrdinal => 0;
 
-        internal override VariableSlotAllocator TryCreateVariableSlotAllocator(MethodSymbol symbol)
+        internal override VariableSlotAllocator TryCreateVariableSlotAllocator(MethodSymbol symbol, MethodSymbol topLevelMethod, DiagnosticBag diagnostics)
         {
             var method = symbol as EEMethodSymbol;
-            if (((object)method != null) && _methods.Contains(method))
+            if (((object)method != null) && Methods.Contains(method))
             {
                 var defs = GetLocalDefinitions(method.Locals);
                 return new SlotAllocator(defs);
             }
 
-            Debug.Assert(!_methods.Contains(symbol));
+            Debug.Assert(!Methods.Contains(symbol));
             return null;
         }
 
@@ -113,9 +121,9 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                 local.Name,
                 (Cci.ITypeReference)type,
                 slot: index,
-                synthesizedKind: (SynthesizedLocalKind)local.SynthesizedKind,
+                synthesizedKind: local.SynthesizedKind,
                 id: LocalDebugId.None,
-                pdbAttributes: Cci.PdbWriter.DefaultLocalAttributesValue,
+                pdbAttributes: LocalVariableAttributes.None,
                 constraints: constraints,
                 isDynamic: false,
                 dynamicTransformFlags: ImmutableArray<TypedConstant>.Empty);
@@ -141,7 +149,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                 string nameOpt,
                 SynthesizedLocalKind synthesizedKind,
                 LocalDebugId id,
-                uint pdbAttributes,
+                LocalVariableAttributes pdbAttributes,
                 LocalSlotConstraints constraints,
                 bool isDynamic,
                 ImmutableArray<TypedConstant> dynamicTransformFlags)
@@ -160,7 +168,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                 get { return null; }
             }
 
-            public override bool TryGetPreviousHoistedLocalSlotIndex(SyntaxNode currentDeclarator, Cci.ITypeReference currentType, SynthesizedLocalKind synthesizedKind, LocalDebugId currentId, out int slotIndex)
+            public override bool TryGetPreviousHoistedLocalSlotIndex(SyntaxNode currentDeclarator, Cci.ITypeReference currentType, SynthesizedLocalKind synthesizedKind, LocalDebugId currentId, DiagnosticBag diagnostics, out int slotIndex)
             {
                 slotIndex = -1;
                 return false;
@@ -171,21 +179,21 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                 get { return 0; }
             }
 
-            public override bool TryGetPreviousAwaiterSlotIndex(Cci.ITypeReference currentType, out int slotIndex)
+            public override bool TryGetPreviousAwaiterSlotIndex(Cci.ITypeReference currentType, DiagnosticBag diagnostics, out int slotIndex)
             {
                 slotIndex = -1;
                 return false;
             }
 
-            public override bool TryGetPreviousClosure(SyntaxNode closureSyntax, out int closureOrdinal)
+            public override bool TryGetPreviousClosure(SyntaxNode closureSyntax, out DebugId closureId)
             {
-                closureOrdinal = -1;
+                closureId = default(DebugId);
                 return false;
             }
 
-            public override bool TryGetPreviousLambda(SyntaxNode lambdaOrLambdaBodySyntax, bool isLambdaBody, out int lambdaOrdinal)
+            public override bool TryGetPreviousLambda(SyntaxNode lambdaOrLambdaBodySyntax, bool isLambdaBody, out DebugId lambdaId)
             {
-                lambdaOrdinal = -1;
+                lambdaId = default(DebugId);
                 return false;
             }
 
@@ -194,11 +202,11 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
                 get { return 0; }
             }
 
-            public override MethodDebugId PreviousMethodId
+            public override DebugId? MethodId
             {
                 get
                 {
-                    return default(MethodDebugId);
+                    return null;
                 }
             }
         }

@@ -1,12 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -18,17 +13,17 @@ namespace Microsoft.CodeAnalysis
         /// <summary>
         /// The source text.
         /// </summary>
-        public SourceText Text { get; private set; }
+        public SourceText Text { get; }
 
         /// <summary>
         /// The version of the source text
         /// </summary>
-        public VersionStamp Version { get; private set; }
+        public VersionStamp Version { get; }
 
         /// <summary>
         /// An optional file path that identifies the origin of the source text
         /// </summary>
-        public string FilePath { get; private set; }
+        public string FilePath { get; }
 
         private TextAndVersion(SourceText text, VersionStamp version, string filePath)
         {
@@ -48,7 +43,7 @@ namespace Microsoft.CodeAnalysis
         {
             if (text == null)
             {
-                throw new ArgumentNullException("text");
+                throw new ArgumentNullException(nameof(text));
             }
 
             return new TextAndVersion(text, version, filePath);

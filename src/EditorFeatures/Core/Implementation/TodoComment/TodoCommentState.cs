@@ -25,9 +25,14 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
                 }
             }
 
+            protected override int GetCount(Data data)
+            {
+                return data.Items.Length;
+            }
+
             protected override Data TryGetExistingData(Stream stream, Document value, CancellationToken cancellationToken)
             {
-                var list = SharedPools.Default<List<TodoTaskItem>>().AllocateAndClear();
+                var list = SharedPools.Default<List<TodoItem>>().AllocateAndClear();
                 try
                 {
                     using (var reader = new ObjectReader(stream))
@@ -43,7 +48,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
 
                         AppendItems(reader, value, list, cancellationToken);
 
-                        return new Data(textVersion, dataVersion, list.ToImmutableArray<ITaskItem>());
+                        return new Data(textVersion, dataVersion, list.ToImmutableArray<TodoItem>());
                     }
                 }
                 catch (Exception)
@@ -52,7 +57,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
                 }
                 finally
                 {
-                    SharedPools.Default<List<TodoTaskItem>>().ClearAndFree(list);
+                    SharedPools.Default<List<TodoItem>>().ClearAndFree(list);
                 }
             }
 
@@ -66,7 +71,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
 
                     writer.WriteInt32(data.Items.Length);
 
-                    foreach (var item in data.Items.OfType<TodoTaskItem>())
+                    foreach (var item in data.Items.OfType<TodoItem>())
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
@@ -84,18 +89,23 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
                 }
             }
 
-            public ImmutableArray<ITaskItem> GetItems_TestingOnly(DocumentId documentId)
+            public ImmutableArray<DocumentId> GetDocumentIds()
             {
-                Data data;
-                if (this.DataCache.TryGetValue(documentId, out data))
-                {
-                    return data.Items;
-                }
-
-                return ImmutableArray<ITaskItem>.Empty;
+                return DataCache.Keys.ToImmutableArrayOrEmpty();
             }
 
-            private void AppendItems(ObjectReader reader, Document document, List<TodoTaskItem> list, CancellationToken cancellationToken)
+            public ImmutableArray<TodoItem> GetItems_TestingOnly(DocumentId documentId)
+            {
+                CacheEntry entry;
+                if (this.DataCache.TryGetValue(documentId, out entry) && entry.HasCachedData)
+                {
+                    return entry.Data.Items;
+                }
+
+                return ImmutableArray<TodoItem>.Empty;
+            }
+
+            private void AppendItems(ObjectReader reader, Document document, List<TodoItem> list, CancellationToken cancellationToken)
             {
                 var count = reader.ReadInt32();
                 for (var i = 0; i < count; i++)
@@ -113,7 +123,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.TodoComments
                     var mappedLine = reader.ReadInt32();
                     var mappedColumn = reader.ReadInt32();
 
-                    list.Add(new TodoTaskItem(
+                    list.Add(new TodoItem(
                         priority, message,
                         document.Project.Solution.Workspace, document.Id,
                         mappedLine, originalLine, mappedColumn, originalColumn, mappedFile, originalFile));

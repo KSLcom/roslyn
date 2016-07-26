@@ -4,7 +4,7 @@ Imports Microsoft.CodeAnalysis
 Imports Roslyn.Test.Utilities
 Imports Microsoft.VisualStudio.LanguageServices.CSharp.ObjectBrowser
 Imports Microsoft.VisualStudio.LanguageServices.Implementation.Library.ObjectBrowser
-Imports Microsoft.VisualStudio.Shell.Interop
+Imports System.Threading.Tasks
 
 Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.ObjectBrowser.CSharp
     Public Class ObjectBrowserTests
@@ -21,7 +21,7 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.ObjectBrowser.CSharp
         End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub SimpleContent_NamespaceTypeAndMember()
+        Public Async Function TestSimpleContent_NamespaceTypeAndMember() As Task
             Dim code =
 <Code>
 namespace N
@@ -36,7 +36,7 @@ namespace N
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
 
                 Dim list = library.GetProjectList()
@@ -51,10 +51,10 @@ namespace N
                 list = list.GetMemberList(0)
                 list.VerifyNames(AddressOf IsImmediateMember, "M()")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub SimpleContent_NoNamespaceWithoutType()
+        Public Async Function TestSimpleContent_NoNamespaceWithoutType() As Task
             Dim code =
 <Code>
 namespace N
@@ -63,18 +63,18 @@ namespace N
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetNamespaceList(0)
 
                 list.VerifyEmpty()
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(932387)>
+        <WorkItem(932387, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/932387")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Content_InheritedMembers1()
+        Public Async Function TestContent_InheritedMembers1() As Task
             Dim code =
 <Code>
 class A
@@ -108,7 +108,7 @@ class C : B
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -124,11 +124,11 @@ class C : B
                     "GetType()",
                     "MemberwiseClone()")
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(932387)>
+        <WorkItem(932387, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/932387")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Content_InheritedMembers2()
+        Public Async Function TestContent_InheritedMembers2() As Task
             Dim code =
 <Code>
 class A
@@ -162,7 +162,7 @@ class C : B
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -179,11 +179,11 @@ class C : B
                     "GetType()",
                     "MemberwiseClone()")
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(932387)>
+        <WorkItem(932387, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/932387")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Content_InheritedMembers3()
+        Public Async Function TestContent_InheritedMembers3() As Task
             Dim code =
 <Code>
 class A
@@ -217,7 +217,7 @@ class C : B
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -234,25 +234,51 @@ class C : B
                     "GetType()",
                     "MemberwiseClone()")
             End Using
-        End Sub
+        End Function
+
+        <WorkItem(932387, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/932387")>
+        <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
+        Public Async Function TestContent_HelpKeyword_Ctor() As Task
+            Dim code =
+<Code>
+namespace N
+{
+    class C
+    {
+        public C() { }
+    }
+}
+</Code>
+
+
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
+                Dim library = state.GetLibrary()
+                Dim list = library.GetProjectList()
+                list = list.GetNamespaceList(0)
+                list = list.GetTypeList(0)
+                list = list.GetMemberList(0)
+
+                list.VerifyHelpKeywords("N.C.#ctor")
+            End Using
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Project()
+        Public Async Function TestDescription_Project() As Task
             Dim code =
 <Code>
 namespace N { }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
 
-                list.VerifyDescriptions("Project CSharpAssembly1")
+                list.VerifyDescriptions($"{ServicesVSResources.Project}CSharpAssembly1")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Namespace()
+        Public Async Function TestDescription_Namespace() As Task
             Dim code =
 <Code>
 namespace N
@@ -261,58 +287,58 @@ namespace N
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetNamespaceList(0)
 
                 list.VerifyDescriptions(
 "namespace N" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Class1()
+        Public Async Function TestDescription_Class1() As Task
             Dim code =
 <Code>
 abstract class B { }
 sealed class C : B { }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal abstract class B" & vbCrLf &
-"    Member of CSharpAssembly1",
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}",
 "internal sealed class C : B" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Class2()
+        Public Async Function TestDescription_Class2() As Task
             Dim code =
 <Code>
 static class C { }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal static class C" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_ClassWithConstraints()
+        Public Async Function TestDescription_ClassWithConstraints() As Task
             Dim code =
 <Code>
 using System.Collections.Generic;
@@ -324,7 +350,7 @@ class Z&lt;T,U,V&gt; : Dictionary&lt;U,V&gt;
 </Code>
 
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
 
                 Dim list = library.GetProjectList()
@@ -335,12 +361,12 @@ class Z&lt;T,U,V&gt; : Dictionary&lt;U,V&gt;
 vbTab & "where T : struct" & vbCrLf &
 vbTab & "where U : V" & vbCrLf &
 vbTab & "where V : System.Collections.Generic.List<T>" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Interfaces()
+        Public Async Function TestDescription_Interfaces() As Task
             Dim code =
 <Code>
 interface I1 { }
@@ -348,41 +374,41 @@ interface I2 : I1 { }
 interface I3 : I2, I1 { }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal interface I1" & vbCrLf &
-"    Member of CSharpAssembly1",
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}",
 "internal interface I2" & vbCrLf &
-"    Member of CSharpAssembly1",
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}",
 "internal interface I3" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Struct1()
+        Public Async Function TestDescription_Struct1() As Task
             Dim code =
 <Code>
 struct S { }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal struct S" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Method()
+        Public Async Function TestDescription_Method() As Task
             Dim code =
 <Code>
 class C
@@ -393,7 +419,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -401,13 +427,13 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M()" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(939739)>
+        <WorkItem(939739, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/939739")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodInInterface()
+        Public Async Function TestDescription_MethodInInterface() As Task
             Dim code =
 <Code>
 interface I
@@ -418,7 +444,7 @@ interface I
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -426,12 +452,12 @@ interface I
 
                 list.VerifyImmediateMemberDescriptions(
 "void M()" & vbCrLf &
-"    Member of I")
+$"    {String.Format(ServicesVSResources.Member_of_0, "I")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_ExtensionMethod()
+        Public Async Function TestDescription_ExtensionMethod() As Task
             Dim code =
 <Code>
 static class C
@@ -442,7 +468,7 @@ static class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -450,12 +476,12 @@ static class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static void M(this C c)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithParameters()
+        Public Async Function TestDescription_MethodWithParameters() As Task
             Dim code =
 <Code>
 using System.Collections.Generic
@@ -469,7 +495,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -477,12 +503,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private bool M(int x, ref string y, out System.Collections.Generic.List<int> z)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithOptionalParameter1()
+        Public Async Function TestDescription_MethodWithOptionalParameter1() As Task
             Dim code =
 <Code>
 class C
@@ -493,7 +519,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -501,12 +527,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M([int x = 42])" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithOptionalParameter2()
+        Public Async Function TestDescription_MethodWithOptionalParameter2() As Task
             Dim code =
 <Code>
 using System;
@@ -518,7 +544,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code)),
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code)),
                     testCulture As New CultureContext("en-US")
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
@@ -527,12 +553,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M([double x = 3.14159265358979])" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithOptionalParameter3()
+        Public Async Function TestDescription_MethodWithOptionalParameter3() As Task
             Dim code =
 <Code>
 class C
@@ -543,7 +569,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -551,12 +577,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M([double? x = null])" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithOptionalParameter4()
+        Public Async Function TestDescription_MethodWithOptionalParameter4() As Task
             Dim code =
 <Code>
 class C
@@ -567,7 +593,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -575,12 +601,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M([double? x = 42])" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithOptionalParameter5()
+        Public Async Function TestDescription_MethodWithOptionalParameter5() As Task
             Dim code =
 <Code>
 class C
@@ -591,7 +617,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -599,12 +625,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private void M([C c = null])" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_UnsafeMethod()
+        Public Async Function TestDescription_UnsafeMethod() As Task
             Dim code =
 <Code>
 unsafe class UnsafeC
@@ -616,7 +642,7 @@ unsafe class UnsafeC
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -624,12 +650,12 @@ unsafe class UnsafeC
 
                 list.VerifyImmediateMemberDescriptions(
 "private unsafe int* M()" & vbCrLf &
-"    Member of UnsafeC")
+$"    {String.Format(ServicesVSResources.Member_of_0, "UnsafeC")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_MethodWithConstraints()
+        Public Async Function TestDescription_MethodWithConstraints() As Task
             Dim code =
 <Code>
 using System.Collections.Generic;
@@ -645,7 +671,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -656,12 +682,12 @@ class C
 vbTab & "where T : class, new()" & vbCrLf &
 vbTab & "where U : V" & vbCrLf &
 vbTab & "where V : System.Collections.Generic.List<T>" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_ReadOnlyField()
+        Public Async Function TestDescription_ReadOnlyField() As Task
             Dim code =
 <Code>
 class C
@@ -670,7 +696,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -678,12 +704,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "internal readonly int x" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_ConstField()
+        Public Async Function TestDescription_ConstField() As Task
             Dim code =
 <Code>
 class C
@@ -692,7 +718,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -700,12 +726,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "protected internal const int x" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property1()
+        Public Async Function TestDescription_Property1() As Task
             Dim code =
 <Code>
 class C
@@ -718,7 +744,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -726,12 +752,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public int P { get; set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property2()
+        Public Async Function TestDescription_Property2() As Task
             Dim code =
 <Code>
 class C
@@ -743,7 +769,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -751,12 +777,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public int P { get; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property3()
+        Public Async Function TestDescription_Property3() As Task
             Dim code =
 <Code>
 class C
@@ -768,7 +794,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -776,12 +802,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public int P { set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property4()
+        Public Async Function TestDescription_Property4() As Task
             Dim code =
 <Code>
 class C
@@ -790,7 +816,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -798,12 +824,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public int P { get; set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property5()
+        Public Async Function TestDescription_Property5() As Task
             Dim code =
 <Code>
 class C
@@ -812,7 +838,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -820,12 +846,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public int P { get; private set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Property6()
+        Public Async Function TestDescription_Property6() As Task
             Dim code =
 <Code>
 class C
@@ -834,7 +860,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -842,12 +868,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "internal int P { get; private set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Indexer1()
+        Public Async Function TestDescription_Indexer1() As Task
             Dim code =
 <Code>
 class C
@@ -860,7 +886,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -868,12 +894,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private int this[int index] { get; set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Indexer2()
+        Public Async Function TestDescription_Indexer2() As Task
             Dim code =
 <Code>
 class C
@@ -885,7 +911,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -893,12 +919,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "private int this[int index] { get; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Indexer3()
+        Public Async Function TestDescription_Indexer3() As Task
             Dim code =
 <Code>
 class C
@@ -910,7 +936,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -918,12 +944,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "protected int this[int index] { set; }" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Enum1()
+        Public Async Function TestDescription_Enum1() As Task
             Dim code =
 <Code>
 enum E
@@ -932,19 +958,19 @@ enum E
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal enum E" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Enum2()
+        Public Async Function TestDescription_Enum2() As Task
             Dim code =
 <Code>
 enum E : int
@@ -953,19 +979,19 @@ enum E : int
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal enum E" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Enum3()
+        Public Async Function TestDescription_Enum3() As Task
             Dim code =
 <Code>
 enum E : byte
@@ -974,19 +1000,19 @@ enum E : byte
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
 
                 list.VerifyDescriptions(
 "internal enum E : byte" & vbCrLf &
-"    Member of CSharpAssembly1")
+$"    {String.Format(ServicesVSResources.Member_of_0, "CSharpAssembly1")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_EnumMember()
+        Public Async Function TestDescription_EnumMember() As Task
             Dim code =
 <Code>
 enum E
@@ -995,7 +1021,7 @@ enum E
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1003,12 +1029,12 @@ enum E
 
                 list.VerifyImmediateMemberDescriptions(
 "A" & vbCrLf &
-"    Member of E")
+$"    {String.Format(ServicesVSResources.Member_of_0, "E")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Event1()
+        Public Async Function TestDescription_Event1() As Task
             Dim code =
 <Code>
 using System;
@@ -1018,7 +1044,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1026,12 +1052,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public event System.EventHandler E" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Event2()
+        Public Async Function TestDescription_Event2() As Task
             Dim code =
 <Code>
 using System;
@@ -1045,7 +1071,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1053,12 +1079,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public event System.EventHandler E" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_XmlDocComment()
+        Public Async Function TestDescription_XmlDocComment() As Task
             Dim code =
 <Code>
     <![CDATA[
@@ -1076,7 +1102,7 @@ class C
 ]]>
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1085,18 +1111,18 @@ class C
                 list.VerifyImmediateMemberDescriptions(
 "public TResult M<T, TResult>(T x, T y)" & vbCrLf &
 vbTab & "where TResult : class" & vbCrLf &
-"    Member of C" & vbCrLf &
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}" & vbCrLf &
 "" & vbCrLf &
-"Summary:" & vbCrLf &
+ServicesVSResources.Summary_colon & vbCrLf &
 "The M method." & vbCrLf &
 "" & vbCrLf &
-"Returns:" & vbCrLf &
+ServicesVSResources.Returns_colon & vbCrLf &
 "Returns a TResult.")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Add()
+        Public Async Function TestDescription_Operator_Add() As Task
             Dim code =
 <Code>
 class C
@@ -1108,7 +1134,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1116,12 +1142,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static int operator +(C c, int i)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Subtract()
+        Public Async Function TestDescription_Operator_Subtract() As Task
             Dim code =
 <Code>
 class C
@@ -1133,7 +1159,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1141,12 +1167,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static int operator -(C c, int i)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Multiply()
+        Public Async Function TestDescription_Operator_Multiply() As Task
             Dim code =
 <Code>
 class C
@@ -1158,7 +1184,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1166,12 +1192,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static int operator *(C c, int i)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Divide()
+        Public Async Function TestDescription_Operator_Divide() As Task
             Dim code =
 <Code>
 class C
@@ -1183,7 +1209,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1191,12 +1217,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static int operator /(C c, int i)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Implicit()
+        Public Async Function TestDescription_Operator_Implicit() As Task
             Dim code =
 <Code>
 class C
@@ -1208,7 +1234,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1216,12 +1242,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static implicit operator bool(C c)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_Operator_Explicit()
+        Public Async Function TestDescription_Operator_Explicit() As Task
             Dim code =
 <Code>
 class C
@@ -1233,7 +1259,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1241,12 +1267,12 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static explicit operator bool(C c)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub Description_ExternMethod()
+        Public Async Function TestDescription_ExternMethod() As Task
             Dim code =
 <Code>
 using System.Runtime.InteropServices;
@@ -1257,7 +1283,7 @@ class C
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetTypeList(0)
@@ -1265,13 +1291,13 @@ class C
 
                 list.VerifyImmediateMemberDescriptions(
 "public static extern int MessageBox(System.IntPtr h, string m, string c, int type)" & vbCrLf &
-"    Member of C")
+$"    {String.Format(ServicesVSResources.Member_of_0, "C")}")
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(942021)>
+        <WorkItem(942021, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/942021")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub NavInfo_Class()
+        Public Async Function TestNavInfo_Class() As Task
             Dim code =
 <Code>
 namespace EditorFunctionalityHelper
@@ -1282,7 +1308,7 @@ namespace EditorFunctionalityHelper
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetNamespaceList(0)
@@ -1293,11 +1319,11 @@ namespace EditorFunctionalityHelper
                     NamespaceNode("EditorFunctionalityHelper"),
                     TypeNode("EditorFunctionalityHelper"))
             End Using
-        End Sub
+        End Function
 
-        <WorkItem(942021)>
+        <WorkItem(942021, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/942021")>
         <ConditionalFact(GetType(x86)), Trait(Traits.Feature, Traits.Features.ObjectBrowser)>
-        Public Sub NavInfo_NestedEnum()
+        Public Async Function TestNavInfo_NestedEnum() As Task
             Dim code =
 <Code>
 namespace EditorFunctionalityHelper
@@ -1314,7 +1340,7 @@ namespace EditorFunctionalityHelper
 }
 </Code>
 
-            Using state = CreateLibraryManager(GetWorkspaceDefinition(code))
+            Using state = Await CreateLibraryManagerAsync(GetWorkspaceDefinition(code))
                 Dim library = state.GetLibrary()
                 Dim list = library.GetProjectList()
                 list = list.GetNamespaceList(0)
@@ -1326,7 +1352,7 @@ namespace EditorFunctionalityHelper
                     TypeNode("EditorFunctionalityHelper"),
                     TypeNode("Mapping"))
             End Using
-        End Sub
+        End Function
 
     End Class
 End Namespace

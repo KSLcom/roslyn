@@ -40,11 +40,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             SourceAssemblySymbol sourceAssembly,
             EmitOptions emitOptions,
             OutputKind outputKind,
-            ModulePropertiesForSerialization serializationProperties,
+            Cci.ModulePropertiesForSerialization serializationProperties,
             IEnumerable<ResourceDescription> manifestResources,
-            Func<AssemblySymbol, AssemblyIdentity> assemblySymbolMapper,
             ImmutableArray<NamedTypeSymbol> additionalTypes)
-            : base((SourceModuleSymbol)sourceAssembly.Modules[0], emitOptions, outputKind, serializationProperties, manifestResources, assemblySymbolMapper)
+            : base((SourceModuleSymbol)sourceAssembly.Modules[0], emitOptions, outputKind, serializationProperties, manifestResources)
         {
             Debug.Assert((object)sourceAssembly != null);
 
@@ -105,16 +104,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             return _lazyFiles;
         }
 
-        uint Cci.IAssembly.Flags
+        AssemblyFlags Cci.IAssembly.Flags
         {
             get
             {
-                AssemblyNameFlags result = _sourceAssembly.Flags & ~AssemblyNameFlags.PublicKey;
+                AssemblyFlags result = _sourceAssembly.Flags & ~AssemblyFlags.PublicKey;
 
                 if (!_sourceAssembly.PublicKey.IsDefaultOrEmpty)
-                    result |= AssemblyNameFlags.PublicKey;
+                {
+                    result |= AssemblyFlags.PublicKey;
+                }
 
-                return (uint)result;
+                return result;
             }
         }
 
@@ -162,44 +163,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             }
         }
 
-        string Cci.IAssemblyReference.Culture
-        {
-            get
-            {
-                return _sourceAssembly.Identity.CultureName;
-            }
-        }
-
-        bool Cci.IAssemblyReference.IsRetargetable
-        {
-            get
-            {
-                return _sourceAssembly.Identity.IsRetargetable;
-            }
-        }
-
-        AssemblyContentType Cci.IAssemblyReference.ContentType
-        {
-            get
-            {
-                return _sourceAssembly.Identity.ContentType;
-            }
-        }
-
-        ImmutableArray<byte> Cci.IAssemblyReference.PublicKeyToken
-        {
-            get { return _sourceAssembly.Identity.PublicKeyToken; }
-        }
-
-        Version Cci.IAssemblyReference.Version
-        {
-            get { return _sourceAssembly.Identity.Version; }
-        }
-
-        string Cci.IAssemblyReference.GetDisplayName()
-        {
-            return _sourceAssembly.Identity.GetDisplayName();
-        }
+        AssemblyIdentity Cci.IAssemblyReference.Identity => _sourceAssembly.Identity;
+        Version Cci.IAssemblyReference.AssemblyVersionPattern => _sourceAssembly.AssemblyVersionPattern;
 
         internal override string Name
         {
@@ -221,10 +186,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             SourceAssemblySymbol sourceAssembly,
             EmitOptions emitOptions,
             OutputKind outputKind,
-            ModulePropertiesForSerialization serializationProperties,
-            IEnumerable<ResourceDescription> manifestResources,
-            Func<AssemblySymbol, AssemblyIdentity> assemblySymbolMapper = null)
-            : base(sourceAssembly, emitOptions, outputKind, serializationProperties, manifestResources, assemblySymbolMapper, ImmutableArray<NamedTypeSymbol>.Empty)
+            Cci.ModulePropertiesForSerialization serializationProperties,
+            IEnumerable<ResourceDescription> manifestResources)
+            : base(sourceAssembly, emitOptions, outputKind, serializationProperties, manifestResources, ImmutableArray<NamedTypeSymbol>.Empty)
         {
         }
 

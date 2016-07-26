@@ -34,26 +34,10 @@ namespace Microsoft.CodeAnalysis.CSharp
             _additionalLocations = additionalLocations;
         }
 
-        private CSDiagnosticInfo(bool isWarningAsError, ErrorCode code, object[] args, ImmutableArray<Symbol> symbols, ImmutableArray<Location> additionalLocations)
-            : base(isWarningAsError, code, args, symbols)
-        {
-            _additionalLocations = additionalLocations;
-        }
+        public override IReadOnlyList<Location> AdditionalLocations => _additionalLocations;
 
-        public override IReadOnlyList<Location> AdditionalLocations
-        {
-            get
-            {
-                return _additionalLocations;
-            }
-        }
+        internal new ErrorCode Code => (ErrorCode)base.Code;
 
-        internal new ErrorCode Code
-        {
-            get
-            {
-                return (ErrorCode)base.Code;
-            }
-        }
+        internal static bool IsEmpty(DiagnosticInfo info) => (object)info == EmptyErrorInfo;
     }
 }

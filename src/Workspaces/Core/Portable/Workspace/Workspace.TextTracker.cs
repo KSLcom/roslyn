@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Diagnostics;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -18,7 +16,7 @@ namespace Microsoft.CodeAnalysis
             private readonly Workspace _workspace;
             private readonly DocumentId _documentId;
             internal readonly SourceTextContainer TextContainer;
-            private EventHandler<TextChangeEventArgs> _weakOnTextChanged;
+            private readonly EventHandler<TextChangeEventArgs> _weakOnTextChanged;
             private readonly Action<Workspace, DocumentId, SourceText, PreservationMode> _onChangedHandler;
 
             internal TextTracker(

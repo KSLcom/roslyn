@@ -1,16 +1,19 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
+using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp.Utilities;
+using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Simplification;
+using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Simplification
@@ -48,9 +51,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
                 }
                 else
                 {
-                    throw new ArgumentException(
-                        CSharpWorkspaceResources.OnlyAttributesConstructorI,
-                        paramName: "node");
+                    throw new ArgumentException(CSharpWorkspaceResources.Only_attributes_constructor_initializers_expressions_or_statements_can_be_made_explicit, nameof(node));
                 }
             }
         }
@@ -59,10 +60,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
         {
             using (Logger.LogBlock(FunctionId.Simplifier_ExpandToken, cancellationToken))
             {
-                var csharpSemanticModel = (SemanticModel)semanticModel;
-                var rewriter = new Expander(csharpSemanticModel, expandInsideNode, false, cancellationToken);
+                var rewriter = new Expander(semanticModel, expandInsideNode, false, cancellationToken);
 
-                var rewrittenToken = TryEscapeIdentifierToken(rewriter.VisitToken(token), token.Parent, csharpSemanticModel).WithAdditionalAnnotations(Simplifier.Annotation);
+                var rewrittenToken = TryEscapeIdentifierToken(rewriter.VisitToken(token), token.Parent, semanticModel).WithAdditionalAnnotations(Simplifier.Annotation);
                 SyntaxToken rewrittenTokenWithElasticTrivia;
                 if (TryAddLeadingElasticTriviaIfNecessary(rewrittenToken, token, out rewrittenTokenWithElasticTrivia))
                 {
@@ -149,7 +149,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
             var syntaxNodeToSpeculate = nodeToSpeculate;
             Contract.ThrowIfNull(syntaxNodeToSpeculate);
             Contract.ThrowIfFalse(SpeculationAnalyzer.CanSpeculateOnNode(nodeToSpeculate));
-            return SpeculationAnalyzer.CreateSpeculativeSemanticModelForNode(originalNode, syntaxNodeToSpeculate, (SemanticModel)originalSemanticModel);
+            return SpeculationAnalyzer.CreateSpeculativeSemanticModelForNode(originalNode, syntaxNodeToSpeculate, originalSemanticModel);
         }
 
         protected override ImmutableArray<NodeOrTokenToReduce> GetNodesAndTokensToReduce(SyntaxNode root, Func<SyntaxNodeOrToken, bool> isNodeOrTokenOutsideSimplifySpans)
@@ -160,6 +160,27 @@ namespace Microsoft.CodeAnalysis.CSharp.Simplification
         protected override bool CanNodeBeSimplifiedWithoutSpeculation(SyntaxNode node)
         {
             return false;
+        }
+
+        private static readonly string s_CS8019_UnusedUsingDirective = "CS8019";
+
+        protected override void GetUnusedNamespaceImports(SemanticModel model, HashSet<SyntaxNode> namespaceImports, CancellationToken cancellationToken)
+        {
+            var root = model.SyntaxTree.GetRoot();
+            var diagnostics = model.GetDiagnostics(cancellationToken: cancellationToken);
+
+            foreach (var diagnostic in diagnostics)
+            {
+                if (diagnostic.Id == s_CS8019_UnusedUsingDirective)
+                {
+                    var node = root.FindNode(diagnostic.Location.SourceSpan) as UsingDirectiveSyntax;
+
+                    if (node != null)
+                    {
+                        namespaceImports.Add(node);
+                    }
+                }
+            }
         }
     }
 }

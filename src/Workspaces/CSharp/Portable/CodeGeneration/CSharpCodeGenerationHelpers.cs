@@ -81,7 +81,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGeneration
                     if (t1.Kind() == SyntaxKind.MultiLineCommentTrivia)
                     {
                         var text = t1.ToString();
-                        if (!text.EndsWith(MultiLineCommentTerminator))
+                        if (!text.EndsWith(MultiLineCommentTerminator, StringComparison.Ordinal))
                         {
                             return SyntaxFactory.SyntaxTrivia(SyntaxKind.MultiLineCommentTrivia, text + MultiLineCommentTerminator);
                         }
@@ -304,7 +304,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGeneration
             var contextLocation = location as Location;
 
             var contextTree = contextLocation != null && contextLocation.IsInSource
-                ? (SyntaxTree)contextLocation.SourceTree
+                ? contextLocation.SourceTree
                 : null;
 
             return contextTree == null

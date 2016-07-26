@@ -2,7 +2,6 @@
 
 Imports System.Runtime.CompilerServices
 Imports CompilationCreationTestHelpers
-Imports ProprietaryTestResources = Microsoft.CodeAnalysis.Test.Resources.Proprietary
 Imports Microsoft.CodeAnalysis.Test.Utilities
 Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic
@@ -21,7 +20,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
                              {
                                 TestResources.SymbolsTests.Fields.CSFields,
                                 TestResources.SymbolsTests.Fields.VBFields,
-                                ProprietaryTestResources.NetFX.v4_0_21006.mscorlib
+                                TestResources.NetFX.v4_0_21006.mscorlib
                              }, importInternals:=True)
 
             Dim module1 = assemblies(0).Modules(0)
@@ -101,7 +100,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
             Dim assemblies = MetadataTestHelpers.GetSymbolsForReferences(
                              {
                                 TestResources.SymbolsTests.Fields.ConstantFields,
-                                ProprietaryTestResources.NetFX.v4_0_21006.mscorlib
+                                TestResources.NetFX.v4_0_21006.mscorlib
                              })
 
             Dim module1 = assemblies(0).Modules(0)
@@ -241,6 +240,39 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Symbols.Metadata.PE
             Assert.Equal(-8L, Int64Value.GetConstantValue(SymbolsInProgress(Of FieldSymbol).Empty).Int64Value)
         End Sub
 
+        <Fact>
+        <WorkItem(193333, "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_workitems?_a=edit&id=193333")>
+        Public Sub EnumWithPrivateValueField()
+
+            Dim ilSource = "
+.class public auto ansi sealed TestEnum
+       extends [mscorlib]System.Enum
+{
+  .field private specialname rtspecialname int32 value__
+  .field public static literal valuetype TestEnum Value1 = int32(0x00000000)
+  .field public static literal valuetype TestEnum Value2 = int32(0x00000001)
+} // end of class TestEnum
+"
+
+            Dim vbSource =
+<compilation>
+    <file>
+Module Module1
+    Sub Main()
+        Dim val as TestEnum = TestEnum.Value1
+        System.Console.WriteLine(val.ToString())
+        val =  TestEnum.Value2
+        System.Console.WriteLine(val.ToString())
+    End Sub
+End Module
+    </file>
+</compilation>
+
+            Dim compilation = CreateCompilationWithCustomILSource(vbSource, ilSource, includeVbRuntime:=True, options:=TestOptions.DebugExe)
+
+            CompileAndVerify(compilation, expectedOutput:="Value1
+Value2")
+        End Sub
 
     End Class
 

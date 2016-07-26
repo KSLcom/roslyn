@@ -2,8 +2,6 @@
 
 Imports System.Collections.Immutable
 Imports System.Runtime.InteropServices
-Imports Microsoft.CodeAnalysis.CodeGen
-Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports TypeKind = Microsoft.CodeAnalysis.TypeKind
@@ -236,7 +234,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                 If delegateInvoke IsNot Nothing Then
 
-                    If addressOfExpression.Binder.ReportDelegateInvokeUseSiteError(diagnostics, syntaxTree, targetType, delegateInvoke) Then
+                    If ReportDelegateInvokeUseSiteError(diagnostics, syntaxTree, targetType, delegateInvoke) Then
                         methodConversions = methodConversions Or MethodConversionKind.Error_Unspecified
                     Else
 
@@ -307,7 +305,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                     ' There's no real need to set MethodConversionKind.Error because there are no overloads of the same method where one 
                     ' may be legal to call because it's shared and the other's not.
-                    ' However to be future proove, we set it regardless.
+                    ' However to be future proof, we set it regardless.
                     methodConversions = methodConversions Or MethodConversionKind.Error_Unspecified
                 End If
 
@@ -327,7 +325,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return New DelegateResolutionResult(delegateConversions, fromMethod, methodConversions, diagnostics.ToReadOnlyAndFree())
         End Function
 
-        Friend Function ReportDelegateInvokeUseSiteError(
+        Friend Shared Function ReportDelegateInvokeUseSiteError(
             diagBag As DiagnosticBag,
             syntax As VisualBasicSyntaxNode,
             delegateType As TypeSymbol,
@@ -581,7 +579,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Debug.Assert(addressOfExpression.MethodGroup.ResultKind = LookupResultKind.Good)
                 End If
 
-                resolutionBinder.ReportDelegateBindingIncompatible(
+                ReportDelegateBindingIncompatible(
                     addressOfOperandSyntax,
                     toMethod.ContainingType,
                     DirectCast(bestSymbols(0), MethodSymbol),
@@ -687,7 +685,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                 methodConversions = methodConversions Or MethodConversionKind.Error_Unspecified
             Else
-                addressOfExpression.Binder.ReportDelegateBindingIncompatible(
+                ReportDelegateBindingIncompatible(
                     addressOfOperandSyntax,
                     toMethod.ContainingType,
                     targetMethodSymbol,
@@ -707,7 +705,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return New KeyValuePair(Of MethodSymbol, MethodConversionKind)(Nothing, methodConversions)
         End Function
 
-        Private Sub ReportDelegateBindingMismatchStrictOff(
+        Private Shared Sub ReportDelegateBindingMismatchStrictOff(
             syntax As VisualBasicSyntaxNode,
             delegateType As NamedTypeSymbol,
             targetMethodSymbol As MethodSymbol,
@@ -731,7 +729,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
         End Sub
 
-        Private Sub ReportDelegateBindingIncompatible(
+        Private Shared Sub ReportDelegateBindingIncompatible(
             syntax As VisualBasicSyntaxNode,
             delegateType As NamedTypeSymbol,
             targetMethodSymbol As MethodSymbol,
@@ -898,7 +896,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return source.GetConversionClassification(destination)
         End Function
 
-        Private Shared ReadOnly CheckDelegateParameterModifierCallback As CheckParameterModifierDelegate = AddressOf CheckDelegateParameterModifier
+        Private Shared ReadOnly s_checkDelegateParameterModifierCallback As CheckParameterModifierDelegate = AddressOf CheckDelegateParameterModifier
 
         ''' <summary>
         ''' Checks if a parameter is a ParamArray and reports this as an error.
@@ -1127,7 +1125,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ''' <param name="syntaxNode">Location to use for various synthetic nodes and symbols.</param>
         ''' <param name="delegateInvoke">The Invoke method to "implement".</param>
         ''' <param name="methodGroup">The method group with the only method in it.</param>
-        ''' <param name="delegateRelaxation">Delegate relaxation to store withing the new BoundLambda node.</param>
+        ''' <param name="delegateRelaxation">Delegate relaxation to store within the new BoundLambda node.</param>
         ''' <param name="diagnostics"></param>
         Private Function BuildDelegateRelaxationLambda(
             syntaxNode As VisualBasicSyntaxNode,
@@ -1166,7 +1164,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ' this lambda symbol.
             Dim lambdaSymbol = New SynthesizedLambdaSymbol(SynthesizedLambdaKind.DelegateRelaxationStub,
                                                            syntaxNode,
-                                                           lambdaSymbolParameters.AsImmutableOrNull,
+                                                           lambdaSymbolParameters.AsImmutable(),
                                                            delegateInvokeReturnType,
                                                            Me)
 
@@ -1182,7 +1180,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim lambdaBoundParameters(targetParameterCount - 1) As BoundExpression
 
             If Not droppedArguments Then
-                For parameterIndex = 0 To lambdaSymbolParameters.Count - 1
+                For parameterIndex = 0 To lambdaSymbolParameters.Length - 1
                     Dim lambdaSymbolParameter = lambdaSymbolParameters(parameterIndex)
                     Dim boundParameter = New BoundParameter(syntaxNode,
                                                             lambdaSymbolParameter,
@@ -1204,7 +1202,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                                                         syntaxNode,
                                                                                         TypeCharacter.None,
                                                                                         methodGroup,
-                                                                                        lambdaBoundParameters.AsImmutableOrNull,
+                                                                                        lambdaBoundParameters.AsImmutable(),
                                                                                         Nothing,
                                                                                         diagnostics,
                                                                                         suppressAbstractCallDiagnostics:=True,

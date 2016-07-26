@@ -23,7 +23,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
             var element = new CodeNamespace(state, fileCodeModel, nodeKey, nodeKind);
             var result = (EnvDTE.CodeNamespace)ComAggregate.CreateAggregatedObject(element);
 
-            fileCodeModel.OnElementCreated(nodeKey, (EnvDTE.CodeElement)result);
+            fileCodeModel.OnCodeElementCreated(nodeKey, (EnvDTE.CodeElement)result);
 
             return result;
         }
@@ -68,7 +68,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
                 var namespaceNode = GetNamespaceNode();
 
                 return namespaceNode != null
-                    ? (object)FileCodeModel.CreateCodeElement<EnvDTE.CodeNamespace>(namespaceNode)
+                    ? (object)FileCodeModel.GetOrCreateCodeElement<EnvDTE.CodeNamespace>(namespaceNode)
                     : this.FileCodeModel;
             }
         }
@@ -184,7 +184,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
             if (codeElement == null)
             {
-                throw new ArgumentException(ServicesVSResources.ElementIsNotValid, "element");
+                throw new ArgumentException(ServicesVSResources.Element_is_not_valid, nameof(element));
             }
 
             codeElement.Delete();

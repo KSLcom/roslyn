@@ -3,8 +3,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -12,14 +10,14 @@ namespace Microsoft.CodeAnalysis
     /// An identifier that can be used to refer to the same Solution across versions. 
     /// </summary>
     [DebuggerDisplay("{GetDebuggerDisplay(),nq}")]
-    public class SolutionId : IEquatable<SolutionId>
+    public sealed class SolutionId : IEquatable<SolutionId>
     {
         /// <summary>
         /// The unique id of the solution.
         /// </summary>
-        public Guid Id { get; private set; }
+        public Guid Id { get; }
 
-        private string _debugName;
+        private readonly string _debugName;
 
         private SolutionId(string debugName)
         {

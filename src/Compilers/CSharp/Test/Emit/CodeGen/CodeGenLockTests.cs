@@ -1811,7 +1811,7 @@ public class Program
     }
 }
 ";
-            CompileAndVerify(text, emitOptions: TestEmitters.RefEmitBug, expectedOutput: @"Writer wrote 0
+            CompileAndVerify(text, expectedOutput: @"Writer wrote 0
 Reader read 0
 Writer wrote 1
 Reader read 1
@@ -1879,7 +1879,7 @@ class D
 
         #endregion Execution
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_01()
         {
             var source = @"
@@ -1900,7 +1900,7 @@ class C1
             CompileAndVerify(compilation, expectedOutput: "Inside lock.");
         }
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_02()
         {
             var source = @"
@@ -1921,7 +1921,7 @@ class C1
             CompileAndVerify(compilation, expectedOutput: "Inside lock.");
         }
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_03()
         {
             var source = @"
@@ -1950,7 +1950,7 @@ class C1
                 );
         }
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_04()
         {
             var source = @"
@@ -1978,7 +1978,7 @@ class C1
                 );
         }
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_05()
         {
             var source = @"
@@ -2014,7 +2014,7 @@ class C1
                 );
         }
 
-        [Fact(), WorkItem(1106943, "DevDiv")]
+        [Fact(), WorkItem(1106943, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1106943")]
         public void Bug1106943_06()
         {
             var source = @"

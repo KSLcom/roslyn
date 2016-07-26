@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CodeFixes
 {
@@ -17,6 +16,7 @@ namespace Microsoft.CodeAnalysis.CodeFixes
     public struct CodeFixContext
     {
         private readonly Document _document;
+        private readonly Project _project;
         private readonly TextSpan _span;
         private readonly ImmutableArray<Diagnostic> _diagnostics;
         private readonly CancellationToken _cancellationToken;
@@ -28,13 +28,18 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         public Document Document { get { return _document; } }
 
         /// <summary>
+        /// Project corresponding to the diagnostics to fix.
+        /// </summary>
+        internal Project Project { get { return _project; } }
+
+        /// <summary>
         /// Text span within the <see cref="CodeFixContext.Document"/> to fix.
         /// </summary>
         public TextSpan Span { get { return _span; } }
 
         /// <summary>
         /// Diagnostics to fix.
-        /// NOTE: All the diagnostics in this collection have the same span <see ref="CodeFixContext.Span"/>.
+        /// NOTE: All the diagnostics in this collection have the same <see cref="CodeFixContext.Span"/>.
         /// </summary>
         public ImmutableArray<Diagnostic> Diagnostics { get { return _diagnostics; } }
 
@@ -48,7 +53,11 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         /// </summary>
         /// <param name="document">Document to fix.</param>
         /// <param name="span">Text span within the <paramref name="document"/> to fix.</param>
-        /// <param name="diagnostics">Diagnostics to fix. All the diagnostics should have the same span <paramref name="span"/>.</param>
+        /// <param name="diagnostics">
+        /// Diagnostics to fix.
+        /// All the diagnostics must have the same <paramref name="span"/>.
+        /// Additionally, the <see cref="Diagnostic.Id"/> of each diagnostic must be in the set of the <see cref="CodeFixProvider.FixableDiagnosticIds"/> of the associated <see cref="CodeFixProvider"/>.
+        /// </param>
         /// <param name="registerCodeFix">Delegate to register a <see cref="CodeAction"/> fixing a subset of diagnostics.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <exception cref="ArgumentNullException">Throws this exception if any of the arguments is null.</exception>
@@ -70,7 +79,10 @@ namespace Microsoft.CodeAnalysis.CodeFixes
         /// Creates a code fix context to be passed into <see cref="CodeFixProvider.RegisterCodeFixesAsync(CodeFixContext)"/> method.
         /// </summary>
         /// <param name="document">Document to fix.</param>
-        /// <param name="diagnostic">Diagnostic to fix.</param>
+        /// <param name="diagnostic">
+        /// Diagnostic to fix.
+        /// The <see cref="Diagnostic.Id"/> of this diagnostic must be in the set of the <see cref="CodeFixProvider.FixableDiagnosticIds"/> of the associated <see cref="CodeFixProvider"/>.
+        /// </param>
         /// <param name="registerCodeFix">Delegate to register a <see cref="CodeAction"/> fixing a subset of diagnostics.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <exception cref="ArgumentNullException">Throws this exception if any of the arguments is null.</exception>
@@ -85,6 +97,27 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
         internal CodeFixContext(
             Document document,
+            TextSpan span,
+            ImmutableArray<Diagnostic> diagnostics,
+            Action<CodeAction, ImmutableArray<Diagnostic>> registerCodeFix,
+            bool verifyArguments,
+            CancellationToken cancellationToken)
+            : this(document, document.Project, span, diagnostics, registerCodeFix, verifyArguments, cancellationToken)
+        {
+        }
+
+        internal CodeFixContext(
+            Project project,
+            ImmutableArray<Diagnostic> diagnostics,
+            Action<CodeAction, ImmutableArray<Diagnostic>> registerCodeFix,
+            CancellationToken cancellationToken)
+            : this(document: null, project: project, span: default(TextSpan), diagnostics: diagnostics, registerCodeFix: registerCodeFix, verifyArguments: false, cancellationToken: cancellationToken)
+        {
+        }
+
+        private CodeFixContext(
+            Document document,
+            Project project,
             TextSpan span,
             ImmutableArray<Diagnostic> diagnostics,
             Action<CodeAction, ImmutableArray<Diagnostic>> registerCodeFix,
@@ -107,6 +140,7 @@ namespace Microsoft.CodeAnalysis.CodeFixes
             }
 
             _document = document;
+            _project = project;
             _span = span;
             _diagnostics = diagnostics;
             _registerCodeFix = registerCodeFix;
@@ -189,17 +223,17 @@ namespace Microsoft.CodeAnalysis.CodeFixes
 
             if (diagnostics.Length == 0)
             {
-                throw new ArgumentException(WorkspacesResources.DiagnosticsCannotBeEmpty, nameof(diagnostics));
+                throw new ArgumentException(WorkspacesResources.At_least_one_diagnostic_must_be_supplied, nameof(diagnostics));
             }
 
             if (diagnostics.Any(d => d == null))
             {
-                throw new ArgumentException(WorkspacesResources.DiagnosticCannotBeNull, nameof(diagnostics));
+                throw new ArgumentException(WorkspacesResources.Supplied_diagnostic_cannot_be_null, nameof(diagnostics));
             }
 
             if (diagnostics.Any(d => d.Location.SourceSpan != span))
             {
-                throw new ArgumentException(string.Format(WorkspacesResources.DiagnosticMustHaveMatchingSpan, span.ToString()), nameof(diagnostics));
+                throw new ArgumentException(string.Format(WorkspacesResources.Diagnostic_must_have_span_0, span.ToString()), nameof(diagnostics));
             }
         }
     }

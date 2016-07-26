@@ -25,6 +25,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             get;
         }
 
+        internal abstract LocalSymbol WithSynthesizedLocalKindAndSyntax(SynthesizedLocalKind kind, SyntaxNode syntax);
+
         internal abstract bool IsImportedFromMetadata
         {
             get;
@@ -201,11 +203,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         /// Returns true if the local variable is declared in resource-acquisition of a 'using statement';
         /// otherwise false
         /// </summary>
-        /// <exmaple>
+        /// <example>
         /// <code>
         ///     using (var localVariable = new StreamReader("C:\\Temp\\MyFile.txt")) { ... } 
         /// </code>
-        /// </exmaple>
+        /// </example>
         public bool IsUsing
         {
             get
@@ -319,7 +321,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         {
             get;
         }
-        
+
         internal abstract ConstantValue GetConstantValue(SyntaxNode node, LocalSymbol inProgress, DiagnosticBag diagnostics = null);
 
         internal abstract ImmutableArray<Diagnostic> GetConstantValueDiagnostics(BoundExpression boundInitValue);
@@ -327,6 +329,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         internal abstract RefKind RefKind
         {
             get;
+        }
+
+        internal virtual bool IsReturnable
+        {
+            get
+            {
+                // by default all locals are returnable
+                return true;
+            }
         }
 
         #region ILocalSymbol Members

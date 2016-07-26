@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
 using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.VisualStudio.Text;
@@ -11,51 +13,51 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             /// <summary>
             /// The cached text of this entry, which may exist if we've detached from the span.
             /// </summary>
-            private string cachedText;
+            private string _cachedText;
 
             /// <summary>
             /// The span of the original submission of this text.
             /// </summary>
-            private SnapshotSpan? originalSpan;
+            private SnapshotSpan? _originalSpan;
 
             public bool Command { get; set; }
             public bool Failed { get; set; }
 
-            public SnapshotSpan? OriginalSpan { get { return originalSpan; } }
+            public SnapshotSpan? OriginalSpan { get { return _originalSpan; } }
 
             public string Text
             {
                 get
                 {
-                    if (cachedText != null)
+                    if (_cachedText != null)
                     {
-                        return cachedText;
+                        return _cachedText;
                     }
 
-                    return originalSpan.Value.GetText();
+                    return _originalSpan.Value.GetText();
                 }
             }
 
             internal void ForgetOriginalBuffer()
             {
-                if (originalSpan.HasValue)
+                if (_originalSpan.HasValue)
                 {
-                    cachedText = originalSpan.Value.GetText();
-                    originalSpan = null;
+                    _cachedText = _originalSpan.Value.GetText();
+                    _originalSpan = null;
                 }
             }
 
             public Entry(SnapshotSpan span)
             {
-                this.originalSpan = span;
+                _originalSpan = span;
             }
         }
 
-        private readonly List<Entry> history;
-        private readonly int maxLength;
+        private readonly List<Entry> _history;
+        private readonly int _maxLength;
 
-        private int current;
-        private bool live;
+        private int _current;
+        private bool _live;
 
         internal string UncommittedInput { get; set; }
 
@@ -66,21 +68,21 @@ namespace Microsoft.VisualStudio.InteractiveWindow
 
         internal History(int maxLength)
         {
-            this.maxLength = maxLength;
-            this.current = -1;
-            this.history = new List<Entry>();
+            _maxLength = maxLength;
+            _current = -1;
+            _history = new List<Entry>();
         }
 
         internal void Clear()
         {
-            current = -1;
-            live = false;
-            history.Clear();
+            _current = -1;
+            _live = false;
+            _history.Clear();
         }
 
         internal void ForgetOriginalBuffers()
         {
-            foreach (var entry in history)
+            foreach (var entry in _history)
             {
                 entry.ForgetOriginalBuffer();
             }
@@ -88,26 +90,26 @@ namespace Microsoft.VisualStudio.InteractiveWindow
 
         internal int MaxLength
         {
-            get { return maxLength; }
+            get { return _maxLength; }
         }
 
         internal int Length
         {
-            get { return history.Count; }
+            get { return _history.Count; }
         }
 
         internal IEnumerable<Entry> Items
         {
-            get { return history; }
+            get { return _history; }
         }
 
         internal Entry Last
         {
             get
             {
-                if (history.Count > 0)
+                if (_history.Count > 0)
                 {
-                    return history[history.Count - 1];
+                    return _history[_history.Count - 1];
                 }
                 else
                 {
@@ -121,114 +123,129 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             var entry = new Entry(span);
             var text = span.GetText();
 
-            live = false;
+            _live = false;
             if (Length == 0 || Last.Text != text)
             {
-                history.Add(entry);
+                _history.Add(entry);
             }
 
-            if (history[(current == -1) ? Length - 1 : current].Text != text)
+            //If text at current location in history is not the same as the text you are adding then
+            //new command was typed and submitted while navigating history. In this case the _current
+            //gets reset.
+            if (_history[(_current == -1) ? Length - 1 : _current].Text != text)
             {
-                current = -1;
+                _current = -1;
             }
 
             if (Length > MaxLength)
             {
-                history.RemoveAt(0);
-                if (current > 0)
+                _history.RemoveAt(0);
+                if (_current > 0)
                 {
-                    current--;
+                    _current--;
                 }
             }
         }
 
-        private Entry Get(string pattern, int step)
+        internal Entry GetNext(string pattern)
         {
-            var startPos = current;
-            var next = Move(pattern, step);
+            var next = MoveNext(pattern);
             if (next == null)
             {
-                current = startPos;
+                // if we hit the end of history list, reset _current to stop navigating history.
+                _current = -1;
+            }
+            return next;
+        }
+
+        internal Entry GetPrevious(string pattern)
+        {
+            var startPos = _current;
+            Entry next;
+            next = MovePrevious(pattern);
+            if (next == null)
+            {
+                _current = startPos;
                 return null;
             }
 
             return next;
         }
 
-        internal Entry GetNext(string pattern = null)
+        private Entry MoveNext(string pattern)
         {
-            return Get(pattern, step: +1);
-        }
+            if (Length == 0) return null;
 
-        internal Entry GetPrevious(string pattern = null)
-        {
-            return Get(pattern, step: -1);
-        }
+            bool wasCurrentUninitialized = (_current == -1);
 
-        private Entry Move(string pattern, int step)
-        {
-            Debug.Assert(step == -1 || step == +1);
+            // if current in un-initialized then we are not navigating history yet so
+            // there is no next entry.
+            if (wasCurrentUninitialized) return null;
 
-            bool wasLive = live;
-            live = true;
+            //indicates that history search/navigation is in progress
+            _live = true;
 
-            if (Length == 0)
+            _current++;
+
+            for (; _current < Length; _current++)
             {
-                return null;
+                Entry entry;
+                if (TryMatch(pattern, out entry)) return entry;
+            }
+
+            return null;
+        }
+
+        private Entry MovePrevious(string pattern)
+        {
+            if (Length == 0) return null;
+            bool wasLive = _live;
+
+            //indicates that history search/navigation is in progress
+            _live = true;
+
+            bool wasCurrentUninitialized = (_current == -1);
+
+            // if current in un-initialized then we are not navigating history yet so
+            // current needs to be set to last entry before navigating previous.
+            if (wasCurrentUninitialized)
+            {
+                _current = Length - 1;
+                Entry entry;
+                if (TryMatch(pattern, out entry)) return entry;
             }
 
             bool patternEmpty = string.IsNullOrWhiteSpace(pattern);
-
-            int start, end;
-            if (step > 0)
+            if (!wasLive && patternEmpty)
             {
-                start = 0;
-                end = Length - 1;
+                //return the current entry again ( handles case up, up, enter, up)
+                Entry entry;
+                if (TryMatch(pattern, out entry)) return entry;
+            }
+
+            for (_current--; _current >= 0; _current--)
+            {
+                Entry entry;
+                if (TryMatch(pattern, out entry)) return entry;
+            }
+
+            return null;
+        }
+
+
+        private bool TryMatch(string pattern, out Entry entry)
+        {
+            bool patternEmpty = string.IsNullOrWhiteSpace(pattern);
+            var tmpEntry = _history[_current];
+            if (patternEmpty || Matches(tmpEntry.Text, pattern))
+            {
+                entry = tmpEntry;
+                return true;
             }
             else
             {
-                start = Length - 1;
-                end = 0;
-            }
-
-            // no search in progress:
-            if (current == -1)
-            {
-                current = start;
-            }
-
-            int visited = 0;
-            while (true)
-            {
-                if (current == end)
-                {
-                    if (visited < Length)
-                    {
-                        current = start;
-                    }
-                    else
-                    {
-                        // we cycled thru the entire history:
-                        return null;
-                    }
-                }
-                else if (!wasLive && patternEmpty)
-                {
-                    // Handles up up up enter up
-                    // Do nothing
-                }
-                else
-                {
-                    current += step;
-                }
-
-                var entry = history[current];
-                if (patternEmpty || Matches(entry.Text, pattern))
-                {
-                    return entry;
-                }
-
-                visited++;
+                entry = null;
+                return false;
             }
         }
 

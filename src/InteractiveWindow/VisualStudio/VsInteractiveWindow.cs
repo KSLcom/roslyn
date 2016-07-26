@@ -4,9 +4,9 @@
 // #define DUMP_COMMANDS
 
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
-using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Editor;
 using Microsoft.VisualStudio.OLE.Interop;
@@ -14,7 +14,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
-using Microsoft.VisualStudio.InteractiveWindow;
+using Microsoft.VisualStudio.Utilities;
 
 namespace Microsoft.VisualStudio.InteractiveWindow.Shell
 {
@@ -29,8 +29,12 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
     /// VsInteractiveWindowEditorsFactoryService which handles all of the mapping of VS commands to API calls
     /// on the interactive window.
     /// </summary>
-    internal sealed class VsInteractiveWindow : ToolWindowPane, IVsFindTarget, IOleCommandTarget, IVsInteractiveWindow
+    [Guid(Guids.InteractiveToolWindowIdString)]
+    internal sealed class VsInteractiveWindow : ToolWindowPane, IOleCommandTarget, IVsInteractiveWindow
     {
+        // Keep in sync with Microsoft.VisualStudio.Editor.Implementation.EnableFindOptionDefinition.OptionName.
+        private const string EnableFindOptionName = "Enable Autonomous Find";
+
         private readonly IComponentModel _componentModel;
         private readonly IVsEditorAdaptersFactoryService _editorAdapters;
 
@@ -39,15 +43,13 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
         private IOleCommandTarget _commandTarget;
         private IInteractiveEvaluator _evaluator;
         private IWpfTextViewHost _textViewHost;
-        private readonly IVsInteractiveWindowEditorsFactoryService _editorFactoryService;
 
-        internal VsInteractiveWindow(IComponentModel model, Guid providerId, int instanceId, string title, IInteractiveEvaluator evaluator)
+        internal VsInteractiveWindow(IComponentModel model, Guid providerId, int instanceId, string title, IInteractiveEvaluator evaluator, __VSCREATETOOLWIN creationFlags)
         {
             _componentModel = model;
             this.Caption = title;
             _editorAdapters = _componentModel.GetService<IVsEditorAdaptersFactoryService>();
             _evaluator = evaluator;
-            _editorFactoryService = model.GetService<IVsInteractiveWindowEditorsFactoryService>();
 
             // The following calls this.OnCreate:
             Guid clsId = this.ToolClsid;
@@ -61,7 +63,7 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
 
             ErrorHandler.ThrowOnFailure(
                 vsShell.CreateToolWindow(
-                    (uint)(__VSCREATETOOLWIN.CTW_fInitNew | __VSCREATETOOLWIN.CTW_fForceCreate | __VSCREATETOOLWIN.CTW_fToolbarHost),
+                    (uint)(__VSCREATETOOLWIN.CTW_fInitNew | __VSCREATETOOLWIN.CTW_fToolbarHost | creationFlags),
                     (uint)instanceId,
                     this.GetIVsWindowPane(),
                     ref clsId,
@@ -73,13 +75,14 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
                     out frame
                 )
             );
-
+            var guid = GetType().GUID;
+            ErrorHandler.ThrowOnFailure(frame.SetGuidProperty((int)__VSFPROPID.VSFPROPID_CmdUIGuid, ref guid));
             this.Frame = frame;
         }
 
-        public void SetLanguage(Guid languageServiceGuid)
+        public void SetLanguage(Guid languageServiceGuid, IContentType contentType)
         {
-            _editorFactoryService.SetLanguage(_window, languageServiceGuid);
+            _window.SetLanguage(languageServiceGuid, contentType);
         }
 
         public IInteractiveWindow InteractiveWindow { get { return _window; } }
@@ -90,8 +93,10 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
         {
             _window = _componentModel.GetService<IInteractiveWindowFactoryService>().CreateWindow(_evaluator);
             _window.SubmissionBufferAdded += SubmissionBufferAdded;
-            _textViewHost = _editorFactoryService.GetTextViewHost(_window);
-            var viewAdapter = _editorAdapters.GetViewAdapter(_textViewHost.TextView);
+            _textViewHost = _window.GetTextViewHost();
+            var textView = _textViewHost.TextView;
+            textView.Options.SetOptionValue(EnableFindOptionName, true);
+            var viewAdapter = _editorAdapters.GetViewAdapter(textView);
             _findTarget = viewAdapter as IVsFindTarget;
             _commandTarget = viewAdapter as IOleCommandTarget;
         }
@@ -182,123 +187,6 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Shell
             object result;
             ErrorHandler.ThrowOnFailure(frame.GetProperty((int)__VSFPROPID.VSFPROPID_ToolbarHost, out result));
             return (IVsToolWindowToolbarHost)result;
-        }
-
-        #endregion
-
-        #region IVsFindTarget
-
-        public int Find(string pszSearch, uint grfOptions, int fResetStartPoint, IVsFindHelper pHelper, out uint pResult)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.Find(pszSearch, grfOptions, fResetStartPoint, pHelper, out pResult);
-            }
-            pResult = 0;
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetCapabilities(bool[] pfImage, uint[] pgrfOptions)
-        {
-            if (_findTarget != null && pgrfOptions != null && pgrfOptions.Length > 0)
-            {
-                return _findTarget.GetCapabilities(pfImage, pgrfOptions);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetCurrentSpan(TextSpan[] pts)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.GetCurrentSpan(pts);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetFindState(out object ppunk)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.GetFindState(out ppunk);
-            }
-            ppunk = null;
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetMatchRect(RECT[] prc)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.GetMatchRect(prc);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetProperty(uint propid, out object pvar)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.GetProperty(propid, out pvar);
-            }
-            pvar = null;
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int GetSearchImage(uint grfOptions, IVsTextSpanSet[] ppSpans, out IVsTextImage ppTextImage)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.GetSearchImage(grfOptions, ppSpans, out ppTextImage);
-            }
-            ppTextImage = null;
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int MarkSpan(TextSpan[] pts)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.MarkSpan(pts);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int NavigateTo(TextSpan[] pts)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.NavigateTo(pts);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int NotifyFindTarget(uint notification)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.NotifyFindTarget(notification);
-            }
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int Replace(string pszSearch, string pszReplace, uint grfOptions, int fResetStartPoint, IVsFindHelper pHelper, out int pfReplaced)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.Replace(pszSearch, pszReplace, grfOptions, fResetStartPoint, pHelper, out pfReplaced);
-            }
-            pfReplaced = 0;
-            return VSConstants.E_NOTIMPL;
-        }
-
-        public int SetFindState(object pUnk)
-        {
-            if (_findTarget != null)
-            {
-                return _findTarget.SetFindState(pUnk);
-            }
-            return VSConstants.E_NOTIMPL;
         }
 
         #endregion

@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using Microsoft.CodeAnalysis.FindSymbols;
@@ -26,7 +27,9 @@ namespace Microsoft.CodeAnalysis.LanguageServices
         bool IsPreprocessorKeyword(SyntaxToken token);
         bool IsHashToken(SyntaxToken token);
         bool IsLiteral(SyntaxToken token);
+        bool IsStringLiteralOrInterpolatedStringLiteral(SyntaxToken token);
         bool IsStringLiteral(SyntaxToken token);
+        bool IsNumericLiteralExpression(SyntaxNode node);
         bool IsTypeNamedVarInVariableOrFieldDeclaration(SyntaxToken token, SyntaxNode parent);
         bool IsTypeNamedDynamic(SyntaxToken token, SyntaxNode parent);
 
@@ -34,7 +37,7 @@ namespace Microsoft.CodeAnalysis.LanguageServices
 
         bool IsInInactiveRegion(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken);
         bool IsInNonUserCode(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken);
-        bool IsEntirelyWithinStringOrCharLiteral(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken);
+        bool IsEntirelyWithinStringOrCharOrNumericLiteral(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken);
 
         bool TryGetPredefinedType(SyntaxToken token, out PredefinedType type);
         bool TryGetPredefinedOperator(SyntaxToken token, out PredefinedOperator op);
@@ -43,6 +46,20 @@ namespace Microsoft.CodeAnalysis.LanguageServices
         bool IsObjectCreationExpressionType(SyntaxNode node);
         bool IsObjectCreationExpression(SyntaxNode node);
         bool IsInvocationExpression(SyntaxNode node);
+
+        // Left side of = assignment.
+        bool IsLeftSideOfAssignment(SyntaxNode node);
+
+        // Left side of any assignment (for example  *=  or += )
+        bool IsLeftSideOfAnyAssignment(SyntaxNode node);
+        SyntaxNode GetRightHandSideOfAssignment(SyntaxNode node);
+
+        bool IsInferredAnonymousObjectMemberDeclarator(SyntaxNode node);
+        bool IsOperandOfIncrementExpression(SyntaxNode node);
+        bool IsOperandOfIncrementOrDecrementExpression(SyntaxNode node);
+
+        bool IsLeftSideOfDot(SyntaxNode node);
+        SyntaxNode GetRightSideOfDot(SyntaxNode node);
 
         bool IsRightSideOfQualifiedName(SyntaxNode node);
         bool IsMemberAccessExpressionName(SyntaxNode node);
@@ -56,12 +73,14 @@ namespace Microsoft.CodeAnalysis.LanguageServices
         SyntaxNode GetExpressionOfMemberAccessExpression(SyntaxNode node);
         SyntaxNode GetExpressionOfConditionalMemberAccessExpression(SyntaxNode node);
         SyntaxNode GetExpressionOfArgument(SyntaxNode node);
+        SyntaxNode GetExpressionOfInterpolation(SyntaxNode node);
         bool IsConditionalMemberAccessExpression(SyntaxNode node);
         SyntaxNode GetNameOfAttribute(SyntaxNode node);
         SyntaxToken GetIdentifierOfGenericName(SyntaxNode node);
         RefKind GetRefKindOfArgument(SyntaxNode node);
         void GetNameAndArityOfSimpleName(SyntaxNode node, out string name, out int arity);
-
+        SyntaxList<SyntaxNode> GetContentsOfInterpolatedString(SyntaxNode interpolatedString);
+        SeparatedSyntaxList<SyntaxNode> GetArgumentsForInvocationExpression(SyntaxNode invocationExpression);
         bool IsUsingDirectiveName(SyntaxNode node);
         bool IsGenericName(SyntaxNode node);
 
@@ -113,8 +132,10 @@ namespace Microsoft.CodeAnalysis.LanguageServices
 
         bool TryGetDeclaredSymbolInfo(SyntaxNode node, out DeclaredSymbolInfo declaredSymbolInfo);
 
+        string GetDisplayName(SyntaxNode node, DisplayNameOptions options, string rootNamespace = null);
+
         SyntaxNode GetContainingTypeDeclaration(SyntaxNode root, int position);
-        SyntaxNode GetContainingMemberDeclaration(SyntaxNode root, int position);
+        SyntaxNode GetContainingMemberDeclaration(SyntaxNode root, int position, bool useFullSpan = true);
         SyntaxNode GetContainingVariableDeclaratorOfFieldDeclaration(SyntaxNode node);
 
         SyntaxToken FindTokenOnLeftOfPosition(SyntaxNode node, int position, bool includeSkipped = true, bool includeDirectives = false, bool includeDocumentationComments = false);
@@ -122,7 +143,7 @@ namespace Microsoft.CodeAnalysis.LanguageServices
 
         SyntaxNode Parenthesize(SyntaxNode expression, bool includeElasticTrivia = true);
 
-        SyntaxNode ConvertToSingleLine(SyntaxNode node);
+        SyntaxNode ConvertToSingleLine(SyntaxNode node, bool useElasticTrivia = false);
 
         SyntaxToken ToIdentifierToken(string name);
 
@@ -132,7 +153,14 @@ namespace Microsoft.CodeAnalysis.LanguageServices
 
         int GetMethodLevelMemberId(SyntaxNode root, SyntaxNode node);
         SyntaxNode GetMethodLevelMember(SyntaxNode root, int memberId);
+        TextSpan GetInactiveRegionSpanAroundPosition(SyntaxTree tree, int position, CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Given a <see cref="SyntaxNode"/>, return the <see cref="TextSpan"/> representing the span of the member body
+        /// it is contained within. This <see cref="TextSpan"/> is used to determine whether speculative binding should be
+        /// used in performance-critical typing scenarios. Note: if this method fails to find a relevant span, it returns
+        /// an empty <see cref="TextSpan"/> at position 0.
+        /// </summary>
         TextSpan GetMemberBodySpanForSpeculativeBinding(SyntaxNode node);
 
         /// <summary>
@@ -146,5 +174,22 @@ namespace Microsoft.CodeAnalysis.LanguageServices
         IEnumerable<SyntaxNode> GetConstructors(SyntaxNode root, CancellationToken cancellationToken);
 
         bool TryGetCorrespondingOpenBrace(SyntaxToken token, out SyntaxToken openBrace);
+
+        /// <summary>
+        /// Given a <see cref="SyntaxNode"/>, that represents and argument return the string representation of
+        /// that arguments name.
+        /// </summary>
+        string GetNameForArgument(SyntaxNode argument);
+    }
+
+    [Flags]
+    internal enum DisplayNameOptions
+    {
+        None = 0,
+        IncludeMemberKeyword = 1,
+        IncludeNamespaces = 1 << 1,
+        IncludeParameters = 1 << 2,
+        IncludeType = 1 << 3,
+        IncludeTypeParameters = 1 << 4
     }
 }

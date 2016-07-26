@@ -1,12 +1,10 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
-using Microsoft.CodeAnalysis.LanguageServices;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -31,7 +29,7 @@ namespace Microsoft.CodeAnalysis.Rename.ConflictEngine
         private Solution _intermediateSolutionContainingOnlyModifiedDocuments;
 
         // This is Lazy Initialized when it is first used
-        private ILookup<DocumentId, RelatedLocation> _relatedLocationsByDocumentId = null;
+        private ILookup<DocumentId, RelatedLocation> _relatedLocationsByDocumentId;
 
         public ConflictResolution(
             Solution oldSolution,
@@ -59,14 +57,14 @@ namespace Microsoft.CodeAnalysis.Rename.ConflictEngine
             _newSolution = solution;
         }
 
-        internal void RemoveAllRenameAnnotations(IEnumerable<DocumentId> documentWithRenameAnnotations, AnnotationTable<RenameAnnotation> annotationSet, CancellationToken cancellationToken)
+        internal async Task RemoveAllRenameAnnotationsAsync(IEnumerable<DocumentId> documentWithRenameAnnotations, AnnotationTable<RenameAnnotation> annotationSet, CancellationToken cancellationToken)
         {
             foreach (var documentId in documentWithRenameAnnotations)
             {
                 if (_renamedSpansTracker.IsDocumentChanged(documentId))
                 {
                     var document = _newSolution.GetDocument(documentId);
-                    var root = document.GetSyntaxRootAsync(cancellationToken).WaitAndGetResult(cancellationToken);
+                    var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
 
                     // For the computeReplacementToken and computeReplacementNode functions, use 
                     // the "updated" node to maintain any annotation removals from descendants.
@@ -190,11 +188,11 @@ namespace Microsoft.CodeAnalysis.Rename.ConflictEngine
         /// Whether the text that was resolved with was even valid. This may be false if the
         /// identifier was not valid in some language that was involved in the rename.
         /// </summary>
-        public bool ReplacementTextValid { get; private set; }
+        public bool ReplacementTextValid { get; }
 
         /// <summary>
         /// The original text that is the rename replacement.
         /// </summary>
-        public string ReplacementText { get; private set; }
+        public string ReplacementText { get; }
     }
 }

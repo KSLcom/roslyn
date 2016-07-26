@@ -16,7 +16,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Debugging
     {
         internal static async Task<DebugDataTipInfo> GetInfoAsync(Document document, int position, CancellationToken cancellationToken)
         {
-            var root = await document.GetCSharpSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var token = root.FindToken(position);
 
             var expression = token.Parent as ExpressionSyntax;
@@ -33,8 +33,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Debugging
                 // literal they're hovering over.
                 // Partial semantics should always be sufficient because the (unconverted) type
                 // of a literal can always easily be determined.
-                var partialDocument = await document.WithFrozenPartialSemanticsAsync(cancellationToken).ConfigureAwait(false);
-                var semanticModel = await partialDocument.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+                var semanticModel = await document.GetPartialSemanticModelAsync(cancellationToken).ConfigureAwait(false);
                 var type = semanticModel.GetTypeInfo(expression, cancellationToken).Type;
                 return type == null
                     ? default(DebugDataTipInfo)
@@ -66,7 +65,7 @@ namespace Microsoft.VisualStudio.LanguageServices.CSharp.Debugging
                 return new DebugDataTipInfo(TextSpan.FromBounds(curr.SpanStart, expression.Span.End), text: null);
             }
 
-            // NOTE(cyrusn): This behavior is to mimic what we did in Dev10, i'm not sure if it's
+            // NOTE(cyrusn): This behavior is to mimic what we did in Dev10, I'm not sure if it's
             // necessary or not.
             if (expression.IsKind(SyntaxKind.InvocationExpression))
             {

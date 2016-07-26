@@ -51,8 +51,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.LineCommit
             Dim newBuffer = If(newSnapshotPoint.HasValue, newSnapshotPoint.Value.Snapshot.TextBuffer, Nothing)
 
             _waitIndicator.Wait(
-                "Commit",
-                VBEditorResources.CommittingLine,
+                VBEditorResources.Line_commit,
+                VBEditorResources.Committing_line,
                 allowCancel:=True,
                 action:=
                 Sub(waitContext)
@@ -78,7 +78,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.LineCommit
             If commitBufferManager.HasDirtyRegion Then
                 ' In projection buffer scenarios, the text undo history is associated with the surface buffer, so the
                 ' following line's usage of the surface buffer is correct
-                Using transaction = _textUndoHistoryRegistry.GetHistory(_view.TextBuffer).CreateTransaction(VBEditorResources.VisualBasicPrettyList)
+                Using transaction = _textUndoHistoryRegistry.GetHistory(_view.TextBuffer).CreateTransaction(VBEditorResources.Visual_Basic_Pretty_List)
                     Dim beforeUndoPrimitive As New BeforeCommitCaretMoveUndoPrimitive(buffer, _textBufferAssociatedViewService, e.OldPosition)
                     transaction.AddUndo(beforeUndoPrimitive)
 
@@ -112,12 +112,12 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.LineCommit
         Private Sub OnLostAggregateFocus(sender As Object, e As EventArgs)
             _waitIndicator.Wait(
                 "Commit",
-                VBEditorResources.CommittingLine,
+                VBEditorResources.Committing_line,
                 allowCancel:=True,
                 action:=
                 Sub(waitContext)
                     For Each buffer In _view.BufferGraph.GetTextBuffers(Function(b) b.ContentType.IsOfType(ContentTypeNames.VisualBasicContentType))
-                        _commitBufferManagerFactory.CreateForBuffer(buffer).CommitDirty(isExplicitFormat:=True, cancellationToken:=waitContext.CancellationToken)
+                        _commitBufferManagerFactory.CreateForBuffer(buffer).CommitDirty(isExplicitFormat:=False, cancellationToken:=waitContext.CancellationToken)
                     Next
                 End Sub)
         End Sub

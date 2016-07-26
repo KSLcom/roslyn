@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.CodeAnalysis.Editor.Implementation.Adornments;
 using Microsoft.CodeAnalysis.Editor.Implementation.LineSeparators;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
 using Microsoft.CodeAnalysis.Host;
@@ -40,7 +41,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.LineSeparators
             private Mock<IMappingSpan> _mappingSpan;
             private readonly Mock<IAdornmentLayer> _adornmentLayer;
 
-            public AdornmentManager<Tag> Manager { get; private set; }
+            public AdornmentManager<Tag> Manager { get; }
 
             private SnapshotSpan MySnapshotSpan
             {
@@ -127,20 +128,20 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.LineSeparators
 
 #if false
         // TODO(jasonmal): Figure out how to test these.
-        [Fact, Trait(Traits.Feature, Traits.Features.Adornments)]
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Adornments)]
         public void Create()
         {
             Assert.NotNull(new AdornmentManagerTester().Manager);
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Adornments)]
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Adornments)]
         public void LayoutChanged()
         {
             var tester = new AdornmentManagerTester();
             tester.RaiseLayoutChanged();
         }
 
-        [Fact, Trait(Traits.Feature, Traits.Features.Adornments)]
+        [WpfFact, Trait(Traits.Feature, Traits.Features.Adornments)]
         public void TagsChanged()
         {
             var tester = new AdornmentManagerTester();

@@ -14,27 +14,22 @@ namespace Microsoft.CodeAnalysis.CSharp
     /// with surrogate replacements that keep actual handler code in regular code blocks.
     /// That allows these constructs to be further lowered at the async lowering pass.
     /// </summary>
-    internal sealed class AsyncExceptionHandlerRewriter : BoundTreeRewriter
+    internal sealed class AsyncExceptionHandlerRewriter : BoundTreeRewriterWithStackGuardWithoutRecursionOnTheLeftOfBinaryOperator
     {
-        private readonly bool _generateDebugInfo;
-        private readonly CSharpCompilation _compilation;
         private readonly SyntheticBoundNodeFactory _F;
         private readonly DiagnosticBag _diagnostics;
         private readonly AwaitInFinallyAnalysis _analysis;
 
-        private AwaitCatchFrame _currentAwaitCatchFrame = null;
+        private AwaitCatchFrame _currentAwaitCatchFrame;
         private AwaitFinallyFrame _currentAwaitFinallyFrame = new AwaitFinallyFrame();
 
         private AsyncExceptionHandlerRewriter(
             MethodSymbol containingMethod,
             NamedTypeSymbol containingType,
             SyntheticBoundNodeFactory factory,
-            CSharpCompilation compilation,
             DiagnosticBag diagnostics,
             AwaitInFinallyAnalysis analysis)
         {
-            _generateDebugInfo = containingMethod.GenerateDebugInfo;
-            _compilation = compilation;
             _F = factory;
             _F.CurrentMethod = containingMethod;
             Debug.Assert(factory.CurrentType == (containingType ?? containingMethod.ContainingType));
@@ -46,7 +41,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// Lower a block of code by performing local rewritings. 
         /// The goal is to not have exception handlers that contain awaits in them.
         /// 
-        /// 1) Await containing finallies:
+        /// 1) Await containing finally blocks:
         ///     The general strategy is to rewrite await containing handlers into synthetic handlers.
         ///     Synthetic handlers are not handlers in IL sense so it is ok to have awaits in them.
         ///     Since synthetic handlers are just blocks, we have to deal with pending exception/branch/return manually
@@ -79,7 +74,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// 2) Await containing catches:
         ///     try{
         ///         code;
-        ///     }catch (Exeption ex){
+        ///     }catch (Exception ex){
         ///         handler;
         ///         throw;
         ///     }
@@ -126,9 +121,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return statement;
             }
 
-            var compilation = containingType.DeclaringCompilation;
             var factory = new SyntheticBoundNodeFactory(containingSymbol, statement.Syntax, compilationState, diagnostics);
-            var rewriter = new AsyncExceptionHandlerRewriter(containingSymbol, containingType, factory, compilation, diagnostics, analysis);
+            var rewriter = new AsyncExceptionHandlerRewriter(containingSymbol, containingType, factory, diagnostics, analysis);
             var loweredStatement = (BoundStatement)rewriter.Visit(statement);
 
             return loweredStatement;
@@ -137,7 +131,12 @@ namespace Microsoft.CodeAnalysis.CSharp
         public override BoundNode VisitTryStatement(BoundTryStatement node)
         {
             var tryStatementSyntax = node.Syntax;
-            Debug.Assert(tryStatementSyntax.IsKind(SyntaxKind.TryStatement));
+            // If you add a syntax kind to the assertion below, please also ensure
+            // that the scenario has been tested with Edit-and-Continue.
+            Debug.Assert(
+                tryStatementSyntax.IsKind(SyntaxKind.TryStatement) ||
+                tryStatementSyntax.IsKind(SyntaxKind.UsingStatement) ||
+                tryStatementSyntax.IsKind(SyntaxKind.ForEachStatement));
 
             BoundStatement finalizedRegion;
             BoundBlock rewrittenFinally;
@@ -285,7 +284,6 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             // handle proxy labels if have any
             var proxiedLabels = frame.proxiedLabels;
-            var proxyLabels = frame.proxyLabels;
 
             // skip 0 - it means we took no explicit branches
             int i = 1;
@@ -317,7 +315,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 if (returnLabel == null)
                 {
-                    unpendReturn = new BoundReturnStatement(_F.Syntax, pendingValue);
+                    unpendReturn = new BoundReturnStatement(_F.Syntax, RefKind.None, pendingValue);
                 }
                 else
                 {
@@ -501,7 +499,12 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             if (!_analysis.CatchContainsAwait(node))
             {
-                return base.VisitCatchBlock(node);
+                var origCurrentAwaitCatchFrame = _currentAwaitCatchFrame;
+                _currentAwaitCatchFrame = null;
+
+                var result = base.VisitCatchBlock(node);
+                _currentAwaitCatchFrame = origCurrentAwaitCatchFrame;
+                return result;
             }
 
             var currentAwaitCatchFrame = _currentAwaitCatchFrame;
@@ -531,7 +534,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             //      catchNo = X;
             //  }
             BoundCatchBlock catchAndPend;
-            var handlerLocals = ImmutableArray<LocalSymbol>.Empty;
+            ImmutableArray<LocalSymbol> handlerLocals;
 
             var filterOpt = node.ExceptionFilterOpt;
             if (filterOpt == null)
@@ -539,7 +542,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // store pending exception 
                 // as the first statement in a catch
                 catchAndPend = node.Update(
-                    catchTemp,
+                    ImmutableArray.Create(catchTemp),
                     _F.Local(catchTemp),
                     catchType,
                     exceptionFilterOpt: null,
@@ -550,18 +553,17 @@ namespace Microsoft.CodeAnalysis.CSharp
                     isSynthesizedAsyncCatchAll: node.IsSynthesizedAsyncCatchAll);
 
                 // catch locals live on the synthetic catch handler block
-                if ((object)node.LocalOpt != null)
-                {
-                    handlerLocals = ImmutableArray.Create(node.LocalOpt);
-                }
+                handlerLocals = node.Locals;
             }
             else
             {
+                handlerLocals = ImmutableArray<LocalSymbol>.Empty;
+
                 // catch locals move up into hoisted locals
                 // since we might need to access them from both the filter and the catch
-                if ((object)node.LocalOpt != null)
+                foreach (var local in node.Locals)
                 {
-                    currentAwaitCatchFrame.HoistLocal(node.LocalOpt, _F);
+                    currentAwaitCatchFrame.HoistLocal(local, _F);
                 }
 
                 // store pending exception 
@@ -578,7 +580,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                                     rewrittenFilter);
 
                 catchAndPend = node.Update(
-                    catchTemp,
+                    ImmutableArray.Create(catchTemp),
                     _F.Local(catchTemp),
                     catchType,
                     exceptionFilterOpt: newFilter,
@@ -668,6 +670,22 @@ namespace Microsoft.CodeAnalysis.CSharp
             return result;
         }
 
+        public override BoundNode VisitLocalFunctionStatement(BoundLocalFunctionStatement node)
+        {
+            var oldContainingSymbol = _F.CurrentMethod;
+            var oldAwaitFinallyFrame = _currentAwaitFinallyFrame;
+
+            _F.CurrentMethod = node.Symbol;
+            _currentAwaitFinallyFrame = new AwaitFinallyFrame();
+
+            var result = base.VisitLocalFunctionStatement(node);
+
+            _F.CurrentMethod = oldContainingSymbol;
+            _currentAwaitFinallyFrame = oldAwaitFinallyFrame;
+
+            return result;
+        }
+
         private AwaitFinallyFrame PushFrame(BoundTryStatement statement)
         {
             var newFrame = new AwaitFinallyFrame(_currentAwaitFinallyFrame, _analysis.Labels(statement), (TryStatementSyntax)statement.Syntax);
@@ -682,13 +700,13 @@ namespace Microsoft.CodeAnalysis.CSharp
         }
 
         /// <summary>
-        /// Analyses method body for Try blocks with awaits in finallies 
+        /// Analyzes method body for try blocks with awaits in finally blocks 
         /// Also collects labels that such blocks contain.
         /// </summary>
         private sealed class AwaitInFinallyAnalysis : LabelCollector
         {
-            // all try blocks with yields in them and complete set of lables inside those trys
-            // NOTE: non-yielding Trys are transparently ignored - i.e. their labels are included
+            // all try blocks with yields in them and complete set of labels inside those try blocks
+            // NOTE: non-yielding try blocks are transparently ignored - i.e. their labels are included
             //       in the label set of the nearest yielding-try parent  
             private Dictionary<BoundTryStatement, HashSet<LabelSymbol>> _labelsInInterestingTry;
 
@@ -821,6 +839,22 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                 return null;
             }
+
+            public override BoundNode VisitLocalFunctionStatement(BoundLocalFunctionStatement node)
+            {
+                var origLabels = this.currentLabels;
+                var origSeenAwait = _seenAwait;
+
+                this.currentLabels = null;
+                _seenAwait = false;
+
+                base.VisitLocalFunctionStatement(node);
+
+                this.currentLabels = origLabels;
+                _seenAwait = origSeenAwait;
+
+                return null;
+            }
         }
 
         // storage of various information about a given finally frame
@@ -838,14 +872,14 @@ namespace Microsoft.CodeAnalysis.CSharp
             // proxy labels for branches leaving the frame. 
             // we build this on demand once we encounter leaving branches.
             // subsequent leaves to an already proxied label redirected to the proxy.
-            // At the proxy lable we will execute finally and forward the control flow 
+            // At the proxy label we will execute finally and forward the control flow 
             // to the actual destination. (which could be proxied again in the parent)
-            public Dictionary<LabelSymbol, LabelSymbol> proxyLabels = null;
+            public Dictionary<LabelSymbol, LabelSymbol> proxyLabels;
 
-            public List<LabelSymbol> proxiedLabels = null;
+            public List<LabelSymbol> proxiedLabels;
 
-            public GeneratedLabelSymbol returnProxyLabel = null;
-            public SynthesizedLocal returnValue = null;
+            public GeneratedLabelSymbol returnProxyLabel;
+            public SynthesizedLocal returnValue;
 
             public AwaitFinallyFrame()
             {

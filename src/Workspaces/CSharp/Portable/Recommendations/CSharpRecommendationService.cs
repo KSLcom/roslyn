@@ -6,11 +6,12 @@ using System.Composition;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Extensions.ContextQuery;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Recommendations;
@@ -23,7 +24,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
     [ExportLanguageService(typeof(IRecommendationService), LanguageNames.CSharp), Shared]
     internal class CSharpRecommendationService : AbstractRecommendationService
     {
-        protected override Tuple<IEnumerable<ISymbol>, AbstractSyntaxContext> GetRecommendedSymbolsAtPositionWorker(
+        protected override Task<Tuple<IEnumerable<ISymbol>, SyntaxContext>> GetRecommendedSymbolsAtPositionWorkerAsync(
             Workspace workspace, SemanticModel semanticModel, int position, OptionSet options, CancellationToken cancellationToken)
         {
             var context = CSharpSyntaxContext.CreateContext(workspace, semanticModel, position, cancellationToken);
@@ -34,7 +35,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
             var hideAdvancedMembers = options.GetOption(RecommendationOptions.HideAdvancedMembers, semanticModel.Language);
             symbols = symbols.FilterToVisibleAndBrowsableSymbols(hideAdvancedMembers, semanticModel.Compilation);
 
-            return Tuple.Create<IEnumerable<ISymbol>, AbstractSyntaxContext>(symbols, context);
+            return Task.FromResult(Tuple.Create<IEnumerable<ISymbol>, SyntaxContext>(symbols, context));
         }
 
         private static IEnumerable<ISymbol> GetSymbolsWorker(
@@ -44,13 +45,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
         {
             if (context.IsInNonUserCode ||
                 context.IsPreProcessorDirectiveContext)
-            {
-                return SpecializedCollections.EmptyEnumerable<ISymbol>();
-            }
-
-            // TODO: don't show completion set at namespace name part to match Dev10 behavior
-            // if we want to provide new feature that shows all existing namespaces later, remove this
-            if (context.IsNamespaceDeclarationNameContext)
             {
                 return SpecializedCollections.EmptyEnumerable<ISymbol>();
             }
@@ -75,13 +69,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
                 // Script and interactive
                 return GetSymbolsForGlobalStatementContext(context, cancellationToken);
             }
-            else if (context.IsAnyExpressionContext || context.IsStatementContext)
+            else if (context.IsAnyExpressionContext ||
+                     context.IsStatementContext ||
+                     context.SyntaxTree.IsDefiniteCastTypeContext(context.Position, context.LeftToken, cancellationToken))
             {
+                // GitHub #717: With automatic brace completion active, typing '(i' produces "(i)", which gets parsed as
+                // as cast. The user might be trying to type a parenthesized expression, so even though a cast
+                // is a type-only context, we'll show all symbols anyway.
                 return GetSymbolsForExpressionOrStatementContext(context, filterOutOfScopeLocals, cancellationToken);
             }
             else if (context.IsTypeContext || context.IsNamespaceContext)
             {
-                return GetSymbolsForTypeOrNamespaceContext(context, cancellationToken);
+                return GetSymbolsForTypeOrNamespaceContext(context);
             }
             else if (context.IsLabelContext)
             {
@@ -94,6 +93,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
             else if (context.IsDestructorTypeContext)
             {
                 return SpecializedCollections.SingletonEnumerable(context.SemanticModel.GetDeclaredSymbol(context.ContainingTypeOrEnumDeclaration, cancellationToken));
+            }
+            else if (context.IsNamespaceDeclarationNameContext)
+            {
+                return GetSymbolsForNamespaceDeclarationNameContext(context, cancellationToken);
             }
 
             return SpecializedCollections.EmptyEnumerable<ISymbol>();
@@ -214,9 +217,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
                 .AsImmutableOrEmpty();
         }
 
-        private static IEnumerable<ISymbol> GetSymbolsForTypeOrNamespaceContext(
-            CSharpSyntaxContext context,
-            CancellationToken cancellationToken)
+        private static IEnumerable<ISymbol> GetSymbolsForTypeOrNamespaceContext(CSharpSyntaxContext context)
         {
             var symbols = context.SemanticModel.LookupNamespacesAndTypes(context.LeftToken.SpanStart);
 
@@ -231,6 +232,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
             }
 
             return symbols;
+        }
+
+        private static IEnumerable<ISymbol> GetSymbolsForNamespaceDeclarationNameContext(CSharpSyntaxContext context, CancellationToken cancellationToken)
+        {
+            var declarationSyntax = context.TargetToken.GetAncestor<NamespaceDeclarationSyntax>();
+
+            if (declarationSyntax == null)
+            {
+                return SpecializedCollections.EmptyEnumerable<ISymbol>();
+            }
+
+            return GetRecommendedNamespaceNameSymbols(context.SemanticModel, declarationSyntax, cancellationToken);
         }
 
         private static IEnumerable<ISymbol> GetSymbolsForExpressionOrStatementContext(
@@ -259,7 +272,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
                 : context.SemanticModel.LookupSymbols(context.LeftToken.SpanStart);
 
             // Filter out any extension methods that might be imported by a using static directive.
-            symbols = symbols.Where(symbol => !symbol.IsExtensionMethod());
+            // But include extension methods declared in the context's type or it's parents
+            var contextEnclosingNamedType = context.SemanticModel.GetEnclosingNamedType(context.Position, cancellationToken);
+            var contextOuterTypes = context.GetOuterTypes(cancellationToken);
+            symbols = symbols.Where(symbol => !symbol.IsExtensionMethod() ||
+                                              contextEnclosingNamedType.Equals(symbol.ContainingType) ||
+                                              contextOuterTypes.Any(outerType => outerType.Equals(symbol.ContainingType)));
 
             // The symbols may include local variables that are declared later in the method and
             // should not be included in the completion list, so remove those. Filter them away,
@@ -310,6 +328,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
                 IEnumerable<ISymbol> symbols = context.SemanticModel.LookupNamespacesAndTypes(
                     position: name.SpanStart,
                     container: symbol);
+
+                if (context.IsNamespaceDeclarationNameContext)
+                {
+                    var declarationSyntax = name.GetAncestorOrThis<NamespaceDeclarationSyntax>();
+                    return symbols.Where(s => IsNonIntersectingNamespace(s, declarationSyntax));
+                }
 
                 // Filter the types when in a using directive, but not an alias.
                 // 
@@ -387,12 +411,20 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
             CancellationToken cancellationToken)
         {
             // Given ((T?)t)?.|, the '.' will behave as if the expression was actually ((T)t).|. More plainly,
-            // a member access off of a conitional receiver of nullable type binds to the unwrapped nullable
+            // a member access off of a conditional receiver of nullable type binds to the unwrapped nullable
             // type. This is not exposed via the binding information for the LHS, so repeat this work here.
 
             var expression = originalExpression.WalkDownParentheses();
             var leftHandBinding = context.SemanticModel.GetSymbolInfo(expression, cancellationToken);
             var container = context.SemanticModel.GetTypeInfo(expression, cancellationToken).Type.RemoveNullableIfPresent();
+
+            // If the thing on the left is a type, namespace, or alias, we shouldn't show anything in
+            // IntelliSense.
+            if (leftHandBinding.GetBestOrAllSymbols().FirstOrDefault().MatchesKind(SymbolKind.NamedType, SymbolKind.Namespace, SymbolKind.Alias))
+            {
+                return SpecializedCollections.EmptyEnumerable<ISymbol>();
+            }
+
             return GetSymbolsOffOfBoundExpression(context, originalExpression, expression, leftHandBinding, container, cancellationToken);
         }
 
@@ -492,11 +524,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Recommendations
             // Show static and instance members.
             if (context.IsNameOfContext)
             {
-                if (symbol != null && !(symbol.MatchesKind(SymbolKind.NamedType) || symbol.MatchesKind(SymbolKind.Namespace)))
-                {
-                    return SpecializedCollections.EmptyEnumerable<ISymbol>();
-                }
-
                 excludeInstance = false;
                 excludeStatic = false;
             }

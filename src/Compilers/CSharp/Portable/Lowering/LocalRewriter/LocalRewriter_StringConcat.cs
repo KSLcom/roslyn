@@ -15,7 +15,7 @@ namespace Microsoft.CodeAnalysis.CSharp
     {
         /// <summary>
         /// The strategy of this rewrite is to do rewrite "locally".
-        /// We analyze arguments of the concat in a shallow fasion assuming that 
+        /// We analyze arguments of the concat in a shallow fashion assuming that 
         /// lowering and optimizations (including this one) is already done for the arguments.
         /// Based on the arguments we select the most appropriate pattern for the current node.
         /// 
@@ -329,7 +329,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 var method = GetSpecialTypeMethod(syntax, member);
                 Debug.Assert((object)method != null);
 
-                var array = _factory.Array(elementType, loweredArgs);
+                var array = _factory.ArrayOrEmpty(elementType, loweredArgs);
 
                 return (BoundExpression)BoundCall.Synthesized(syntax, null, method, array);
             }
@@ -383,7 +383,17 @@ namespace Microsoft.CodeAnalysis.CSharp
                         if (ConcatExprCanBeOptimizedWithToString(operand.Type))
                         {
                             var toString = GetSpecialTypeMethod(syntax, SpecialMember.System_Object__ToString);
-                            return BoundCall.Synthesized(syntax, operand, toString);
+
+                            var type = (NamedTypeSymbol)operand.Type;
+                            var toStringMembers = type.GetMembers(toString.Name);
+                            foreach (var member in toStringMembers)
+                            {
+                                var toStringMethod = member as MethodSymbol;
+                                if (toStringMethod.GetLeastOverriddenMethod(type) == (object)toString)
+                                {
+                                    return BoundCall.Synthesized(syntax, operand, toStringMethod);
+                                }
+                            }
                         }
                     }
                 }
@@ -427,6 +437,5 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return false;
             }
         }
-
     }
 }

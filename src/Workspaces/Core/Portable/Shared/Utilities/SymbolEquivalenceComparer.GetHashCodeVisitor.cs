@@ -3,9 +3,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Shared.Extensions;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Shared.Utilities
@@ -104,9 +102,7 @@ namespace Microsoft.CodeAnalysis.Shared.Utilities
 
             private int CombineHashCodes(IAssemblySymbol x, int currentHash)
             {
-                return _symbolEquivalenceComparer._assembliesCanDiffer
-                    ? Hash.Combine(typeof(IAssemblySymbol), currentHash)
-                    : Hash.Combine(x.Name, currentHash);
+                return Hash.Combine(_symbolEquivalenceComparer._assemblyComparerOpt?.GetHashCode(x) ?? 0, currentHash);
             }
 
             private int CombineHashCodes(IFieldSymbol x, int currentHash)
@@ -166,10 +162,7 @@ namespace Microsoft.CodeAnalysis.Shared.Utilities
 
             private int CombineHashCodes(IModuleSymbol x, int currentHash)
             {
-                // TODO(cyrusn): what's the right thing to do here?
-                return _symbolEquivalenceComparer._assembliesCanDiffer
-                    ? Hash.Combine(typeof(IModuleSymbol), currentHash)
-                    : Hash.Combine(x.Name, currentHash);
+                return CombineHashCodes(x.ContainingAssembly, Hash.Combine(x.Name, currentHash));
             }
 
             private int CombineHashCodes(INamedTypeSymbol x, int currentHash)
@@ -222,7 +215,7 @@ namespace Microsoft.CodeAnalysis.Shared.Utilities
 
             private int CombineHashCodes(INamespaceSymbol x, int currentHash)
             {
-                if (x.IsGlobalNamespace && _symbolEquivalenceComparer._assembliesCanDiffer)
+                if (x.IsGlobalNamespace && _symbolEquivalenceComparer._assemblyComparerOpt == null)
                 {
                     // Exclude global namespace's container's hash when assemblies can differ.
                     return Hash.Combine(x.Name, currentHash);

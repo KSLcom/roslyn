@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
@@ -10,29 +12,19 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
     {
         internal const string CommandName = "help";
 
-        private static readonly string[] Details = new[]
-        {
-            "  command-name    Name of the REPL command to display help on.",
-        };
-
         public override string Description
         {
-            get { return "Display help on specified REPL command, or all available REPL commands and key bindings if none specified."; }
+            get { return InteractiveWindowResources.HelpCommandDescription; }
         }
 
-        public override string Name
+        public override IEnumerable<string> Names
         {
-            get { return CommandName; }
+            get { yield return CommandName; }
         }
 
         public override string CommandLine
         {
-            get { return "[command-name]"; }
-        }
-
-        public override IEnumerable<string> DetailedDescription
-        {
-            get { return base.DetailedDescription; }
+            get { return InteractiveWindowResources.CommandNamePlaceholder; }
         }
 
         public override Task<ExecutionResult> Execute(IInteractiveWindow window, string arguments)
@@ -41,7 +33,7 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
             IInteractiveWindowCommand command;
             if (!ParseArguments(window, arguments, out commandName, out command))
             {
-                window.ErrorOutputWriter.WriteLine(string.Format("Unknown REPL command '{0}'", commandName));
+                window.ErrorOutputWriter.WriteLine(string.Format(InteractiveWindowResources.UnknownCommand, commandName));
                 ReportInvalidArguments(window);
                 return ExecutionResult.Failed;
             }
@@ -59,11 +51,11 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
             return ExecutionResult.Succeeded;
         }
 
-        private static readonly char[] whitespaceChars = new[] { '\r', '\n', ' ', '\t' };
+        private static readonly char[] s_whitespaceChars = new[] { '\r', '\n', ' ', '\t' };
 
         private bool ParseArguments(IInteractiveWindow window, string arguments, out string commandName, out IInteractiveWindowCommand command)
         {
-            string name = arguments.Split(whitespaceChars)[0];
+            string name = arguments.Split(s_whitespaceChars)[0];
 
             if (name.Length == 0)
             {

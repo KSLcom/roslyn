@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis.ErrorReporting;
 
 namespace Roslyn.Utilities
 {
-    [SuppressMessage("ApiDesign", "RS0011", Justification = "Matching TPL Signatures")]
+    [SuppressMessage("ApiDesign", "CA1068", Justification = "Matching TPL Signatures")]
     internal static partial class TaskFactoryExtensions
     {
         public static Task SafeStartNew(this TaskFactory factory, Action action, CancellationToken cancellationToken, TaskScheduler scheduler)
@@ -29,15 +29,15 @@ namespace Roslyn.Utilities
                 {
                     action();
                 }
-                catch (Exception e) when(FatalError.ReportUnlessCanceled(e))
+                catch (Exception e) when (FatalError.ReportUnlessCanceled(e))
                 {
                     throw ExceptionUtilities.Unreachable;
                 }
-                };
+            };
 
-                // The one and only place we can call StartNew().
-                return factory.StartNew(wrapped, cancellationToken, creationOptions, scheduler);
-            }
+            // The one and only place we can call StartNew().
+            return factory.StartNew(wrapped, cancellationToken, creationOptions, scheduler);
+        }
 
         public static Task<TResult> SafeStartNew<TResult>(this TaskFactory factory, Func<TResult> func, CancellationToken cancellationToken, TaskScheduler scheduler)
         {
@@ -57,15 +57,15 @@ namespace Roslyn.Utilities
                 {
                     return func();
                 }
-                catch (Exception e) when(FatalError.ReportUnlessCanceled(e))
+                catch (Exception e) when (FatalError.ReportUnlessCanceled(e))
                 {
                     throw ExceptionUtilities.Unreachable;
                 }
-                };
+            };
 
-                // The one and only place we can call StartNew<>().
-                return factory.StartNew(wrapped, cancellationToken, creationOptions, scheduler);
-            }
+            // The one and only place we can call StartNew<>().
+            return factory.StartNew(wrapped, cancellationToken, creationOptions, scheduler);
+        }
 
         public static Task SafeStartNewFromAsync(this TaskFactory factory, Func<Task> actionAsync, CancellationToken cancellationToken, TaskScheduler scheduler)
         {

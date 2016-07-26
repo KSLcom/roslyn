@@ -47,7 +47,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
                     throw Exceptions.ThrowEUnexpected();
                 }
 
-                return FileCodeModel.CreateCodeElement<EnvDTE.CodeElement>(containingTypeNode);
+                return FileCodeModel.GetOrCreateCodeElement<EnvDTE.CodeElement>(containingTypeNode);
             }
         }
 
@@ -120,7 +120,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
             set
             {
-                UpdateNodeAndReaquireNodeKey(FileCodeModel.UpdateIsShared, value);
+                UpdateNodeAndReacquireNodeKey(FileCodeModel.UpdateIsShared, value);
             }
         }
 
@@ -152,7 +152,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
             }
         }
 
-        internal virtual ImmutableArray<IParameterSymbol> GetParameters()
+        internal virtual ImmutableArray<SyntaxNode> GetParameters()
         {
             throw Exceptions.ThrowEFail();
         }
@@ -173,7 +173,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
                 var parameter = FileCodeModel.AddParameter(this, node, name, type, position);
 
-                ReaquireNodeKey(nodePath, CancellationToken.None);
+                ReacquireNodeKey(nodePath, CancellationToken.None);
 
                 return parameter;
             });
@@ -197,12 +197,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.CodeModel.Inter
 
                 if (codeElement == null)
                 {
-                    throw new ArgumentException(ServicesVSResources.ElementIsNotValid, "element");
+                    throw new ArgumentException(ServicesVSResources.Element_is_not_valid, nameof(element));
                 }
 
                 codeElement.Delete();
 
-                ReaquireNodeKey(nodePath, CancellationToken.None);
+                ReacquireNodeKey(nodePath, CancellationToken.None);
             });
         }
 

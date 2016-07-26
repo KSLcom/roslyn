@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis.Editor;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Text;
 using Roslyn.Test.EditorUtilities;
+using Roslyn.Test.Utilities;
 using Xunit;
 
 namespace Microsoft.CodeAnalysis.Editor.UnitTests.EditorAdapter
@@ -17,7 +18,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.EditorAdapter
         {
             var buffer = EditorFactory.CreateBuffer(TestExportProvider.ExportProviderWithCSharpAndVisualBasic, lines);
             var text = buffer.CurrentSnapshot.AsText();
-            return Tuple.Create(buffer.CurrentSnapshot, (SourceText)text);
+            return Tuple.Create(buffer.CurrentSnapshot, text);
         }
 
         [Fact]

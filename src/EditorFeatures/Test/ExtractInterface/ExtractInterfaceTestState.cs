@@ -3,6 +3,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.ExtractInterface;
 using Microsoft.CodeAnalysis.Editor.UnitTests;
@@ -21,18 +22,19 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ExtractInterface
     internal class ExtractInterfaceTestState : IDisposable
     {
         private TestHostDocument _testDocument;
-        public TestWorkspace Workspace { get; private set; }
-        public Document ExtractFromDocument { get; private set; }
-        public AbstractExtractInterfaceService ExtractInterfaceService { get; private set; }
-        public Solution OriginalSolution { get; private set; }
+        public TestWorkspace Workspace { get; }
+        public Document ExtractFromDocument { get; }
+        public AbstractExtractInterfaceService ExtractInterfaceService { get; }
+        public Solution OriginalSolution { get; }
         public string ErrorMessage { get; private set; }
         public NotificationSeverity ErrorSeverity { get; private set; }
 
-        public ExtractInterfaceTestState(string markup, string languageName, CompilationOptions compilationOptions)
-            : this(languageName == LanguageNames.CSharp
-                       ? CSharpWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider: ExportProvider, compilationOptions: compilationOptions as CSharpCompilationOptions)
-                       : VisualBasicWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider: ExportProvider, compilationOptions: compilationOptions))
+        public static async Task<ExtractInterfaceTestState> CreateAsync(string markup, string languageName, CompilationOptions compilationOptions)
         {
+            var workspace = languageName == LanguageNames.CSharp
+                ? await TestWorkspace.CreateCSharpAsync(markup, exportProvider: ExportProvider, compilationOptions: compilationOptions as CSharpCompilationOptions)
+                : await TestWorkspace.CreateVisualBasicAsync(markup, exportProvider: ExportProvider, compilationOptions: compilationOptions);
+            return new ExtractInterfaceTestState(workspace);
         }
 
         public ExtractInterfaceTestState(TestWorkspace workspace)
@@ -44,7 +46,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ExtractInterface
 
             if (_testDocument == null)
             {
-                throw new ArgumentException("markup does not contain a cursor position", "workspace");
+                throw new ArgumentException("markup does not contain a cursor position", nameof(workspace));
             }
 
             ExtractFromDocument = Workspace.CurrentSolution.GetDocument(_testDocument.Id);
@@ -65,13 +67,13 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.ExtractInterface
             }
         }
 
-        public ExtractInterfaceTypeAnalysisResult GetTypeAnalysisResult(TypeDiscoveryRule typeDiscoveryRule)
+        public Task<ExtractInterfaceTypeAnalysisResult> GetTypeAnalysisResultAsync(TypeDiscoveryRule typeDiscoveryRule)
         {
             return ExtractInterfaceService.AnalyzeTypeAtPositionAsync(
                 ExtractFromDocument,
                 _testDocument.CursorPosition.Value,
                 typeDiscoveryRule,
-                CancellationToken.None).WaitAndGetResult(CancellationToken.None);
+                CancellationToken.None);
         }
 
         public ExtractInterfaceResult ExtractViaCommand()

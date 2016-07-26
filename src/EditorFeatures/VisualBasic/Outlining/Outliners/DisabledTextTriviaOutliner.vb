@@ -6,14 +6,10 @@ Imports Microsoft.CodeAnalysis.Text
 Imports Microsoft.CodeAnalysis.Text.Shared.Extensions
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Outlining
-    Class DisabledTextTriviaOutliner
+    Friend Class DisabledTextTriviaOutliner
         Inherits AbstractSyntaxTriviaOutliner
 
         Public Overrides Sub CollectOutliningSpans(document As Document, trivia As SyntaxTrivia, spans As List(Of OutliningSpan), cancellationToken As CancellationToken)
-            CollectOutliningSpans(document.GetSyntaxTreeAsync(cancellationToken).WaitAndGetResult(cancellationToken), trivia, spans, cancellationToken)
-        End Sub
-
-        Friend Overloads Sub CollectOutliningSpans(syntaxTree As SyntaxTree, trivia As SyntaxTrivia, spans As List(Of OutliningSpan), cancellationToken As CancellationToken)
             If trivia.Kind = SyntaxKind.DisabledTextTrivia Then
                 ' Don't include trailing line breaks in spanToCollapse
                 Dim nodeSpan = trivia.Span.ToSpan()
@@ -21,9 +17,9 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Outlining
                 Dim endPos = startPos + trivia.ToString().TrimEnd().Length
 
                 spans.Add(
-                    VisualBasicOutliningHelpers.CreateRegion(
-                        TextSpan.FromBounds(startPos, endPos),
-                        Ellipsis,
+                    CreateRegion(
+                        span:=TextSpan.FromBounds(startPos, endPos),
+                        bannerText:=Ellipsis,
                         autoCollapse:=True))
             End If
         End Sub

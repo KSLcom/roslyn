@@ -2,10 +2,9 @@
 
 Imports System.Runtime.CompilerServices
 Imports Microsoft.CodeAnalysis
-Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Utilities
-    Module NamedTypeSymbolExtensions
+    Friend Module NamedTypeSymbolExtensions
         ''' <summary>
         ''' Determines if the default constructor emitted by the compiler would contain an InitializeComponent() call.
         ''' </summary>

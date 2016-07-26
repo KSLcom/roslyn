@@ -1,14 +1,10 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Linq;
-using Microsoft.CodeAnalysis.CSharp.Emit;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.RuntimeMembers;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.CSharp
 {
@@ -16,7 +12,7 @@ namespace Microsoft.CodeAnalysis.CSharp
     /// Contains methods related to synthesizing bound nodes in initial binding 
     /// form that needs lowering, primarily method bodies for compiler-generated methods.
     /// </summary>
-    internal static partial class MethodBodySynthesizer
+    internal static class MethodBodySynthesizer
     {
         internal static ImmutableArray<BoundStatement> ConstructScriptConstructorBody(
             BoundStatement loweredBody,
@@ -42,7 +38,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 new BoundExpressionStatement(syntax,
                     new BoundCall(syntax,
                         receiverOpt: receiver,
-                        method: objectType.InstanceConstructors.First(),
+                        method: objectType.InstanceConstructors[0],
                         arguments: ImmutableArray<BoundExpression>.Empty,
                         argumentNamesOpt: ImmutableArray<string>.Empty,
                         argumentRefKindsOpt: ImmutableArray<RefKind>.Empty,
@@ -55,16 +51,17 @@ namespace Microsoft.CodeAnalysis.CSharp
                     { WasCompilerGenerated = true })
                 { WasCompilerGenerated = true };
 
-            var boundStatements = ImmutableArray.Create(baseConstructorCall);
+            var statements = ArrayBuilder<BoundStatement>.GetInstance();
+            statements.Add(baseConstructorCall);
 
             if (constructor.IsSubmissionConstructor)
             {
                 // submission initialization:
-                var submissionInitStatements = MakeSubmissionInitialization(syntax, constructor, previousSubmissionFields, compilation);
-                boundStatements = boundStatements.Concat(submissionInitStatements);
+                MakeSubmissionInitialization(statements, syntax, constructor, previousSubmissionFields, compilation);
             }
 
-            return boundStatements.Concat(ImmutableArray.Create(loweredBody));
+            statements.Add(loweredBody);
+            return statements.ToImmutableAndFree();
         }
 
         /// <summary>
@@ -76,11 +73,14 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// and retrieves strongly typed references on all previous submission script classes whose members are referenced by this submission.
         /// The references are stored to fields of the submission (<paramref name="synthesizedFields"/>).
         /// </remarks>
-        private static ImmutableArray<BoundStatement> MakeSubmissionInitialization(CSharpSyntaxNode syntax, MethodSymbol submissionConstructor, SynthesizedSubmissionFields synthesizedFields, CSharpCompilation compilation)
+        private static void MakeSubmissionInitialization(
+            ArrayBuilder<BoundStatement> statements,
+            CSharpSyntaxNode syntax,
+            MethodSymbol submissionConstructor,
+            SynthesizedSubmissionFields synthesizedFields,
+            CSharpCompilation compilation)
         {
-            Debug.Assert(submissionConstructor.ParameterCount == 2);
-
-            var statements = new List<BoundStatement>(2 + synthesizedFields.Count);
+            Debug.Assert(submissionConstructor.ParameterCount == 1);
 
             var submissionArrayReference = new BoundParameter(syntax, submissionConstructor.Parameters[0]) { WasCompilerGenerated = true };
 
@@ -157,8 +157,6 @@ namespace Microsoft.CodeAnalysis.CSharp
                         { WasCompilerGenerated = true })
                     { WasCompilerGenerated = true });
             }
-
-            return statements.AsImmutableOrNull();
         }
 
         /// <summary>
@@ -183,26 +181,23 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             if (accessor.MethodKind == MethodKind.PropertyGet)
             {
-                statement = new BoundReturnStatement(syntax, fieldAccess) { WasCompilerGenerated = true };
+                statement = new BoundReturnStatement(accessor.SyntaxNode, RefKind.None, fieldAccess);
             }
             else
             {
                 Debug.Assert(accessor.MethodKind == MethodKind.PropertySet);
                 var parameter = accessor.Parameters[0];
                 statement = new BoundExpressionStatement(
-                    syntax,
+                    accessor.SyntaxNode,
                     new BoundAssignmentOperator(
                         syntax,
                         fieldAccess,
                         new BoundParameter(syntax, parameter) { WasCompilerGenerated = true },
                         property.Type)
-                    { WasCompilerGenerated = true })
-                { WasCompilerGenerated = true };
+                    { WasCompilerGenerated = true });
             }
 
-            statement = new BoundSequencePoint(accessor.SyntaxNode, statement) { WasCompilerGenerated = true };
-
-            return new BoundBlock(syntax, ImmutableArray<LocalSymbol>.Empty, ImmutableArray.Create<BoundStatement>(statement)) { WasCompilerGenerated = true };
+            return BoundBlock.SynthesizedNoLocals(syntax, statement);
         }
 
         /// <summary>
@@ -288,7 +283,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             // value
             BoundParameter parameterAccess = new BoundParameter(
                 syntax,
-                accessor.Parameters.Single());
+                accessor.Parameters[0]);
 
             // EventRegistrationTokenTable<Event>.GetOrCreateEventRegistrationTokenTable(ref _tokenTable).AddHandler(value) // or RemoveHandler
             BoundCall processHandlerCall = BoundCall.Synthesized(
@@ -302,7 +297,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // {
                 //     return EventRegistrationTokenTable<Event>.GetOrCreateEventRegistrationTokenTable(ref _tokenTable).AddHandler(value);
                 // }   
-                BoundStatement returnStatement = BoundReturnStatement.Synthesized(syntax, processHandlerCall);
+                BoundStatement returnStatement = BoundReturnStatement.Synthesized(syntax, RefKind.None, processHandlerCall);
                 return BoundBlock.SynthesizedNoLocals(syntax, returnStatement);
             }
             else
@@ -312,7 +307,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 //     return;
                 // }  
                 BoundStatement callStatement = new BoundExpressionStatement(syntax, processHandlerCall);
-                BoundStatement returnStatement = new BoundReturnStatement(syntax, expressionOpt: null);
+                BoundStatement returnStatement = new BoundReturnStatement(syntax, RefKind.None, expressionOpt: null);
                 return BoundBlock.SynthesizedNoLocals(syntax, callStatement, returnStatement);
             }
         }
@@ -349,6 +344,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             MethodSymbol updateMethod = (MethodSymbol)compilation.GetSpecialTypeMember(updateMethodId);
 
             BoundStatement @return = new BoundReturnStatement(syntax,
+                refKind: RefKind.None,
                 expressionOpt: null)
             { WasCompilerGenerated = true };
 
@@ -360,10 +356,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                                                                       memberDescriptor.Name),
                                                                       syntax.Location));
 
-                return new BoundBlock(syntax,
-                    locals: ImmutableArray<LocalSymbol>.Empty,
-                    statements: ImmutableArray.Create<BoundStatement>(@return))
-                { WasCompilerGenerated = true };
+                return BoundBlock.SynthesizedNoLocals(syntax, @return);
             }
 
             Binder.ReportUseSiteDiagnostics(updateMethod, diagnostics, syntax);
@@ -394,7 +387,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         receiverOpt: null,
                         method: updateMethod,
                         arguments: ImmutableArray.Create<BoundExpression>(boundBackingField, boundParameter)),
-                    kind: ConversionKind.ExplicitReference,
+                    conversion: Conversion.ExplicitReference,
                     type: delegateType);
 
                 // _event = (DelegateType)Delegate.Combine(_event, value);
@@ -406,12 +399,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                     { WasCompilerGenerated = true })
                 { WasCompilerGenerated = true };
 
-                return new BoundBlock(syntax,
-                    locals: ImmutableArray<LocalSymbol>.Empty,
+                return BoundBlock.SynthesizedNoLocals(syntax,
                     statements: ImmutableArray.Create<BoundStatement>(
                         eventUpdate,
-                        @return))
-                { WasCompilerGenerated = true };
+                        @return));
             }
 
             compareExchangeMethod = compareExchangeMethod.Construct(ImmutableArray.Create<TypeSymbol>(delegateType));
@@ -460,7 +451,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     receiverOpt: null,
                     method: updateMethod,
                     arguments: ImmutableArray.Create<BoundExpression>(boundTmps[1], boundParameter)),
-                kind: ConversionKind.ExplicitReference,
+                conversion: Conversion.ExplicitReference,
                 type: delegateType);
 
             // tmp2 = (DelegateType)Delegate.Combine(tmp1, value);
@@ -507,6 +498,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             return new BoundBlock(syntax,
                 locals: tmps.AsImmutable(),
+                localFunctions: ImmutableArray<LocalFunctionSymbol>.Empty,
                 statements: ImmutableArray.Create<BoundStatement>(
                     tmp0Init,
                     loopStart,
@@ -550,6 +542,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return new BoundBlock(
                     syntax,
                     ImmutableArray<LocalSymbol>.Empty,
+                    ImmutableArray<LocalFunctionSymbol>.Empty,
                     ImmutableArray.Create<BoundStatement>(
                         new BoundTryStatement(
                             syntax,
@@ -558,6 +551,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                             new BoundBlock(
                                 syntax,
                                 ImmutableArray<LocalSymbol>.Empty,
+                                ImmutableArray<LocalFunctionSymbol>.Empty,
                                 ImmutableArray.Create<BoundStatement>(
                                     baseFinalizeCall)
                             )

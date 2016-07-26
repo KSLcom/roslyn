@@ -24,13 +24,13 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ExtractInterfac
         internal static event Action TEST_DialogLoaded;
 
         // Expose localized strings for binding
-        public string ExtractInterfaceDialogTitle { get { return ServicesVSResources.ExtractInterface; } }
-        public string NewInterfaceName { get { return ServicesVSResources.NewInterfaceName; } }
-        public string GeneratedName { get { return ServicesVSResources.GeneratedName; } }
-        public string NewFileName { get { return ServicesVSResources.NewFileName; } }
-        public string SelectPublicMembersToFormInterface { get { return ServicesVSResources.SelectPublicMembersToFormInterface; } }
-        public string SelectAll { get { return ServicesVSResources.SelectAll; } }
-        public string DeselectAll { get { return ServicesVSResources.DeselectAll; } }
+        public string ExtractInterfaceDialogTitle { get { return ServicesVSResources.Extract_Interface; } }
+        public string NewInterfaceName { get { return ServicesVSResources.New_interface_name_colon; } }
+        public string GeneratedName { get { return ServicesVSResources.Generated_name_colon; } }
+        public string NewFileName { get { return ServicesVSResources.New_file_name_colon; } }
+        public string SelectPublicMembersToFormInterface { get { return ServicesVSResources.Select_public_members_to_form_interface; } }
+        public string SelectAll { get { return ServicesVSResources.Select_All; } }
+        public string DeselectAll { get { return ServicesVSResources.Deselect_All; } }
         public string OK { get { return ServicesVSResources.OK; } }
         public string Cancel { get { return ServicesVSResources.Cancel; } }
 
@@ -45,17 +45,21 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ExtractInterfac
             DataContext = viewModel;
 
             Loaded += ExtractInterfaceDialog_Loaded;
+            IsVisibleChanged += ExtractInterfaceDialog_IsVisibleChanged;
         }
 
         private void ExtractInterfaceDialog_Loaded(object sender, RoutedEventArgs e)
         {
             interfaceNameTextBox.Focus();
             interfaceNameTextBox.SelectAll();
+        }
 
-            var handler = TEST_DialogLoaded;
-            if (handler != null)
+        private void ExtractInterfaceDialog_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if ((bool)e.NewValue)
             {
-                handler();
+                IsVisibleChanged -= ExtractInterfaceDialog_IsVisibleChanged;
+                TEST_DialogLoaded?.Invoke();
             }
         }
 

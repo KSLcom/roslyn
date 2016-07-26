@@ -21,7 +21,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim objectType = GetSpecialType(SpecialType.System_Object)
             Dim useSiteDiagnostics As HashSet(Of DiagnosticInfo) = Nothing
             Dim conversionKind = Conversions.ClassifyConversion(visitedLockExpression.Type, objectType, useSiteDiagnostics).Key
-            diagnostics.Add(node, useSiteDiagnostics)
+            _diagnostics.Add(node, useSiteDiagnostics)
 
             ' when passing this boundlocal to Monitor.Enter and Monitor.Exit we need to pass a local of type object, because the parameter
             ' are of type object. We also do not want to have this conversion being shown in the semantic model, which is why we add it 
@@ -44,15 +44,20 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
 
             ' create a new temp local for the lock object
-            Dim tempLockObjectLocal As LocalSymbol = New SynthesizedLocal(Me.currentMethodOrLambda, objectType, SynthesizedLocalKind.Lock, syntaxNode.SyncLockStatement)
+            Dim tempLockObjectLocal As LocalSymbol = New SynthesizedLocal(Me._currentMethodOrLambda, objectType, SynthesizedLocalKind.Lock, syntaxNode.SyncLockStatement)
             Dim boundLockObjectLocal = New BoundLocal(syntaxNode,
                                                       tempLockObjectLocal,
                                                       objectType)
 
-            If GenerateDebugInfo Then
+            Dim instrument As Boolean = Me.Instrument(node)
+
+            If instrument Then
                 ' create a sequence point that contains the whole SyncLock statement as the first reachable sequence point
                 ' of the SyncLock statement. 
-                statements.Add(New BoundSequencePoint(syntaxNode.SyncLockStatement, Nothing))
+                Dim prologue = _instrumenter.CreateSyncLockStatementPrologue(node)
+                If prologue IsNot Nothing Then
+                    statements.Add(prologue)
+                End If
             End If
 
             ' assign the lock expression / object to it to avoid changes to it
@@ -70,8 +75,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             Dim saveState As UnstructuredExceptionHandlingContext = LeaveUnstructuredExceptionHandlingContext(node)
 
-            If GenerateDebugInfo Then
-                tempLockObjectAssignment = New BoundSequencePoint(visitedLockExpression.Syntax, tempLockObjectAssignment)
+            If instrument Then
+                tempLockObjectAssignment = _instrumenter.InstrumentSyncLockObjectCapture(node, tempLockObjectAssignment)
             End If
 
             statements.Add(tempLockObjectAssignment)
@@ -129,19 +134,21 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                            ImmutableArray(Of LocalSymbol).Empty,
                                                            ImmutableArray.Create(Of BoundStatement)(statementInFinally))
 
-            If GenerateDebugInfo Then
+            If instrument Then
                 ' Add a sequence point to highlight the "End SyncLock" syntax in case the body has thrown an exception
-                finallyBody = DirectCast(InsertEndBlockSequencePoint(finallyBody,
-                                                                     syntaxNode.EndSyncLockStatement), BoundBlock)
+                finallyBody = DirectCast(Concat(finallyBody, _instrumenter.CreateSyncLockExitDueToExceptionEpilogue(node)), BoundBlock)
             End If
 
             Dim rewrittenSyncLock = RewriteTryStatement(syntaxNode, tryBody, ImmutableArray(Of BoundCatchBlock).Empty, finallyBody, Nothing)
             statements.Add(rewrittenSyncLock)
 
-            If GenerateDebugInfo Then
+            If instrument Then
                 ' Add a sequence point to highlight the "End SyncLock" syntax in case the body has been complete executed and
                 ' exited normally
-                statements.Add(New BoundSequencePoint(syntaxNode.EndSyncLockStatement, Nothing))
+                Dim epilogue = _instrumenter.CreateSyncLockExitNormallyEpilogue(node)
+                If epilogue IsNot Nothing Then
+                    statements.Add(epilogue)
+                End If
             End If
 
             RestoreUnstructuredExceptionHandlingContext(node, saveState)
@@ -170,9 +177,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 ' create local for the lockTaken boolean and initialize it with "False"
                 Dim tempLockTaken As LocalSymbol
                 If syntaxNode.Parent.Kind = SyntaxKind.SyncLockStatement Then
-                    tempLockTaken = New SynthesizedLocal(Me.currentMethodOrLambda, enterMethod.Parameters(1).Type, SynthesizedLocalKind.LockTaken, DirectCast(syntaxNode.Parent, SyncLockStatementSyntax))
+                    tempLockTaken = New SynthesizedLocal(Me._currentMethodOrLambda, enterMethod.Parameters(1).Type, SynthesizedLocalKind.LockTaken, DirectCast(syntaxNode.Parent, SyncLockStatementSyntax))
                 Else
-                    tempLockTaken = New SynthesizedLocal(Me.currentMethodOrLambda, enterMethod.Parameters(1).Type, SynthesizedLocalKind.LoweringTemp)
+                    tempLockTaken = New SynthesizedLocal(Me._currentMethodOrLambda, enterMethod.Parameters(1).Type, SynthesizedLocalKind.LoweringTemp)
                 End If
 
                 Debug.Assert(tempLockTaken.Type.IsBooleanType())
@@ -253,7 +260,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                              New BoundLiteral(syntaxNode, ConstantValue.True, boundLockTakenLocal.Type),
                                                              False,
                                                              boundLockTakenLocal.Type)
-                statementInFinally = RewriteIfStatement(syntaxNode, syntaxNode, boundCondition, boundMonitorExitCallStatement, Nothing, generateDebugInfo:=False)
+                statementInFinally = RewriteIfStatement(syntaxNode, boundCondition, boundMonitorExitCallStatement, Nothing, instrumentationTargetOpt:=Nothing)
             Else
                 statementInFinally = boundMonitorExitCallStatement
             End If

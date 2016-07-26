@@ -1,11 +1,10 @@
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel.Composition;
-using System.Reflection;
 using System.Threading.Tasks;
-using System.Windows.Controls;
-using System.Windows.Media.Imaging;
 using Microsoft.VisualStudio.Language.StandardClassification;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
@@ -17,22 +16,23 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
     {
         private const string CommandName = "reset";
         private const string NoConfigParameterName = "noconfig";
-        private readonly IStandardClassificationService registry;
+        private static readonly int s_noConfigParameterNameLength = NoConfigParameterName.Length;
+        private readonly IStandardClassificationService _registry;
 
         [ImportingConstructor]
         public ResetCommand(IStandardClassificationService registry)
         {
-            this.registry = registry;
+            _registry = registry;
         }
 
         public override string Description
         {
-            get { return "Reset the execution environment to the initial state, keep REPL history."; }
+            get { return InteractiveWindowResources.ResetCommandDescription; }
         }
 
-        public override string Name
+        public override IEnumerable<string> Names
         {
-            get { return CommandName; }
+            get { yield return CommandName; }
         }
 
         public override string CommandLine
@@ -44,63 +44,73 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
         {
             get
             {
-                return new ReadOnlyCollection<KeyValuePair<string, string>>(new[]
-                {
-                    new KeyValuePair<string, string>(NoConfigParameterName, "Reset to a clean environment (only mscorlib referenced), do not run initialization script.")
-                });
+                yield return new KeyValuePair<string, string>(NoConfigParameterName, InteractiveWindowResources.ResetCommandParametersDescription);
             }
         }
 
         public override Task<ExecutionResult> Execute(IInteractiveWindow window, string arguments)
         {
-            int noConfigStart, noConfigEnd;
-            bool? init = ParseArguments(arguments, out noConfigStart, out noConfigEnd);
-            if (init == null)
+            bool initialize;
+            if (!TryParseArguments(arguments, out initialize))
             {
                 ReportInvalidArguments(window);
                 return ExecutionResult.Failed;
             }
 
-            return ((InteractiveWindow)window).ResetAsync(init.Value);
-        }
-
-        internal static string BuildCommandLine(bool initialize)
-        {
-            string result = CommandName;
-            return initialize ? result : result + " " + NoConfigParameterName;
+            return window.Operations.ResetAsync(initialize);
         }
 
         public override IEnumerable<ClassificationSpan> ClassifyArguments(ITextSnapshot snapshot, Span argumentsSpan, Span spanToClassify)
         {
             string arguments = snapshot.GetText(argumentsSpan);
-
-            int noConfigStart, noConfigEnd;
-            bool? init = ParseArguments(arguments, out noConfigStart, out noConfigEnd);
-
-            if (noConfigStart >= 0)
+            int argumentsStart = argumentsSpan.Start;
+            foreach (var pos in GetNoConfigPositions(arguments))
             {
-                yield return new ClassificationSpan(new SnapshotSpan(snapshot, Span.FromBounds(argumentsSpan.Start + noConfigStart, argumentsSpan.Start + noConfigEnd)), registry.Keyword);
+                var snapshotSpan = new SnapshotSpan(snapshot, new Span(argumentsStart + pos, s_noConfigParameterNameLength));
+                yield return new ClassificationSpan(snapshotSpan, _registry.Keyword);
             }
         }
 
-        private static bool? ParseArguments(string arguments, out int noConfigStart, out int noConfigEnd)
+        /// <remarks>
+        /// Internal for testing.
+        /// </remarks>
+        internal static IEnumerable<int> GetNoConfigPositions(string arguments)
         {
-            noConfigStart = noConfigEnd = -1;
-
-            string noconfig = arguments.Trim();
-            if (noconfig.Length == 0)
+            int startIndex = 0;
+            while (true)
             {
+                int index = arguments.IndexOf(NoConfigParameterName, startIndex, StringComparison.Ordinal);
+                if (index < 0) yield break;
+
+                if ((index == 0 || char.IsWhiteSpace(arguments[index - 1])) &&
+                    (index + s_noConfigParameterNameLength == arguments.Length || char.IsWhiteSpace(arguments[index + s_noConfigParameterNameLength])))
+                {
+                    yield return index;
+                }
+
+                startIndex = index + s_noConfigParameterNameLength;
+            }
+        }
+
+        /// <remarks>
+        /// Internal for testing.
+        /// </remarks>
+        internal static bool TryParseArguments(string arguments, out bool initialize)
+        {
+            var trimmed = arguments.Trim();
+            if (trimmed.Length == 0)
+            {
+                initialize = true;
+                return true;
+            }
+            else if (string.Equals(trimmed, NoConfigParameterName, StringComparison.Ordinal))
+            {
+                initialize = false;
                 return true;
             }
 
-            if (string.Compare(noconfig, NoConfigParameterName, StringComparison.OrdinalIgnoreCase) == 0)
-            {
-                noConfigStart = arguments.IndexOf(noconfig, StringComparison.OrdinalIgnoreCase);
-                noConfigEnd = noConfigStart + noconfig.Length;
-                return false;
-            }
-
-            return null;
+            initialize = false;
+            return false;
         }
     }
 }

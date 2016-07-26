@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Immutable;
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.Symbols;
 
 namespace Microsoft.CodeAnalysis.CodeGen
@@ -15,7 +16,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             string nameOpt,
             SynthesizedLocalKind kind,
             LocalDebugId id,
-            uint pdbAttributes,
+            LocalVariableAttributes pdbAttributes,
             LocalSlotConstraints constraints,
             bool isDynamic,
             ImmutableArray<TypedConstant> dynamicTransformFlags);
@@ -30,6 +31,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             Cci.ITypeReference currentType,
             SynthesizedLocalKind synthesizedKind,
             LocalDebugId currentId,
+            DiagnosticBag diagnostics,
             out int slotIndex);
 
         /// <summary>
@@ -44,7 +46,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         /// <summary>
         /// Returns true and an index of a slot that stores an awaiter of a specified type in the previous generation, if any. 
         /// </summary>
-        public abstract bool TryGetPreviousAwaiterSlotIndex(Cci.ITypeReference currentType, out int slotIndex);
+        public abstract bool TryGetPreviousAwaiterSlotIndex(Cci.ITypeReference currentType, DiagnosticBag diagnostics, out int slotIndex);
 
         /// <summary>
         /// Number of slots reserved for awaiters.
@@ -56,9 +58,9 @@ namespace Microsoft.CodeAnalysis.CodeGen
         public abstract int PreviousAwaiterSlotCount { get; }
 
         /// <summary>
-        /// The id of the method in the previous generation.
+        /// The id of the method, or null if the method wasn't assigned one.
         /// </summary>
-        public abstract MethodDebugId PreviousMethodId { get; }
+        public abstract DebugId? MethodId { get; }
 
         /// <summary>
         /// Finds a closure in the previous generation that corresponds to the specified syntax.
@@ -66,13 +68,13 @@ namespace Microsoft.CodeAnalysis.CodeGen
         /// <remarks>
         /// See LambdaFrame.AssertIsLambdaScopeSyntax for kinds of syntax nodes that represent closures.
         /// </remarks>
-        public abstract bool TryGetPreviousClosure(SyntaxNode closureSyntax, out int closureOrdinal);
+        public abstract bool TryGetPreviousClosure(SyntaxNode closureSyntax, out DebugId closureId);
 
         /// <summary>
         /// Finds a lambda in the previous generation that corresponds to the specified syntax.
         /// The <paramref name="lambdaOrLambdaBodySyntax"/> is either a lambda syntax (<paramref name="isLambdaBody"/> is false),
         /// or lambda body syntax (<paramref name="isLambdaBody"/> is true).
         /// </summary>
-        public abstract bool TryGetPreviousLambda(SyntaxNode lambdaOrLambdaBodySyntax, bool isLambdaBody, out int lambdaOrdinal);
+        public abstract bool TryGetPreviousLambda(SyntaxNode lambdaOrLambdaBodySyntax, bool isLambdaBody, out DebugId lambdaId);
     }
 }

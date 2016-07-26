@@ -19,14 +19,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
 {
     internal class ProjectExternalErrorReporter : IVsReportExternalErrors, IVsLanguageServiceBuildErrorReporter2
     {
-        private const string Build = "Build";
-        private const string FxCopPrefix = "CA";
-        private const string WMEPrefix = "WME";
-
-        internal static readonly IReadOnlyList<string> CustomTags = ImmutableArray.Create(WellKnownDiagnosticTags.Build, WellKnownDiagnosticTags.Telemetry);
+        internal static readonly IReadOnlyList<string> CustomTags = ImmutableArray.Create(WellKnownDiagnosticTags.Telemetry);
+        internal static readonly IReadOnlyList<string> CompilerDiagnosticCustomTags = ImmutableArray.Create(WellKnownDiagnosticTags.Compiler, WellKnownDiagnosticTags.Telemetry);
 
         private readonly ProjectId _projectId;
         private readonly string _errorCodePrefix;
+
         private readonly VisualStudioWorkspaceImpl _workspace;
         private readonly ExternalErrorDiagnosticUpdateSource _diagnosticProvider;
 
@@ -34,11 +32,23 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
         {
             _projectId = projectId;
             _errorCodePrefix = errorCodePrefix;
-            _diagnosticProvider = serviceProvider.GetMefService<ExternalErrorDiagnosticUpdateSource>();
-            _workspace = serviceProvider.GetMefService<VisualStudioWorkspaceImpl>();
 
-            Debug.Assert(_diagnosticProvider != null);
+            _workspace = serviceProvider.GetMefService<VisualStudioWorkspaceImpl>();
+            _diagnosticProvider = serviceProvider.GetMefService<ExternalErrorDiagnosticUpdateSource>();
+
             Debug.Assert(_workspace != null);
+            Debug.Assert(_diagnosticProvider != null);
+        }
+
+        private bool CanHandle(string errorId)
+        {
+            // we accept all compiler diagnostics
+            if (errorId.StartsWith(_errorCodePrefix))
+            {
+                return true;
+            }
+
+            return _diagnosticProvider.SupportedDiagnosticId(_projectId, errorId);
         }
 
         public int AddNewErrors(IVsEnumExternalErrors pErrors)
@@ -84,7 +94,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
         public int GetErrors(out IVsEnumExternalErrors pErrors)
         {
             pErrors = null;
-            Debug.Fail("This is not implmented, because no one called it.");
+            Debug.Fail("This is not implemented, because no one called it.");
             return VSConstants.E_NOTIMPL;
         }
 
@@ -137,27 +147,19 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
         // TODO: Use PreserveSig instead of throwing these exceptions for common cases.
         public void ReportError2(string bstrErrorMessage, string bstrErrorId, [ComAliasName("VsShell.VSTASKPRIORITY")]VSTASKPRIORITY nPriority, int iStartLine, int iStartColumn, int iEndLine, int iEndColumn, string bstrFileName)
         {
+            // first we check whether given error is something we can take care.
+            if (!CanHandle(bstrErrorId))
+            {
+                // it is not, let project system takes care.
+                throw new NotImplementedException();
+            }
+
             if ((iEndLine >= 0 && iEndColumn >= 0) &&
-                ((iEndLine < iStartLine) ||
-                 (iEndLine == iStartLine && iEndColumn < iStartColumn)))
+               ((iEndLine < iStartLine) ||
+                (iEndLine == iStartLine && iEndColumn < iStartColumn)))
             {
-                throw new ArgumentException(ServicesVSResources.EndPositionMustBeGreaterThanStart);
+                throw new ArgumentException(ServicesVSResources.End_position_must_be_start_position);
             }
-
-            // We only handle errors that have positions.  For the rest, we punt back to the 
-            // project system.
-            if (iStartLine < 0 || iStartColumn < 0)
-            {
-                throw new NotImplementedException();
-            }
-
-            var hostProject = _workspace.GetHostProject(_projectId);
-            if (!hostProject.ContainsFile(bstrFileName))
-            {
-                throw new NotImplementedException();
-            }
-
-            var hostDocument = hostProject.GetCurrentDocumentFromPath(bstrFileName);
 
             var priority = (VSTASKPRIORITY)nPriority;
             DiagnosticSeverity severity;
@@ -173,12 +175,38 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
                     severity = DiagnosticSeverity.Info;
                     break;
                 default:
-                    throw new ArgumentException(ServicesVSResources.NotAValidValue, "nPriority");
+                    throw new ArgumentException(ServicesVSResources.Not_a_valid_value, nameof(nPriority));
             }
+
+            if (iStartLine < 0 || iStartColumn < 0)
+            {
+                // we now takes care of errors that is not belong to file as well.
+                var projectDiagnostic = GetDiagnosticData(
+                    null, bstrErrorId, bstrErrorMessage, severity,
+                    null, 0, 0, 0, 0,
+                    bstrFileName, 0, 0, 0, 0);
+
+                _diagnosticProvider.AddNewErrors(_projectId, projectDiagnostic);
+                return;
+            }
+
+            var hostProject = _workspace.GetHostProject(_projectId);
+            if (!hostProject.ContainsFile(bstrFileName))
+            {
+                var projectDiagnostic = GetDiagnosticData(
+                    null, bstrErrorId, bstrErrorMessage, severity,
+                    null, iStartLine, iStartColumn, iEndLine, iEndColumn,
+                    bstrFileName, iStartLine, iStartColumn, iEndLine, iEndColumn);
+
+                _diagnosticProvider.AddNewErrors(_projectId, projectDiagnostic);
+                return;
+            }
+
+            var hostDocument = hostProject.GetCurrentDocumentFromPath(bstrFileName);
 
             var diagnostic = GetDiagnosticData(
                 hostDocument.Id, bstrErrorId, bstrErrorMessage, severity,
-                bstrFileName, iStartLine, iStartColumn, iEndLine, iEndColumn,
+                null, iStartLine, iStartColumn, iEndLine, iEndColumn,
                 bstrFileName, iStartLine, iStartColumn, iEndLine, iEndColumn);
 
             _diagnosticProvider.AddNewErrors(hostDocument.Id, diagnostic);
@@ -211,14 +239,35 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
             if (id != null)
             {
                 // save error line/column (surface buffer location) as mapped line/column so that we can display
-                // right location on closed venus file.
+                // right location on closed Venus file.
                 return GetDiagnosticData(
                     id, GetErrorId(error), error.bstrText, GetDiagnosticSeverity(error),
-                    error.bstrFileName, error.iLine, error.iCol, error.iLine, error.iCol, error.bstrFileName, line, column, line, column);
+                    null, error.iLine, error.iCol, error.iLine, error.iCol, error.bstrFileName, line, column, line, column);
             }
 
             return GetDiagnosticData(
                 id, GetErrorId(error), error.bstrText, GetDiagnosticSeverity(error), null, 0, 0, 0, 0, null, 0, 0, 0, 0);
+        }
+
+        private static bool IsCompilerDiagnostic(string errorId)
+        {
+            if (!string.IsNullOrEmpty(errorId) && errorId.Length > 2)
+            {
+                var prefix = errorId.Substring(0, 2);
+                if (prefix.Equals("CS", StringComparison.OrdinalIgnoreCase) || prefix.Equals("BC", StringComparison.OrdinalIgnoreCase))
+                {
+                    var suffix = errorId.Substring(2);
+                    int id;
+                    return int.TryParse(suffix, out id);
+                }
+            }
+
+            return false;
+        }
+
+        private static IReadOnlyList<string> GetCustomTags(string errorId)
+        {
+            return IsCompilerDiagnostic(errorId) ? CompilerDiagnosticCustomTags : CustomTags;
         }
 
         private DiagnosticData GetDiagnosticData(
@@ -228,28 +277,30 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.TaskList
         {
             return new DiagnosticData(
                 id: errorId,
-                category: Build,
+                category: WellKnownDiagnosticTags.Build,
                 message: message,
-                messageFormat: message,
+                title: message,
+                enuMessageForBingSearch: message, // Unfortunately, there is no way to get ENU text for this since this is an external error.
                 severity: severity,
                 defaultSeverity: severity,
                 isEnabledByDefault: true,
                 warningLevel: GetWarningLevel(severity),
-                customTags: CustomTags,
-                properties: ImmutableDictionary<string, string>.Empty,
+                customTags: GetCustomTags(errorId),
+                properties: DiagnosticData.PropertiesForBuildDiagnostic,
                 workspace: _workspace,
                 projectId: _projectId,
-                documentId: id,
-                mappedFilePath: mappedFilePath,
-                mappedStartLine: mappedStartLine,
-                mappedStartColumn: mappedStartColumn,
-                mappedEndLine: mappedEndLine,
-                mappedEndColumn: mappedEndColumn,
-                originalFilePath: originalFilePath,
-                originalStartLine: originalStartLine,
-                originalStartColumn: originalStartColumn,
-                originalEndLine: originalEndLine,
-                originalEndColumn: originalEndColumn);
+                location: new DiagnosticDataLocation(id,
+                    sourceSpan: null,
+                    originalFilePath: originalFilePath,
+                    originalStartLine: originalStartLine,
+                    originalStartColumn: originalStartColumn,
+                    originalEndLine: originalEndLine,
+                    originalEndColumn: originalEndColumn,
+                    mappedFilePath: mappedFilePath,
+                    mappedStartLine: mappedStartLine,
+                    mappedStartColumn: mappedStartColumn,
+                    mappedEndLine: mappedEndLine,
+                    mappedEndColumn: mappedEndColumn));
         }
     }
 }

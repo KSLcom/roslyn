@@ -14,23 +14,23 @@ namespace Microsoft.CodeAnalysis.Editor
         /// <summary>
         /// The text buffer of where the caret is when the command happens.
         /// </summary>
-        public ITextBuffer SubjectBuffer { get; private set; }
+        public ITextBuffer SubjectBuffer { get; }
 
         /// <summary>
         /// The text view that originated this command.
         /// </summary>
-        public ITextView TextView { get; private set; }
+        public ITextView TextView { get; }
 
         public CommandArgs(ITextView textView, ITextBuffer subjectBuffer)
         {
             if (textView == null)
             {
-                throw new ArgumentNullException("textView");
+                throw new ArgumentNullException(nameof(textView));
             }
 
             if (subjectBuffer == null)
             {
-                throw new ArgumentNullException("subjectBuffer");
+                throw new ArgumentNullException(nameof(subjectBuffer));
             }
 
             this.TextView = textView;

@@ -1,12 +1,14 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
+Imports Microsoft.CodeAnalysis.Editor.UnitTests.Utilities
 Imports Microsoft.CodeAnalysis.Navigation
 Imports Microsoft.VisualStudio.Language.CallHierarchy
 
 Namespace Microsoft.CodeAnalysis.Editor.UnitTests.CallHierarchy
     Public Class CallHierarchyTests
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub TestScopes()
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestScopes() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
@@ -23,7 +25,7 @@ namespace C
 using C;
 namespace G
 {
-    public Class G
+    public class G
     {
         public void G()
         {
@@ -62,17 +64,17 @@ public class DSSS
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
-            testState.VerifyResult(root, "Calls To 'GetFive'", {"DSSS.bar()", "D.bar()", "G.G.G()"}, CallHierarchySearchScope.EntireSolution)
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Calls_To_0, "GetFive"), {"DSSS.bar()", "D.bar()", "G.G.G()"}, CallHierarchySearchScope.EntireSolution)
             Dim documents = testState.GetDocuments({"Test3.cs", "Test4.cs"})
-            testState.VerifyResult(root, "Calls To 'GetFive'", {"DSSS.bar()", "D.bar()"}, CallHierarchySearchScope.CurrentProject)
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Calls_To_0, "GetFive"), {"DSSS.bar()", "D.bar()", "G.G.G()"}, CallHierarchySearchScope.CurrentProject)
             documents = testState.GetDocuments({"Test3.cs"})
-            testState.VerifyResult(root, "Calls To 'GetFive'", {"D.bar()"}, CallHierarchySearchScope.CurrentDocument, documents)
-        End Sub
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Calls_To_0, "GetFive"), {"D.bar()"}, CallHierarchySearchScope.CurrentDocument, documents)
+        End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub VBMethod()
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestVBMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
@@ -86,13 +88,13 @@ End Class
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
-            testState.VerifyResult(root, "Calls To 'Foo'", {"C.Foo()"})
-        End Sub
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Calls_To_0, "Foo"), {"C.Foo()"})
+        End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub VBInterface()
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestVBInterface() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
@@ -111,13 +113,13 @@ End Interface
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
-            testState.VerifyResult(root, "Implements 'Foo'", {"C.Foo()"})
-        End Sub
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Implements_0, "Foo"), {"C.Foo()"})
+        End Function
 
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub TestInterfaceScopes()
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestInterfaceScopes() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
@@ -163,18 +165,18 @@ public class D : I
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
-            testState.VerifyResult(root, "Implements 'foo'", {"D.foo()", "G.G.foo()", "C.C.foo()"}, CallHierarchySearchScope.EntireSolution)
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Implements_0, "foo"), {"D.foo()", "G.G.foo()", "C.C.foo()"}, CallHierarchySearchScope.EntireSolution)
             Dim documents = testState.GetDocuments({"Test1.cs", "Test2.cs"})
-            testState.VerifyResult(root, "Implements 'foo'", {"G.G.foo()", "C.C.foo()"}, CallHierarchySearchScope.CurrentProject, documents)
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Implements_0, "foo"), {"G.G.foo()", "C.C.foo()"}, CallHierarchySearchScope.CurrentProject, documents)
             documents = testState.GetDocuments({"Test1.cs"})
-            testState.VerifyResult(root, "Implements 'foo'", {"C.C.foo()"}, CallHierarchySearchScope.CurrentDocument, documents)
-        End Sub
+            testState.VerifyResult(root, String.Format(EditorFeaturesResources.Implements_0, "foo"), {"C.C.foo()"}, CallHierarchySearchScope.CurrentDocument, documents)
+        End Function
 
-        <WorkItem(981869)>
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub CallHierarchyCrossProjectNavigation()
+        <WorkItem(981869, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/981869")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestCallHierarchyCrossProjectNavigation() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
@@ -201,19 +203,19 @@ class CSharpIt : IChangeSignatureOptionsService
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
             testState.SearchRoot(root,
-                                 "Implements 'GetChangeSignatureOptions'",
+                                 String.Format(EditorFeaturesResources.Implements_0, "GetChangeSignatureOptions"),
                                  Sub(c)
                                      Assert.Equal("Assembly2", c.Project.Name)
                                  End Sub,
                                  CallHierarchySearchScope.EntireSolution)
-        End Sub
+        End Function
 
-        <WorkItem(844613)>
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub MustInheritMethodInclusionToOverrides()
+        <WorkItem(844613, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/844613")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestMustInheritMethodInclusionToOverrides() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
@@ -233,14 +235,14 @@ End Class
     </Project>
 </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input)
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
             Dim root = testState.GetRoot()
-            testState.VerifyResult(root, "Overrides", {"Derived.M()"})
-        End Sub
+            testState.VerifyResult(root, EditorFeaturesResources.Overrides_, {"Derived.M()"})
+        End Function
 
-        <WorkItem(1022864)>
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub NavigateCrossProject()
+        <WorkItem(1022864, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1022864")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestNavigateCrossProject() As Task
             Dim input =
     <Workspace>
         <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
@@ -262,18 +264,18 @@ class D : C
         </Project>
     </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input, GetType(MockSymbolNavigationServiceProvider))
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input, GetType(MockSymbolNavigationServiceProvider))
             Dim root = testState.GetRoot()
-            testState.Navigate(root, "Overrides", "D.foo()")
+            testState.Navigate(root, EditorFeaturesResources.Overrides_, "D.foo()")
 
             Dim mockNavigationService = DirectCast(testState.Workspace.Services.GetService(Of ISymbolNavigationService)(), MockSymbolNavigationServiceProvider.MockSymbolNavigationService)
-            Assert.NotNull(mockNavigationService.Symbol)
-            Assert.NotNull(mockNavigationService.Project)
-        End Sub
+            Assert.NotNull(mockNavigationService.TryNavigateToSymbolProvidedSymbol)
+            Assert.NotNull(mockNavigationService.TryNavigateToSymbolProvidedProject)
+        End Function
 
-        <WorkItem(1022864)>
-        <Fact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
-        Public Sub UseDocumentIdWhenNavigating()
+        <WorkItem(1022864, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1022864")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestUseDocumentIdWhenNavigating() As Task
             Dim input =
     <Workspace>
         <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
@@ -300,15 +302,58 @@ namespace N
         </Project>
     </Workspace>
 
-            Dim testState = New CallHierarchyTestState(input, GetType(MockDocumentNavigationServiceProvider))
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input, GetType(MockDocumentNavigationServiceProvider))
             Dim root = testState.GetRoot()
-            testState.VerifyRoot(root, "N.C.Foo()", {"Calls To 'Foo'"})
-            testState.Navigate(root, "Calls To 'Foo'", "N.G.Main()")
+            testState.VerifyRoot(root, "N.C.Foo()", {String.Format(EditorFeaturesResources.Calls_To_0, "Foo")})
+            testState.Navigate(root, String.Format(EditorFeaturesResources.Calls_To_0, "Foo"), "N.G.Main()")
 
             Dim navigationService = DirectCast(testState.Workspace.Services.GetService(Of IDocumentNavigationService)(), MockDocumentNavigationServiceProvider.MockDocumentNavigationService)
-            Assert.NotEqual(navigationService.DocumentId, Nothing)
-            Assert.NotEqual(navigationService.TextSpan, Nothing)
-        End Sub
+            Assert.NotEqual(navigationService.ProvidedDocumentId, Nothing)
+            Assert.NotEqual(navigationService.ProvidedTextSpan, Nothing)
+        End Function
+
+        <WorkItem(1098507, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1098507")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestDisplayErrorWhenNotOnMemberCS() As Task
+            Dim input =
+    <Workspace>
+        <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
+            <Document>
+cla$$ss C
+{
+    void Foo()
+    {
+    }
+}
+        </Document>
+        </Project>
+    </Workspace>
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
+            Dim root = testState.GetRoot()
+            Assert.Null(root)
+            Assert.NotNull(testState.NotificationMessage)
+        End Function
+
+        <WorkItem(1098507, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1098507")>
+        <WpfFact, Trait(Traits.Feature, Traits.Features.CallHierarchy)>
+        Public Async Function TestDisplayErrorWhenNotOnMemberVB() As Task
+            Dim input =
+    <Workspace>
+        <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
+            <Document>
+Class C
+    Public Sub M()
+    End Sub
+End Cla$$ss
+        </Document>
+        </Project>
+    </Workspace>
+            Dim testState = Await CallHierarchyTestState.CreateAsync(input)
+            Dim root = testState.GetRoot()
+            Assert.Null(root)
+            Assert.NotNull(testState.NotificationMessage)
+        End Function
+
     End Class
 
 End Namespace

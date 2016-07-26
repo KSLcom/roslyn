@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Text;
 using Microsoft.CodeAnalysis.Collections;
 using Microsoft.CodeAnalysis.ExpressionEvaluator;
-using Microsoft.VisualStudio.Debugger.Evaluation.ClrCompilation;
+using Microsoft.VisualStudio.Debugger.Clr;
 using Roslyn.Utilities;
 using Type = Microsoft.VisualStudio.Debugger.Metadata.Type;
 
@@ -18,9 +18,12 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
         {
             if (typeToDisplayOpt != null)
             {
-                AppendQualifiedTypeName(builder, typeToDisplayOpt, escapeKeywordIdentifiers: true);
+                // We're showing the type of a value, so "dynamic" does not apply.
+                bool unused;
+                int index = 0;
+                AppendQualifiedTypeName(builder, typeToDisplayOpt, default(DynamicFlagsCustomTypeInfo), ref index, escapeKeywordIdentifiers: true, sawInvalidIdentifier: out unused);
                 builder.Append('.');
-                AppendIdentifierEscapingPotentialKeywords(builder, name);
+                AppendIdentifierEscapingPotentialKeywords(builder, name, sawInvalidIdentifier: out unused);
             }
             else
             {
@@ -28,7 +31,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             }
         }
 
-        internal override string GetArrayDisplayString(Type lmrType, ReadOnlyCollection<int> sizes, ReadOnlyCollection<int> lowerBounds, ObjectDisplayOptions options)
+        internal override string GetArrayDisplayString(DkmClrAppDomain appDomain, Type lmrType, ReadOnlyCollection<int> sizes, ReadOnlyCollection<int> lowerBounds, ObjectDisplayOptions options)
         {
             Debug.Assert(lmrType.IsArray);
 
@@ -44,7 +47,9 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             var builder = pooled.Builder;
             builder.Append('{');
 
-            builder.Append(GetTypeName(lmrType)); // NOTE: call our impl directly, since we're coupled anyway.
+            // We're showing the type of a value, so "dynamic" does not apply.
+            bool unused;
+            builder.Append(GetTypeName(new TypeAndCustomInfo(DkmClrType.Create(appDomain, lmrType)), escapeKeywordIdentifiers: false, sawInvalidIdentifier: out unused)); // NOTE: call our impl directly, since we're coupled anyway.
 
             var numSizes = sizes.Count;
 
@@ -107,7 +112,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
             return pooled.ToStringAndFree();
         }
 
-        internal override string GetCastExpression(string argument, string type, bool parenthesizeArgument = false, bool parenthesizeEntireExpression = false)
+        internal override string GetCastExpression(string argument, string type, bool parenthesizeArgument, bool parenthesizeEntireExpression)
         {
             Debug.Assert(!string.IsNullOrEmpty(argument));
             Debug.Assert(!string.IsNullOrEmpty(type));
@@ -201,7 +206,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
         internal override string FormatLiteral(int value, ObjectDisplayOptions options)
         {
-            return ObjectDisplay.FormatLiteral(value, options & ~ObjectDisplayOptions.UseQuotes);
+            return ObjectDisplay.FormatLiteral(value, options & ~(ObjectDisplayOptions.UseQuotes | ObjectDisplayOptions.EscapeNonPrintableCharacters));
         }
 
         internal override string FormatPrimitiveObject(object value, ObjectDisplayOptions options)
@@ -211,7 +216,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
         internal override string FormatString(string str, ObjectDisplayOptions options)
         {
-            return ObjectDisplay.FormatString(str, quote: options.IncludesOption(ObjectDisplayOptions.UseQuotes) ? '"' : '\0', escapeNonPrintable: false);
+            return ObjectDisplay.FormatLiteral(str, options);
         }
     }
 }

@@ -28,7 +28,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             // WARNING: Note that SemanticModel.GetDeclaredSymbol for field initializer node relies on 
             //          the fact that the order of properties in anonymous type template corresponds 
             //          1-to-1 to the appropriate filed initializer syntax nodes; This means such 
-            //          correspondence must be preserved all the time including erroneos scenarios
+            //          correspondence must be preserved all the time including erroneous scenarios
 
             // set of names already used
             HashSet<string> uniqueFieldNames = new HashSet<string>();
@@ -192,19 +192,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
                 else
                 {
-                    if (expression.Kind == BoundKind.UnboundLambda)
-                    {
-                        errorArg = ((UnboundLambda)expression).MessageID.Localize();
-                    }
-                    else if (expression.Kind == BoundKind.MethodGroup)
-                    {
-                        errorArg = MessageID.IDS_MethodGroup.Localize();
-                    }
-                    else
-                    {
-                        Debug.Assert(expression.IsLiteralNull(), "How did we successfully bind an expression without a type?");
-                        errorArg = MessageID.IDS_NULL.Localize();
-                    }
+                    errorArg = expression.Display;
                 }
             }
 

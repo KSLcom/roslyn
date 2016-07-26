@@ -30,7 +30,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     case BinaryOperatorKind.Subtraction:
                         return BindEventAssignment(node, (BoundEventAccess)left, right, kindOperator, diagnostics);
 
-                        // fallthrough for other operators, if RHS is dynamic we produce dynamic operation, otherwise we'll report an error ...
+                        // fall-through for other operators, if RHS is dynamic we produce dynamic operation, otherwise we'll report an error ...
                 }
             }
 
@@ -160,10 +160,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                     bestSignature.Method);
             }
 
-            var leftType = left.Type;
-
-            Conversion finalConversion = Conversions.ClassifyConversionFromExpression(bestSignature.ReturnType, leftType, ref useSiteDiagnostics);
             BoundExpression rightConverted = CreateConversion(right, best.RightConversion, bestSignature.RightType, diagnostics);
+
+            var leftType = left.Type;
+            Conversion finalConversion = Conversions.ClassifyConversionFromExpressionType(bestSignature.ReturnType, leftType, ref useSiteDiagnostics);
 
             bool isPredefinedOperator = !bestSignature.Kind.IsUserDefined();
 
@@ -612,7 +612,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private void ReportBinaryOperatorError(ExpressionSyntax node, DiagnosticBag diagnostics, SyntaxToken operatorToken, BoundExpression left, BoundExpression right, LookupResultKind resultKind)
+        private static void ReportBinaryOperatorError(ExpressionSyntax node, DiagnosticBag diagnostics, SyntaxToken operatorToken, BoundExpression left, BoundExpression right, LookupResultKind resultKind)
         {
             ErrorCode errorCode = resultKind == LookupResultKind.Ambiguous ?
                 ErrorCode.ERR_AmbigBinaryOps : // Operator '{0}' is ambiguous on operands of type '{1}' and '{2}'
@@ -623,8 +623,44 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         private BoundExpression BindConditionalLogicalOperator(BinaryExpressionSyntax node, DiagnosticBag diagnostics)
         {
-            BoundExpression left = BindValue(node.Left, diagnostics, BindValueKind.RValue);
-            BoundExpression right = BindValue(node.Right, diagnostics, BindValueKind.RValue);
+            Debug.Assert(node.Kind() == SyntaxKind.LogicalOrExpression || node.Kind() == SyntaxKind.LogicalAndExpression);
+
+            // Do not blow the stack due to a deep recursion on the left. 
+
+            BinaryExpressionSyntax binary = node;
+            ExpressionSyntax child;
+
+            while (true)
+            {
+                child = binary.Left;
+                var childAsBinary = child as BinaryExpressionSyntax;
+
+                if (childAsBinary == null ||
+                    (childAsBinary.Kind() != SyntaxKind.LogicalOrExpression && childAsBinary.Kind() != SyntaxKind.LogicalAndExpression))
+                {
+                    break;
+                }
+
+                binary = childAsBinary;
+            }
+
+            BoundExpression left = BindValue(child, diagnostics, BindValueKind.RValue);
+
+            do
+            {
+                binary = (BinaryExpressionSyntax)child.Parent;
+                BoundExpression right = BindValue(binary.Right, diagnostics, BindValueKind.RValue);
+
+                left = BindConditionalLogicalOperator(binary, left, right, diagnostics);
+                child = binary;
+            }
+            while ((object)child != node);
+
+            return left;
+        }
+
+        private BoundExpression BindConditionalLogicalOperator(BinaryExpressionSyntax node, BoundExpression left, BoundExpression right, DiagnosticBag diagnostics)
+        {
             BinaryOperatorKind kind = SyntaxKindToBinaryOperatorKind(node.Kind());
 
             Debug.Assert(kind == BinaryOperatorKind.LogicalAnd || kind == BinaryOperatorKind.LogicalOr);
@@ -944,7 +980,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     var op = operators[i];
                     if (op.ParameterCount == 1 && op.DeclaredAccessibility == Accessibility.Public)
                     {
-                        var conversion = this.Conversions.ClassifyConversion(argumentType, op.ParameterTypes[0], ref useSiteDiagnostics);
+                        var conversion = this.Conversions.ClassifyConversionFromType(argumentType, op.ParameterTypes[0], ref useSiteDiagnostics);
                         if (conversion.IsImplicit)
                         {
                             @operator = op;
@@ -1250,8 +1286,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.UnderlyingAndEnumSubtraction:
                     return right.Type;
                 default:
-                    Debug.Assert(false, "Unexpected non-enum operation in GetEnumType");
-                    return null;
+                    throw ExceptionUtilities.UnexpectedValue(kind);
             }
         }
 
@@ -1272,8 +1307,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     return underlyingType;
 
                 default:
-                    Debug.Assert(false, "Unexpected underlying enum type.");
-                    return underlyingType;
+                    throw ExceptionUtilities.UnexpectedValue(underlyingType);
             }
         }
 
@@ -1337,8 +1371,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     break;
 
                 default:
-                    Debug.Assert(false, "Unexpected operator kind");
-                    break;
+                    throw ExceptionUtilities.UnexpectedValue(newKind.Operator());
             }
 
             var constantValue = FoldBinaryOperator(syntax, newKind, newLeftOperand, newRightOperand, operatorType, diagnostics);
@@ -1435,7 +1468,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 if (concatResult.IsBad)
                 {
-                    Error(diagnostics, ErrorCode.ERR_ContantStringTooLong, syntax);
+                    Error(diagnostics, ErrorCode.ERR_ConstantStringTooLong, syntax);
                 }
 
                 return concatResult;
@@ -1544,7 +1577,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             Debug.Assert(valueLeft != null);
             Debug.Assert(valueRight != null);
 
-            // Note that we do folding on single-precision floats as doubles to preserve precision.
+            // Note that we *cannot* do folding on single-precision floats as doubles to preserve precision,
+            // as that would cause incorrect rounding that would be impossible to correct afterwards.
             switch (kind)
             {
                 case BinaryOperatorKind.ObjectEqual:
@@ -1556,20 +1590,25 @@ namespace Microsoft.CodeAnalysis.CSharp
                     if (valueRight.IsNull) return true;
                     break;
                 case BinaryOperatorKind.DoubleAddition:
-                case BinaryOperatorKind.FloatAddition:
                     return valueLeft.DoubleValue + valueRight.DoubleValue;
+                case BinaryOperatorKind.FloatAddition:
+                    return valueLeft.SingleValue + valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleSubtraction:
-                case BinaryOperatorKind.FloatSubtraction:
                     return valueLeft.DoubleValue - valueRight.DoubleValue;
+                case BinaryOperatorKind.FloatSubtraction:
+                    return valueLeft.SingleValue - valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleMultiplication:
-                case BinaryOperatorKind.FloatMultiplication:
                     return valueLeft.DoubleValue * valueRight.DoubleValue;
+                case BinaryOperatorKind.FloatMultiplication:
+                    return valueLeft.SingleValue * valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleDivision:
-                case BinaryOperatorKind.FloatDivision:
                     return valueLeft.DoubleValue / valueRight.DoubleValue;
+                case BinaryOperatorKind.FloatDivision:
+                    return valueLeft.SingleValue / valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleRemainder:
-                case BinaryOperatorKind.FloatRemainder:
                     return valueLeft.DoubleValue % valueRight.DoubleValue;
+                case BinaryOperatorKind.FloatRemainder:
+                    return valueLeft.SingleValue % valueRight.SingleValue;
                 case BinaryOperatorKind.IntLeftShift:
                     return valueLeft.Int32Value << valueRight.Int32Value;
                 case BinaryOperatorKind.LongLeftShift:
@@ -1627,6 +1666,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalEqual:
                     return valueLeft.DecimalValue == valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatEqual:
+                    return valueLeft.SingleValue == valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleEqual:
                     return valueLeft.DoubleValue == valueRight.DoubleValue;
                 case BinaryOperatorKind.IntEqual:
@@ -1644,6 +1684,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalNotEqual:
                     return valueLeft.DecimalValue != valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatNotEqual:
+                    return valueLeft.SingleValue != valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleNotEqual:
                     return valueLeft.DoubleValue != valueRight.DoubleValue;
                 case BinaryOperatorKind.IntNotEqual:
@@ -1657,6 +1698,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalLessThan:
                     return valueLeft.DecimalValue < valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatLessThan:
+                    return valueLeft.SingleValue < valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleLessThan:
                     return valueLeft.DoubleValue < valueRight.DoubleValue;
                 case BinaryOperatorKind.IntLessThan:
@@ -1670,6 +1712,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalGreaterThan:
                     return valueLeft.DecimalValue > valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatGreaterThan:
+                    return valueLeft.SingleValue > valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleGreaterThan:
                     return valueLeft.DoubleValue > valueRight.DoubleValue;
                 case BinaryOperatorKind.IntGreaterThan:
@@ -1683,6 +1726,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalLessThanOrEqual:
                     return valueLeft.DecimalValue <= valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatLessThanOrEqual:
+                    return valueLeft.SingleValue <= valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleLessThanOrEqual:
                     return valueLeft.DoubleValue <= valueRight.DoubleValue;
                 case BinaryOperatorKind.IntLessThanOrEqual:
@@ -1696,6 +1740,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BinaryOperatorKind.DecimalGreaterThanOrEqual:
                     return valueLeft.DecimalValue >= valueRight.DecimalValue;
                 case BinaryOperatorKind.FloatGreaterThanOrEqual:
+                    return valueLeft.SingleValue >= valueRight.SingleValue;
                 case BinaryOperatorKind.DoubleGreaterThanOrEqual:
                     return valueLeft.DoubleValue >= valueRight.DoubleValue;
                 case BinaryOperatorKind.IntGreaterThanOrEqual:
@@ -1806,10 +1851,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case SyntaxKind.ExclusiveOrExpression: return BinaryOperatorKind.Xor;
                 case SyntaxKind.LogicalAndExpression: return BinaryOperatorKind.LogicalAnd;
                 case SyntaxKind.LogicalOrExpression: return BinaryOperatorKind.LogicalOr;
+                default: throw ExceptionUtilities.UnexpectedValue(kind);
             }
-
-            Debug.Assert(false, "Bad syntax kind in binary operator binding");
-            return BinaryOperatorKind.Error;
         }
 
         private BoundExpression BindIncrementOperator(CSharpSyntaxNode node, ExpressionSyntax operandSyntax, SyntaxToken operatorToken, DiagnosticBag diagnostics)
@@ -1874,7 +1917,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             var signature = best.Signature;
 
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
-            var resultConversion = Conversions.ClassifyConversion(signature.ReturnType, operandType, ref useSiteDiagnostics);
+            var resultConversion = Conversions.ClassifyConversionFromType(signature.ReturnType, operandType, ref useSiteDiagnostics);
             diagnostics.Add(node, useSiteDiagnostics);
 
             bool hasErrors = false;
@@ -2093,12 +2136,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                         {
                             BoundLocal localAccess = (BoundLocal)expr;
                             LocalSymbol localSymbol = localAccess.LocalSymbol;
-                            Debug.Assert(localSymbol.RefKind == RefKind.None);
                             accessedLocalOrParameterOpt = localSymbol;
                             // NOTE: The spec says that this is moveable if it is captured by an anonymous function,
                             // but that will be reported separately and error-recovery is better if we say that
                             // such locals are not moveable.
-                            return true;
+                            return localSymbol.RefKind == RefKind.None;
                         }
                     case BoundKind.PointerIndirectionOperator: //Covers ->, since the receiver will be one of these.
                     case BoundKind.PointerElementAccess:
@@ -2375,10 +2417,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case SyntaxKind.UnaryMinusExpression: return UnaryOperatorKind.UnaryMinus;
                 case SyntaxKind.LogicalNotExpression: return UnaryOperatorKind.LogicalNegation;
                 case SyntaxKind.BitwiseNotExpression: return UnaryOperatorKind.BitwiseComplement;
+                default: throw ExceptionUtilities.UnexpectedValue(kind);
             }
-
-            Debug.Assert(false, "Bad syntax kind in unary operator binding");
-            return UnaryOperatorKind.Error;
         }
 
         private static BindValueKind GetBinaryAssignmentKind(SyntaxKind kind)
@@ -2438,7 +2478,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return null;
             }
 
-            if (operand.Syntax.Kind() != SyntaxKind.NumericLiteralExpression)
+            if (node.Operand != operand.Syntax || operand.Syntax.Kind() != SyntaxKind.NumericLiteralExpression)
             {
                 return null;
             }
@@ -2505,37 +2545,29 @@ namespace Microsoft.CodeAnalysis.CSharp
             return false;
         }
 
-        private BoundExpression BindIsOperator(BinaryExpressionSyntax node, DiagnosticBag diagnostics)
+        private static bool IsOperandErrors(CSharpSyntaxNode node, BoundExpression operand, DiagnosticBag diagnostics)
         {
-            var operand = BindValue(node.Left, diagnostics, BindValueKind.RValue);
-            AliasSymbol alias;
-            TypeSymbol targetType = BindType(node.Right, diagnostics, out alias);
-            var typeExpression = new BoundTypeExpression(node.Right, alias, targetType);
-            var targetTypeKind = targetType.TypeKind;
-            var resultType = (TypeSymbol)GetSpecialType(SpecialType.System_Boolean, diagnostics, node);
-
-            // Is and As operator should have null ConstantValue as they are not constant expressions.
-            // However we perform analysis of is/as expressions at bind time to detect if the expression 
-            // will always evaluate to a constant to generate warnings (always true/false/null).
-            // We also need this analysis result during rewrite to optimize away redundant isinst instructions.
-            // We store the conversion from expression's operand type to target type to enable these
-            // optimizations during is/as operator rewrite.
-
             switch (operand.Kind)
             {
                 case BoundKind.UnboundLambda:
                 case BoundKind.Lambda:
                 case BoundKind.MethodGroup:  // New in Roslyn - see DevDiv #864740.
                     // operand for an is or as expression cannot be a lambda expression or method group
-                    Error(diagnostics, ErrorCode.ERR_LambdaInIsAs, node);
-                    return new BoundIsOperator(node, operand, typeExpression, Conversion.NoConversion, resultType, hasErrors: true);
+                    if (!operand.HasAnyErrors)
+                    {
+                        Error(diagnostics, ErrorCode.ERR_LambdaInIsAs, node);
+                    }
+
+                    return true;
             }
 
-            if (operand.HasAnyErrors || targetTypeKind == TypeKind.Error)
-            {
-                // If either operand is bad or target type has errors, bail out preventing more cascading errors.
-                return new BoundIsOperator(node, operand, typeExpression, Conversion.NoConversion, resultType, hasErrors: true);
-            }
+            return operand.HasAnyErrors;
+        }
+
+        private bool IsOperatorErrors(CSharpSyntaxNode node, TypeSymbol operandType, BoundTypeExpression typeExpression, DiagnosticBag diagnostics)
+        {
+            var targetType = typeExpression.Type;
+            var targetTypeKind = targetType.TypeKind;
 
             // The native compiler allows "x is C" where C is a static class. This
             // is strictly illegal according to the specification (see the section
@@ -2545,22 +2577,69 @@ namespace Microsoft.CodeAnalysis.CSharp
             if (targetType.IsStatic && Compilation.FeatureStrictEnabled)
             {
                 Error(diagnostics, ErrorCode.ERR_StaticInAsOrIs, node, targetType);
-                return new BoundIsOperator(node, operand, typeExpression, Conversion.NoConversion, resultType, hasErrors: true);
+                return true;
             }
 
-            var operandType = operand.Type;
             if ((object)operandType != null && operandType.TypeKind == TypeKind.Pointer || targetTypeKind == TypeKind.Pointer)
             {
                 // operand for an is or as expression cannot be of pointer type
                 Error(diagnostics, ErrorCode.ERR_PointerInAsOrIs, node);
+                return true;
+            }
+
+            return targetTypeKind == TypeKind.Error;
+        }
+
+        private BoundExpression BindIsOperator(BinaryExpressionSyntax node, DiagnosticBag diagnostics)
+        {
+            var resultType = (TypeSymbol)GetSpecialType(SpecialType.System_Boolean, diagnostics, node);
+            var operand = BindValue(node.Left, diagnostics, BindValueKind.RValue);
+            AliasSymbol alias;
+            TypeSymbol targetType;
+            {
+                // try binding as a type, but back off to binding as an expression if that does not work.
+                var tempBag = DiagnosticBag.GetInstance();
+                targetType = BindType(node.Right, tempBag, out alias);
+                if (targetType?.IsErrorType() == true && tempBag.HasAnyResolvedErrors() &&
+                    ((CSharpParseOptions)node.SyntaxTree.Options).IsFeatureEnabled(MessageID.IDS_FeaturePatternMatching))
+                {
+                    // it did not bind as a type; try binding as a constant expression pattern
+                    bool wasExpression;
+                    var tempBag2 = DiagnosticBag.GetInstance();
+                    var boundConstantPattern = BindConstantPattern(
+                        node.Right, operand, operand.Type, node.Right, node.Right.HasErrors, tempBag2, out wasExpression, wasSwitchCase: false);
+                    if (wasExpression)
+                    {
+                        tempBag.Free();
+                        diagnostics.AddRangeAndFree(tempBag2);
+                        return new BoundIsPatternExpression(node, operand, boundConstantPattern, resultType);
+                    }
+
+                    tempBag2.Free();
+                }
+
+                diagnostics.AddRangeAndFree(tempBag);
+            }
+
+            var typeExpression = new BoundTypeExpression(node.Right, alias, targetType);
+            var targetTypeKind = targetType.TypeKind;
+            if (IsOperandErrors(node, operand, diagnostics) || IsOperatorErrors(node, operand.Type, typeExpression, diagnostics))
+            {
                 return new BoundIsOperator(node, operand, typeExpression, Conversion.NoConversion, resultType, hasErrors: true);
             }
+
+            // Is and As operator should have null ConstantValue as they are not constant expressions.
+            // However we perform analysis of is/as expressions at bind time to detect if the expression 
+            // will always evaluate to a constant to generate warnings (always true/false/null).
+            // We also need this analysis result during rewrite to optimize away redundant isinst instructions.
+            // We store the conversion from expression's operand type to target type to enable these
+            // optimizations during is/as operator rewrite.
 
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
 
             if (operand.ConstantValue == ConstantValue.Null ||
                 operand.Kind == BoundKind.MethodGroup ||
-                operandType.SpecialType == SpecialType.System_Void)
+                operand.Type.SpecialType == SpecialType.System_Void)
             {
                 // warning for cases where the result is always false:
                 // (a) "null is TYPE" OR operand evaluates to null 
@@ -2576,12 +2655,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // NOTE:    See Test SyntaxBinderTests.TestIsOperatorWithTypeParameter
 
                 Error(diagnostics, ErrorCode.WRN_IsAlwaysFalse, node, targetType);
-
                 Conversion conv = Conversions.ClassifyConversionFromExpression(operand, targetType, ref useSiteDiagnostics);
                 diagnostics.Add(node, useSiteDiagnostics);
                 return new BoundIsOperator(node, operand, typeExpression, conv, resultType);
             }
-
 
             if (targetTypeKind == TypeKind.Dynamic)
             {
@@ -2592,6 +2669,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     );
             }
 
+            var operandType = operand.Type;
             Debug.Assert((object)operandType != null);
             if (operandType.TypeKind == TypeKind.Dynamic)
             {
@@ -2599,10 +2677,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                 operandType = GetSpecialType(SpecialType.System_Object, diagnostics, node);
             }
 
-            Conversion conversion = Conversions.ClassifyConversion(operandType, targetType, ref useSiteDiagnostics);
+            Conversion conversion = Conversions.ClassifyConversionFromType(operandType, targetType, ref useSiteDiagnostics);
             diagnostics.Add(node, useSiteDiagnostics);
             ReportIsOperatorConstantWarnings(node, diagnostics, operandType, targetType, conversion.Kind, operand.ConstantValue);
-
             return new BoundIsOperator(node, operand, typeExpression, conversion, resultType);
         }
 
@@ -2881,7 +2958,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             // Is and As operator should have null ConstantValue as they are not constant expressions.
             // However we perform analysis of is/as expressions at bind time to detect if the expression 
             // will always evaluate to a constant to generate warnings (always true/false/null).
-            // We also need this analysis result during rewrite to optimize away redundant isint instructions.
+            // We also need this analysis result during rewrite to optimize away redundant isinst instructions.
             // We store the conversion kind from expression's operand type to target type to enable these
             // optimizations during is/as operator rewrite.            
 
@@ -2891,7 +2968,11 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case BoundKind.Lambda:
                 case BoundKind.MethodGroup:  // New in Roslyn - see DevDiv #864740.
                     // operand for an is or as expression cannot be a lambda expression or method group
-                    Error(diagnostics, ErrorCode.ERR_LambdaInIsAs, node);
+                    if (!operand.HasAnyErrors)
+                    {
+                        Error(diagnostics, ErrorCode.ERR_LambdaInIsAs, node);
+                    }
+
                     return new BoundAsOperator(node, operand, typeExpression, Conversion.NoConversion, resultType, hasErrors: true);
             }
 
@@ -2980,7 +3061,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
 
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
-            Conversion conversion = Conversions.ClassifyConversion(operandType, targetType, ref useSiteDiagnostics, builtinOnly: true);
+            Conversion conversion = Conversions.ClassifyBuiltInConversion(operandType, targetType, ref useSiteDiagnostics);
             diagnostics.Add(node, useSiteDiagnostics);
             bool hasErrors = ReportAsOperatorConversionDiagnostics(node, diagnostics, this.Compilation, operandType, targetType, conversion.Kind, operand.ConstantValue);
 
@@ -3227,7 +3308,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     // We just store the second conversion in the bound node and insert the first conversion during rewriting
                     // the null coalescing operator. See method LocalRewriter.GetConvertedLeftForNullCoalescingOperator.
 
-                    leftConversion = Conversions.ClassifyImplicitConversion(optLeftType0, optRightType, ref useSiteDiagnostics);
+                    leftConversion = Conversions.ClassifyImplicitConversionFromType(optLeftType0, optRightType, ref useSiteDiagnostics);
                 }
                 else
                 {
@@ -3241,7 +3322,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                         // CreateConversion here to generate diagnostics.
                         if (isLeftNullable)
                         {
-                            var strippedLeftOperand = CreateConversion(leftOperand, Conversion.ExplicitNullable, optLeftType0, diagnostics);
+                            var conversion = Conversion.MakeNullableConversion(ConversionKind.ExplicitNullable, leftConversion);
+                            var strippedLeftOperand = CreateConversion(leftOperand, conversion, optLeftType0, diagnostics);
                             leftOperand = CreateConversion(strippedLeftOperand, leftConversion, optRightType, diagnostics);
                         }
                         else

@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -25,7 +24,7 @@ namespace Roslyn.Utilities
     /// </summary>
     internal class AnnotationTable<TAnnotation> where TAnnotation : class
     {
-        private int _globalId = 0;
+        private int _globalId;
 
         private readonly Dictionary<TAnnotation, SyntaxAnnotation> _realAnnotationMap = new Dictionary<TAnnotation, SyntaxAnnotation>();
         private readonly Dictionary<string, TAnnotation> _annotationMap = new Dictionary<string, TAnnotation>();

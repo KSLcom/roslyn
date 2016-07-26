@@ -11,6 +11,21 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel>
+
+            <GroupBox x:Uid="ImportDirectivesGroupBox"
+                      Header="{x:Static local:AdvancedOptionPageStrings.Option_Import_Directives}">
+                <StackPanel>
+                    <CheckBox x:Name="PlaceSystemNamespaceFirst"
+                              x:Uid="SortImports_PlaceSystemFirst"
+                              Content="{x:Static local:AdvancedOptionPageStrings.Option_PlaceSystemNamespaceFirst}" />
+                    <CheckBox x:Name="SuggestForTypesInReferenceAssemblies"
+                              x:Uid="AddImport_SuggestForTypesInReferenceAssemblies"
+                              Content="{x:Static local:AdvancedOptionPageStrings.Option_Suggest_imports_for_types_in_reference_assemblies}" />
+                    <CheckBox x:Name="SuggestForTypesInNuGetPackages"
+                              x:Uid="AddImport_SuggestForTypesInNuGetPackages"
+                              Content="{x:Static local:AdvancedOptionPageStrings.Option_Suggest_imports_for_types_in_NuGet_packages}" />
+                </StackPanel>
+            </GroupBox>
             <GroupBox x:Uid="HighlightingGroupBox"
                       Header="{x:Static local:AdvancedOptionPageStrings.Option_Highlighting}">
                 <StackPanel>
@@ -42,6 +57,15 @@
                               Content="{x:Static local:AdvancedOptionPageStrings.Option_GenerateXmlDocCommentsForTripleApostrophes}" />
                     <CheckBox x:Name="ClosedFileDiagnostics"
                               Content="{x:Static local:AdvancedOptionPageStrings.Option_ClosedFileDiagnostics}" />
+                    <CheckBox x:Name="RenameTrackingPreview"
+                              Content="{x:Static local:AdvancedOptionPageStrings.Option_RenameTrackingPreview}" />
+                </StackPanel>
+            </GroupBox>
+            <GroupBox x:Uid="GoToDefinitionGroupBox"
+                      Header="{x:Static local:AdvancedOptionPageStrings.Option_GoToDefinition}">
+                <StackPanel>
+                    <CheckBox x:Name="NavigateToObjectBrowser"
+                              Content="{x:Static local:AdvancedOptionPageStrings.Option_NavigateToObjectBrowser}" />
                 </StackPanel>
             </GroupBox>
             <GroupBox x:Uid="ExtractMethodGroupBox"
@@ -50,6 +74,7 @@
                     <CheckBox x:Name="DontPutOutOrRefOnStruct"
                               Content="{x:Static local:AdvancedOptionPageStrings.Option_DontPutOutOrRefOnStruct}" />
                     <CheckBox x:Name="AllowMovingDeclaration"
+                              Visibility="Collapsed"
                               Content="{x:Static local:AdvancedOptionPageStrings.Option_AllowMovingDeclaration}" />
                 </StackPanel>
             </GroupBox>

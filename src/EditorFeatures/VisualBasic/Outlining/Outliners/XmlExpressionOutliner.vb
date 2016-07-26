@@ -5,7 +5,7 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Microsoft.CodeAnalysis.Editor.Implementation.Outlining
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Outlining
-    Class XmlExpressionOutliner
+    Friend Class XmlExpressionOutliner
         Inherits AbstractSyntaxNodeOutliner(Of XmlNodeSyntax)
 
         Protected Overrides Sub CollectOutliningSpans(xmlExpression As XmlNodeSyntax, spans As List(Of OutliningSpan), cancellationToken As CancellationToken)
@@ -18,12 +18,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.Outlining
             Dim syntaxTree = xmlExpression.SyntaxTree
             Dim line = syntaxTree.GetText(cancellationToken).Lines.GetLineFromPosition(span.Start)
             Dim lineText = line.ToString().Substring(span.Start - line.Start)
-            Dim bannerText = lineText & " " & Ellipsis
+            Dim bannerText = lineText & SpaceEllipsis
 
-            spans.Add(VisualBasicOutliningHelpers.CreateRegion(
-                            span,
-                            bannerText,
-                            autoCollapse:=False))
+            spans.Add(
+                CreateRegion(span, bannerText, autoCollapse:=False))
         End Sub
     End Class
 End Namespace

@@ -47,7 +47,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax
             private readonly HashSet<SyntaxNode> _nodesToRemove;
             private readonly SyntaxRemoveOptions _options;
             private readonly TextSpan _searchSpan;
-            private SyntaxTriviaListBuilder _residualTrivia;
+            private readonly SyntaxTriviaListBuilder _residualTrivia;
             private HashSet<SyntaxNode> _directivesToKeep;
 
             public SyntaxRemover(
@@ -110,6 +110,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax
                 }
             }
 
+            /// <summary>
+            /// Returns whether the specified <see cref="SyntaxTrivia"/> token is also the end of the line.  This will
+            /// be true for <see cref="SyntaxKind.EndOfLineTrivia"/>, <see cref="SyntaxKind.SingleLineCommentTrivia"/>,
+            /// and all preprocessor directives.
+            /// </summary>
             private static bool IsEndOfLine(SyntaxTrivia trivia)
             {
                 return trivia.Kind() == SyntaxKind.EndOfLineTrivia

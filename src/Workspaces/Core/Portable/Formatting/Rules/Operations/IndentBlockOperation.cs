@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -52,15 +51,15 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             this.IndentationDeltaOrPosition = indentationDelta;
         }
 
-        public SyntaxToken BaseToken { get; private set; }
-        public TextSpan TextSpan { get; private set; }
+        public SyntaxToken BaseToken { get; }
+        public TextSpan TextSpan { get; }
 
-        public IndentBlockOption Option { get; private set; }
+        public IndentBlockOption Option { get; }
 
-        public SyntaxToken StartToken { get; private set; }
-        public SyntaxToken EndToken { get; private set; }
+        public SyntaxToken StartToken { get; }
+        public SyntaxToken EndToken { get; }
 
-        public bool IsRelativeIndentation { get; private set; }
-        public int IndentationDeltaOrPosition { get; private set; }
+        public bool IsRelativeIndentation { get; }
+        public int IndentationDeltaOrPosition { get; }
     }
 }

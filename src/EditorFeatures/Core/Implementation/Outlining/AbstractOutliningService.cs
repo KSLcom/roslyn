@@ -6,40 +6,63 @@ using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.ErrorReporting;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.Outlining
 {
-    internal abstract class AbstractOutliningService : IOutliningService
+    internal abstract class AbstractOutliningService : ISynchronousOutliningService
     {
-        private readonly ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxNodeOutliner>> _nodeOutlinerMap;
-        private readonly ImmutableDictionary<int, ImmutableArray<AbstractSyntaxTriviaOutliner>> _triviaOutlinerMap;
+        private readonly ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxOutliner>> _nodeOutlinerMap;
+        private readonly ImmutableDictionary<int, ImmutableArray<AbstractSyntaxOutliner>> _triviaOutlinerMap;
 
         protected AbstractOutliningService(
-            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxNodeOutliner>> defaultNodeOutlinerMap,
-            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxTriviaOutliner>> defaultTriviaOutlinerMap)
+            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxOutliner>> defaultNodeOutlinerMap,
+            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxOutliner>> defaultTriviaOutlinerMap)
         {
             _nodeOutlinerMap = defaultNodeOutlinerMap;
             _triviaOutlinerMap = defaultTriviaOutlinerMap;
         }
 
-        public async Task<IList<OutliningSpan>> GetOutliningSpansAsync(Document document, CancellationToken cancellationToken)
+        /// <summary>
+        /// Keep in sync with <see cref="GetOutliningSpansAsync"/>
+        /// </summary>
+        public IList<OutliningSpan> GetOutliningSpans(
+            Document document, CancellationToken cancellationToken)
         {
             try
             {
-                var syntaxDocument = await SyntacticDocument.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+                var syntaxRoot = document.GetSyntaxRootSynchronously(cancellationToken);
 
                 // change this to shared pool once RI
                 var regions = new List<OutliningSpan>();
-                RegionCollector.CollectOutliningSpans(syntaxDocument, _nodeOutlinerMap, _triviaOutlinerMap, regions, cancellationToken);
-
+                RegionCollector.CollectOutliningSpans(document, syntaxRoot, _nodeOutlinerMap, _triviaOutlinerMap, regions, cancellationToken);
                 return regions;
             }
-            catch (Exception e) when(FatalError.ReportUnlessCanceled(e))
+            catch (Exception e) when (FatalError.ReportUnlessCanceled(e))
             {
                 throw ExceptionUtilities.Unreachable;
             }
+        }
+
+        /// <summary>
+        /// Keep in sync with <see cref="GetOutliningSpans"/>
+        /// </summary>
+        public async Task<IList<OutliningSpan>> GetOutliningSpansAsync(
+            Document document, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var syntaxRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+
+                // change this to shared pool once RI
+                var regions = new List<OutliningSpan>();
+                RegionCollector.CollectOutliningSpans(document, syntaxRoot, _nodeOutlinerMap, _triviaOutlinerMap, regions, cancellationToken);
+                return regions;
+            }
+            catch (Exception e) when (FatalError.ReportUnlessCanceled(e))
+            {
+                throw ExceptionUtilities.Unreachable;
             }
         }
     }
+}

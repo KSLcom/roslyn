@@ -3,14 +3,13 @@
 using System;
 using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
 using Microsoft.VisualStudio.Text;
-using Microsoft.VisualStudio.Text.Projection;
 using Microsoft.VisualStudio.TextManager.Interop;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 {
     internal abstract class AbstractContainedLanguage : IDisposable
     {
-        public AbstractProject Project { get; private set; }
+        public AbstractProject Project { get; }
 
         /// <summary>
         /// The subject (secondary) buffer that contains the C# or VB code.
@@ -33,7 +32,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         /// workspace, that most language operations deal with.  The surface buffer is the one that the
         /// view is created over, and the Document buffer is the one that is saved to disk.
         /// </summary>
-        public IProjectionBuffer DataBuffer { get; private set; }
+        public ITextBuffer DataBuffer { get; private set; }
 
         public IVsContainedLanguageHost ContainedLanguageHost { get; protected set; }
         public IVsTextBufferCoordinator BufferCoordinator { get; protected set; }
@@ -43,7 +42,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         {
             if (project == null)
             {
-                throw new ArgumentNullException("project");
+                throw new ArgumentNullException(nameof(project));
             }
 
             this.Project = project;
@@ -57,7 +56,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         {
             if (subjectBuffer == null)
             {
-                throw new ArgumentNullException("subjectBuffer");
+                throw new ArgumentNullException(nameof(subjectBuffer));
             }
 
             this.SubjectBuffer = subjectBuffer;
@@ -66,11 +65,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         /// <summary>
         /// To be called from the derived class constructor!
         /// </summary>
-        protected void SetDataBuffer(IProjectionBuffer dataBuffer)
+        protected void SetDataBuffer(ITextBuffer dataBuffer)
         {
             if (dataBuffer == null)
             {
-                throw new ArgumentNullException("dataBuffer");
+                throw new ArgumentNullException(nameof(dataBuffer));
             }
 
             this.DataBuffer = dataBuffer;

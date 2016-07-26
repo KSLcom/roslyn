@@ -9,9 +9,10 @@
 
 <TaoTest xmlns="http://microsoft.com/schemas/VSLanguages/TAO">
   <InitTest>
+    <EnsureCodeMarker />
     <StartTarget DontResetOptions="true" />
     <EnableClosedFileDiagnostic Enabled="true" Language="Visual Basic"/>
-    <OpenProject ProjectFile="$(WorkingDir)\..\..\LegacyTest\RealworldProjects\RoslynSolutions\Roslyn-VB.sln" DeleteSuoFileBeforeOpening="true" DeleteIDECacheBeforeOpening="true"/>
+    <OpenProject ProjectFile="C:\Roslyn\LegacyTest\RealworldProjects\RoslynSolutions\Roslyn-VB.sln" DeleteSuoFileBeforeOpening="true" DeleteIDECacheBeforeOpening="true"/>
     <OpenFile FileName="Parser.vb"/>
     <GoToLine LineNumber="1114"/>
     <PlaceCursor Marker="statement = " CharsOffset="-1" />
@@ -21,12 +22,14 @@
     <Scenario Name="RenameRoslyn" Description="Rename Local Roslyn">
       <WaitForSolutionCrawler/>
       <WaitForIdleCPU />
+      <CollectPerfViewTrace Action="Start" Collection="Full" UploadSharePath="\\mlangfs1\RoslynPerf\Traces" BufferSize="5000" />
       <ListenForCodeMarkers ScenarioGroup="Rename Roslyn" Step="Rename Local Roslyn" TimeGoal="0.1" MemoryGoal="0.9" BeginMarker="StartNow" EndMarker="VB_RenameEnd" IsVB="true" />
       <PerfRename NewName="qualifiedStatement" Language="VB" />
       <WaitForCodeMarkers />
-
-      <VerifyRoslynModulesLoadedStatus ExpectedStatus="NoCSharp" />
-      <VerifyRoslynModulesLoadedStatus ExpectedStatus="Basic" />
+      <CollectPerfViewTrace Action="Stop"/>
+      
+      <!--<VerifyRoslynModulesLoadedStatus ExpectedStatus="NoCSharp" />
+      <VerifyRoslynModulesLoadedStatus ExpectedStatus="Basic" />-->
     </Scenario>
   </ScenarioList>
 

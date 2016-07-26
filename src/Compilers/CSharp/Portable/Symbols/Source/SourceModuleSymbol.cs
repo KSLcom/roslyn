@@ -7,7 +7,6 @@ using System.Linq;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Microsoft.CodeAnalysis.CSharp.Emit;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Roslyn.Utilities;
 
@@ -37,16 +36,31 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         private ImmutableArray<Location> _locations;
         private NamespaceSymbol _globalNamespace;
 
+        private bool _hasBadAttributes;
+
         internal SourceModuleSymbol(
             SourceAssemblySymbol assemblySymbol,
             DeclarationTable declarations,
-            string nameWithExtension)
+            string moduleName)
         {
             Debug.Assert((object)assemblySymbol != null);
 
             _assemblySymbol = assemblySymbol;
             _sources = declarations;
-            _name = nameWithExtension;
+            _name = moduleName;
+        }
+
+        internal void RecordPresenceOfBadAttributes()
+        {
+            _hasBadAttributes = true;
+        }
+
+        internal bool HasBadAttributes
+        {
+            get
+            {
+                return _hasBadAttributes;
+            }
         }
 
         internal override int Ordinal
@@ -172,16 +186,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             {
                 if ((object)_globalNamespace == null)
                 {
-                    Interlocked.CompareExchange(ref _globalNamespace, MakeGlobalNamespace(), null);
+                    var globalNS = new SourceNamespaceSymbol(this, this, DeclaringCompilation.MergedRootDeclaration);
+                    Interlocked.CompareExchange(ref _globalNamespace, globalNS, null);
                 }
 
                 return _globalNamespace;
             }
-        }
-
-        private SourceNamespaceSymbol MakeGlobalNamespace()
-        {
-            return new SourceNamespaceSymbol(this, this, _sources.MergedRoot);
         }
 
         internal sealed override bool RequiresCompletion
@@ -220,7 +230,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             {
                                 if (diagnostics != null)
                                 {
-                                    _assemblySymbol.DeclaringCompilation.SemanticDiagnostics.AddRange(diagnostics);
+                                    _assemblySymbol.DeclaringCompilation.DeclarationDiagnostics.AddRange(diagnostics);
                                 }
 
                                 _state.NotePartComplete(CompletionPart.FinishValidatingReferencedAssemblies);
@@ -327,20 +337,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             }
         }
 
-        internal IEnumerable<Diagnostic> Diagnostics
-        {
-            get { return _sources.Diagnostics; }
-        }
-
         public override ImmutableArray<Location> Locations
         {
             get
             {
                 if (_locations.IsDefault)
                 {
-                    ImmutableInterlocked.InterlockedCompareExchange(ref _locations,
-                        _sources.AllRootNamespacesUnordered().Select(n => n.Location).AsImmutable<Location>(),
-                        default(ImmutableArray<Location>));
+                    ImmutableInterlocked.InterlockedInitialize(
+                        ref _locations,
+                        DeclaringCompilation.MergedRootDeclaration.Declarations.SelectAsArray(d => (Location)d.Location));
                 }
 
                 return _locations;
@@ -545,5 +550,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 return data != null && data.HasDefaultCharSetAttribute ? data.DefaultCharacterSet : (CharSet?)null;
             }
         }
+
+        public override ModuleMetadata GetMetadata() => null;
     }
 }

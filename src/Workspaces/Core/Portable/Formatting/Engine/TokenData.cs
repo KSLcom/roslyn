@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.CodeAnalysis.Shared.Extensions;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Formatting
@@ -29,9 +28,9 @@ namespace Microsoft.CodeAnalysis.Formatting
             this.Token = token;
         }
 
-        public TokenStream TokenStream { get; private set; }
-        public int IndexInStream { get; private set; }
-        public SyntaxToken Token { get; private set; }
+        public TokenStream TokenStream { get; }
+        public int IndexInStream { get; }
+        public SyntaxToken Token { get; }
 
         public TokenData GetPreviousTokenData()
         {

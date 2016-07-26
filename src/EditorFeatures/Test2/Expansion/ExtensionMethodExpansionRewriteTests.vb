@@ -1,5 +1,6 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
 Imports Microsoft.CodeAnalysis.Text
@@ -10,7 +11,7 @@ Namespace Microsoft.CodeAnalysis.Editor.UnitTests.Expansion
 
 #Region "Visual Basic ExtensionMethodRewrite Expansion tests"
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandSingleExtensionMethod()
+        Public Async Function TestVisualBasic_ExpandSingleExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -53,11 +54,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandSingleExtensionMethodWithArgument()
+        Public Async Function TestVisualBasic_ExpandSingleExtensionMethodWithArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -100,11 +101,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandMultiExtensionMethod()
+        Public Async Function TestVisualBasic_ExpandMultiExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -147,11 +148,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandMultiExtensionMethodWithArgument()
+        Public Async Function TestVisualBasic_ExpandMultiExtensionMethodWithArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -194,11 +195,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandMultiExtensionMethodWithMoreArgument()
+        Public Async Function TestVisualBasic_ExpandMultiExtensionMethodWithMoreArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -241,11 +242,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandSimplifySingleExtensionMethod()
+        Public Async Function TestVisualBasic_ExpandSimplifySingleExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -288,11 +289,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandSimplifyChainedExtensionMethodMoreArguments()
+        Public Async Function TestVisualBasic_ExpandSimplifyChainedExtensionMethodMoreArguments() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -335,11 +336,11 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VisualBasic_ExpandSimplifyChainedExtensionMethodMoreArgumentsWithStatic()
+        Public Async Function TestVisualBasic_ExpandSimplifyChainedExtensionMethodMoreArgumentsWithStatic() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -388,12 +389,12 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
-        <WorkItem(654403)>
+        <WorkItem(654403, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/654403")>
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub VB_ExtensionMethodRewriteRoundTripsTrivia()
+        Public Async Function TestVB_ExtensionMethodRewriteRoundTripsTrivia() As Task
             Dim input =
 <Workspace>
     <Project Language="Visual Basic" CommonReferences="true">
@@ -456,14 +457,253 @@ Module ProgramExtensions
 End Module
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
+        <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestVisualBasic_ExpandExtensionMethodInMemberAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document><![CDATA[
+Imports System.Collections.Generic
+Imports System.Linq
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = {|Expand:t.Something().First()|}
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+Imports System.Collections.Generic
+Imports System.Linq
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = Global.System.Linq.Enumerable.First((CType((Global.M.Something((CType((t), Global.C)))), Global.System.Collections.Generic.IEnumerable(Of System.String))))
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WpfFact(Skip:="3260"), Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestVisualBasic_ExpandExtensionMethodInConditionalAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document><![CDATA[
+Imports System.Collections.Generic
+Imports System.Linq
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = {|Expand:t?.Something().First()|}
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+Imports System.Collections.Generic
+Imports System.Linq
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = Global.System.Linq.Enumerable.First((CType(((CType((t), Global.C))?.Something()), Global.System.Collections.Generic.IEnumerable(Of System.String))))
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestVisualBasic_ExpandExtensionMethodInMemberAccessExpression_2() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document><![CDATA[
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+
+    <Extension()>
+    Public Function Something2(cust As C) As Func(Of C)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = {|Expand:t.Something2()().Something().First()|}
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+
+    <Extension()>
+    Public Function Something2(cust As C) As Func(Of C)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = Global.System.Linq.Enumerable.First((CType((Global.M.Something((CType((Global.M.Something2((CType((t), Global.C)))()), Global.C)))), Global.System.Collections.Generic.IEnumerable(Of System.String))))
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WpfFact(Skip:="3260"), Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestVisualBasic_ExpandExtensionMethodInConditionalAccessExpression_2() As Task
+            Dim input =
+<Workspace>
+    <Project Language="Visual Basic" CommonReferences="true">
+        <Document><![CDATA[
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+
+    <Extension()>
+    Public Function Something2(cust As C) As Func(Of C)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = {|Expand:t?.Something2()?()?.Something().First()|}
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+Imports System.Runtime.CompilerServices
+
+Module M
+    <Extension()>
+    Public Function Something(cust As C) As IEnumerable(Of String)
+        Throw New NotImplementedException()
+    End Function
+
+    <Extension()>
+    Public Function Something2(cust As C) As Func(Of C)
+        Throw New NotImplementedException()
+    End Function
+End Module
+
+Class C
+    Private Function GetAssemblyIdentity(types As IEnumerable(Of C)) As Object
+        For Each t In types
+            Dim x = Global.System.Linq.Enumerable.First((CType(((CType(((CType((t), Global.C))?.Something2()?()), Global.C)?.Something())), Global.System.Collections.Generic.IEnumerable(Of System.String))))
+        Next
+        Return Nothing
+    End Function
+End Class]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
 #End Region
 
 #Region "CSharp ExtensionMethodRewrite Expansion tests"
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandSingleExtensionMethod()
+        Public Async Function TestCSharp_ExpandSingleExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -508,11 +748,11 @@ public static class ProgramExtensions
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandSingleExtensionMethodWithArgument()
+        Public Async Function TestCSharp_ExpandSingleExtensionMethodWithArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -567,11 +807,11 @@ public class Second
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandMultiExtensionMethod()
+        Public Async Function TestCSharp_ExpandMultiExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -616,11 +856,11 @@ public static class ProgramExtensions
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandMultiExtensionMethodWithArgument()
+        Public Async Function TestCSharp_ExpandMultiExtensionMethodWithArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -675,11 +915,11 @@ public class Second
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandMultiExtensionMethodWithMoreArgument()
+        Public Async Function TestCSharp_ExpandMultiExtensionMethodWithMoreArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -734,11 +974,11 @@ public class Second
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandSimplifySingleExtensionMethod()
+        Public Async Function TestCSharp_ExpandSimplifySingleExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -783,11 +1023,11 @@ public static class ProgramExtensions
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandSimplifyChainedExtensionMethodWithMoreArgument()
+        Public Async Function TestCSharp_ExpandSimplifyChainedExtensionMethodWithMoreArgument() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -842,11 +1082,11 @@ public class Second
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExpandSimplifyWithStaticFieldExtensionMethod()
+        Public Async Function TestCSharp_ExpandSimplifyWithStaticFieldExtensionMethod() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -899,12 +1139,12 @@ public static class ProgramExtensions
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
-        <WorkItem(654403)>
+        <WorkItem(654403, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/654403")>
         <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
-        Public Sub CSharp_ExtensionMethodRewriteRoundTripsTrivia()
+        Public Async Function TestCSharp_ExtensionMethodRewriteRoundTripsTrivia() As Task
             Dim input =
 <Workspace>
     <Project Language="C#" CommonReferences="true">
@@ -949,9 +1189,288 @@ public static class FooExtension
 }
 </code>
 
-            Test(input, expected)
-        End Sub
+            Await TestAsync(input, expected)
+        End Function
 
+        <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestCSharp_ExpandExtensionMethodInMemberAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="C#" CommonReferences="true">
+        <Document><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = {|Expand:t.Something().First()|};
+        }
+        return null;
+    }
+}]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = global::System.Linq.Enumerable.First<global::System.String>(global::M.Something(t));
+        }
+        return null;
+    }
+}]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WpfFact(Skip:="3260"), Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestCSharp_ExpandExtensionMethodInConditionalAccessExpression() As Task
+            Dim input =
+<Workspace>
+    <Project Language="C#" CommonReferences="true">
+        <Document><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = {|Expand:t?.Something().First()|};
+        }
+        return null;
+    }
+}]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = global::System.Linq.Enumerable.First<global::System.String>(t?.Something());
+        }
+        return null;
+    }
+}]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <Fact, Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestCSharp_ExpandExtensionMethodInMemberAccessExpression_2() As Task
+            Dim input =
+<Workspace>
+    <Project Language="C#" CommonReferences="true">
+        <Document><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+
+    public static Func<C> Something2(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = {|Expand:(t.Something2())().Something().First()|};
+        }
+        return null;
+    }
+}]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+
+    public static Func<C> Something2(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = global::System.Linq.Enumerable.First<global::System.String>(global::M.Something((global::M.Something2(t))()));
+        }
+        return null;
+    }
+}]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
+
+        <WpfFact(Skip:="3260"), Trait(Traits.Feature, Traits.Features.Expansion)>
+        <WorkItem(2593, "https://github.com/dotnet/roslyn/issues/2593")>
+        <WorkItem(3260, "https://github.com/dotnet/roslyn/issues/3260")>
+        Public Async Function TestCSharp_ExpandExtensionMethodInConditionalAccessExpression_2() As Task
+            Dim input =
+<Workspace>
+    <Project Language="C#" CommonReferences="true">
+        <Document><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+
+    public static Func<C> Something2(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = {|Expand:(t?.Something2())()?.Something().First()|};
+        }
+        return null;
+    }
+}]]>
+        </Document>
+    </Project>
+</Workspace>
+
+            Dim expected =
+<code><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+static class M
+{
+    public static IEnumerable<string> Something(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+
+    public static Func<C> Something2(this C cust)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+class C
+{
+    private object GetAssemblyIdentity(IEnumerable<C> types)
+    {
+        foreach (var t in types)
+        {
+            var x = global::System.Linq.Enumerable.First<global::System.String>((t?.Something2())()?.Something());
+        }
+        return null;
+    }
+}]]>
+</code>
+
+            Await TestAsync(input, expected)
+        End Function
 #End Region
 
     End Class

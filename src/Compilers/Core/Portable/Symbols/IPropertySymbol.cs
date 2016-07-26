@@ -8,6 +8,10 @@ namespace Microsoft.CodeAnalysis
     /// <summary>
     /// Represents a property or indexer.
     /// </summary>
+    /// <remarks>
+    /// This interface is reserved for implementation by its associated APIs. We reserve the right to
+    /// change it in the future.
+    /// </remarks>
     public interface IPropertySymbol : ISymbol
     {
         /// <summary>
@@ -30,6 +34,11 @@ namespace Microsoft.CodeAnalysis
         /// a field member when the field is marked as WithEvents.
         /// </summary>
         bool IsWithEvents { get; }
+
+        /// <summary>
+        /// Returns true if this property returns by reference.
+        /// </summary>
+        bool ReturnsByRef { get; }
 
         /// <summary>
         /// The type of the property. 

@@ -1,11 +1,12 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+Imports System.Collections.Immutable
+Imports System.ComponentModel.Composition
+Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Completion
-Imports Microsoft.CodeAnalysis.Completion.Providers
 Imports Microsoft.CodeAnalysis.Editor
-Imports Microsoft.CodeAnalysis.Editor.Extensibility.Completion
-Imports Microsoft.CodeAnalysis.Editor.Shared.Extensions
+Imports Microsoft.CodeAnalysis.Options
 Imports Microsoft.CodeAnalysis.Shared.Extensions
 Imports Microsoft.CodeAnalysis.Snippets
 Imports Microsoft.CodeAnalysis.Text
@@ -13,76 +14,71 @@ Imports Microsoft.CodeAnalysis.Text.Shared.Extensions
 Imports Microsoft.VisualStudio.Editor
 Imports Microsoft.VisualStudio.Text
 Imports Microsoft.VisualStudio.Text.Editor
-Imports System.Threading
-Imports System.Threading.Tasks
-Imports Microsoft.CodeAnalysis.Options
-Imports System.ComponentModel.Composition
 
 Namespace Microsoft.VisualStudio.LanguageServices.VisualBasic.Snippets
-    <ExportCompletionProvider("SnippetCompletionProvider", LanguageNames.VisualBasic)>
-    Friend Class SnippetCompletionProvider
-        Inherits AbstractCompletionProvider
-        Implements ISnippetCompletionProvider
+    <ExportCompletionProviderMef1("SnippetCompletionProvider", LanguageNames.VisualBasic)>
+    Partial Friend Class SnippetCompletionProvider
+        Inherits CommonCompletionProvider
+        Implements ICustomCommitCompletionProvider
 
-        Private ReadOnly EditorAdaptersFactoryService As IVsEditorAdaptersFactoryService
+        Private ReadOnly _editorAdaptersFactoryService As IVsEditorAdaptersFactoryService
 
         <ImportingConstructor>
-        Sub New(editorAdaptersFactoryService As IVsEditorAdaptersFactoryService)
-            Me.EditorAdaptersFactoryService = editorAdaptersFactoryService
+        Public Sub New(editorAdaptersFactoryService As IVsEditorAdaptersFactoryService)
+            Me._editorAdaptersFactoryService = editorAdaptersFactoryService
         End Sub
 
-        Protected Overrides Function GetItemsWorkerAsync(document As Document, position As Integer, triggerInfo As CompletionTriggerInfo, cancellationToken As CancellationToken) As Task(Of IEnumerable(Of CompletionItem))
+        Friend Overrides ReadOnly Property IsSnippetProvider As Boolean
+            Get
+                Return True
+            End Get
+        End Property
+
+        Public Overrides Function ProvideCompletionsAsync(context As CompletionContext) As Task
+            Dim document = context.Document
+            Dim position = context.Position
+            Dim cancellationToken = context.CancellationToken
+
             Dim snippetInfoService = document.GetLanguageService(Of ISnippetInfoService)()
 
             If snippetInfoService Is Nothing Then
-                Return SpecializedTasks.EmptyEnumerable(Of CompletionItem)()
+                Return SpecializedTasks.EmptyTask
             End If
 
             Dim snippets = snippetInfoService.GetSnippetsIfAvailable()
 
-            Dim textChangeSpan = CommonCompletionUtilities.GetTextChangeSpan(
-                document.GetTextAsync(cancellationToken).WaitAndGetResult(cancellationToken),
-                position,
-                AddressOf Char.IsLetterOrDigit,
-                AddressOf Char.IsLetterOrDigit)
+            context.IsExclusive = True
+            context.AddItems(CreateCompletionItems(snippets))
 
-            Return Task.FromResult(CreateCompletionItems(snippets, textChangeSpan))
+            Return SpecializedTasks.EmptyTask
         End Function
 
-        Private Function CreateCompletionItems(snippets As IEnumerable(Of SnippetInfo), span As TextSpan) As IEnumerable(Of CompletionItem)
+        Private Shared ReadOnly s_commitChars As Char() = {" "c, ";"c, "("c, ")"c, "["c, "]"c, "{"c, "}"c, "."c, ","c, ":"c, "+"c, "-"c, "*"c, "/"c, "\"c, "^"c, "<"c, ">"c, "'"c, "="c}
+        Private Shared ReadOnly s_rules As CompletionItemRules = CompletionItemRules.Create(
+            commitCharacterRules:=ImmutableArray.Create(CharacterSetModificationRule.Create(CharacterSetModificationKind.Replace, s_commitChars)))
 
-            Return snippets.Select(Function(s) New CompletionItem(Me,
-                                                                  s.Shortcut,
-                                                                  span,
-                                                                  description:=s.Description.ToSymbolDisplayParts(),
-                                                                  glyph:=Glyph.Snippet))
+        Private Function CreateCompletionItems(snippets As IEnumerable(Of SnippetInfo)) As IEnumerable(Of CompletionItem)
+
+            Return snippets.Select(Function(s) CommonCompletionItem.Create(
+                                       s.Shortcut,
+                                       description:=s.Description.ToSymbolDisplayParts(),
+                                       glyph:=Glyph.Snippet,
+                                       rules:=s_rules))
         End Function
 
-        Public Overrides Function IsCommitCharacter(completionItem As CompletionItem, ch As Char, textTypedSoFar As String) As Boolean
-            Dim commitChars = {" "c, ";"c, "("c, ")"c, "["c, "]"c, "{"c, "}"c, "."c, ","c, ":"c, "+"c, "-"c, "*"c, "/"c, "\"c, "^"c, "<"c, ">"c, "'"c, "="c}
-
-            Return commitChars.Contains(ch)
-        End Function
-
-        Public Overrides Function IsTriggerCharacter(text As SourceText, characterPosition As Integer, options As OptionSet) As Boolean
+        Friend Overrides Function IsInsertionTrigger(text As SourceText, characterPosition As Integer, options As OptionSet) As Boolean
             Return Char.IsLetterOrDigit(text(characterPosition)) AndAlso
                 options.GetOption(CompletionOptions.TriggerOnTypingLetters, LanguageNames.VisualBasic)
         End Function
 
-        Public Overrides Function SendEnterThroughToEditor(completionItem As CompletionItem, textTypedSoFar As String) As Boolean
-            Return True
-        End Function
+        Public Sub Commit(completionItem As CompletionItem,
+                          textView As ITextView,
+                          subjectBuffer As ITextBuffer,
+                          triggerSnapshot As ITextSnapshot,
+                          commitChar As Char?) Implements ICustomCommitCompletionProvider.Commit
+            Dim snippetClient = SnippetExpansionClient.GetSnippetExpansionClient(textView, subjectBuffer, _editorAdaptersFactoryService)
 
-        Protected Overrides Function IsExclusiveAsync(document As Document, position As Integer, triggerInfo As CompletionTriggerInfo, cancellationToken As CancellationToken) As Task(Of Boolean)
-            Return SpecializedTasks.True
-        End Function
-
-        Public Sub Commit(completionItem As CompletionItem, textView As ITextView, subjectBuffer As ITextBuffer, triggerSnapshot As ITextSnapshot, commitChar As Char?) Implements ICustomCommitCompletionProvider.Commit
-            Dim snippetClient = SnippetExpansionClient.GetSnippetExpansionClient(textView, subjectBuffer, EditorAdaptersFactoryService)
-
-            Dim caretPoint = textView.GetCaretPoint(subjectBuffer)
-
-            Dim trackingSpan = triggerSnapshot.CreateTrackingSpan(completionItem.FilterSpan.ToSpan(), SpanTrackingMode.EdgeInclusive)
+            Dim trackingSpan = triggerSnapshot.CreateTrackingSpan(completionItem.Span.ToSpan(), SpanTrackingMode.EdgeInclusive)
             Dim currentSpan = trackingSpan.GetSpan(subjectBuffer.CurrentSnapshot)
 
             subjectBuffer.Replace(currentSpan, completionItem.DisplayText)

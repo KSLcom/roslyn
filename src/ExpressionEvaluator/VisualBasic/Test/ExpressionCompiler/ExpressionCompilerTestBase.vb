@@ -7,71 +7,91 @@ Imports System.Runtime.CompilerServices
 Imports System.Runtime.InteropServices
 Imports System.Xml.Linq
 Imports Microsoft.CodeAnalysis.CodeGen
+Imports Microsoft.CodeAnalysis.Emit
 Imports Microsoft.CodeAnalysis.ExpressionEvaluator
+Imports Microsoft.CodeAnalysis.ExpressionEvaluator.UnitTests
 Imports Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Symbols.Metadata.PE
+Imports Microsoft.CodeAnalysis.VisualBasic.UnitTests
+Imports Microsoft.DiaSymReader
+Imports Microsoft.VisualStudio.Debugger.Clr
 Imports Microsoft.VisualStudio.Debugger.Evaluation
 Imports Microsoft.VisualStudio.Debugger.Evaluation.ClrCompilation
-Imports Microsoft.VisualStudio.SymReaderInterop
 Imports Roslyn.Test.Utilities
 Imports Roslyn.Utilities
 Imports Xunit
 
-Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
+Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator.UnitTests
     Public MustInherit Class ExpressionCompilerTestBase
         Inherits BasicTestBase
         Implements IDisposable
 
-        Private ReadOnly runtimeInstances As ArrayBuilder(Of IDisposable) = ArrayBuilder(Of IDisposable).GetInstance()
+        Private ReadOnly _runtimeInstances As ArrayBuilder(Of IDisposable) = ArrayBuilder(Of IDisposable).GetInstance()
+
+        Friend Shared ReadOnly NoAliases As ImmutableArray(Of [Alias]) = ImmutableArray(Of [Alias]).Empty
+
+        Protected Sub New()
+            ' We never want to swallow Exceptions (generate a non-fatal Watson) when running tests.
+            ExpressionEvaluatorFatalError.IsFailFastEnabled = True
+        End Sub
 
         Public Overrides Sub Dispose()
             MyBase.Dispose()
 
-            For Each instance In runtimeInstances
+            For Each instance In _runtimeInstances
                 instance.Dispose()
             Next
-            runtimeInstances.Free()
+            _runtimeInstances.Free()
         End Sub
+
+        ' TODO: remove -- workaround for bug https://github.com/dotnet/roslyn/issues/8473 in the VB compiler
+        ' https://github.com/dotnet/roslyn/issues/8473
+        Friend Shared Sub WithRuntimeInstancePortableBug(compilation As Compilation, validator As Action(Of RuntimeInstance))
+            Using instance = RuntimeInstance.Create(compilation, Nothing, DebugInformationFormat.Pdb, True)
+                validator(instance)
+            End Using
+        End Sub
+
+        Friend Shared Sub WithRuntimeInstance(compilation As Compilation, validator As Action(Of RuntimeInstance))
+            WithRuntimeInstance(compilation, Nothing, True, validator)
+        End Sub
+
+        Friend Shared Sub WithRuntimeInstance(compilation As Compilation, references As IEnumerable(Of MetadataReference), validator As Action(Of RuntimeInstance))
+            WithRuntimeInstance(compilation, references, True, validator)
+        End Sub
+
+        Friend Shared Sub WithRuntimeInstance(compilation As Compilation, references As IEnumerable(Of MetadataReference), includeLocalSignatures As Boolean, validator As Action(Of RuntimeInstance))
+            For Each debugFormat In {DebugInformationFormat.Pdb, DebugInformationFormat.PortablePdb}
+                Using instance = RuntimeInstance.Create(compilation, references, debugFormat, includeLocalSignatures)
+                    validator(instance)
+                End Using
+            Next
+        End Sub
+
+        Friend Function CreateRuntimeInstance(modules As IEnumerable(Of ModuleInstance)) As RuntimeInstance
+            Dim instance = RuntimeInstance.Create(modules)
+            _runtimeInstances.Add(instance)
+            Return instance
+        End Function
 
         Friend Function CreateRuntimeInstance(
             compilation As Compilation,
-            Optional includeSymbols As Boolean = True) As RuntimeInstance
+            Optional references As IEnumerable(Of MetadataReference) = Nothing,
+            Optional debugFormat As DebugInformationFormat = DebugInformationFormat.Pdb,
+            Optional includeLocalSignatures As Boolean = True) As RuntimeInstance
 
-            Dim exeBytes As Byte() = Nothing
-            Dim pdbBytes As Byte() = Nothing
-            Dim references As ImmutableArray(Of MetadataReference) = Nothing
-            compilation.EmitAndGetReferences(exeBytes, pdbBytes, references)
-            Return CreateRuntimeInstance(
-                ExpressionCompilerUtilities.GenerateUniqueName(),
-                references.AddIntrinsicAssembly(),
-                exeBytes,
-                If(includeSymbols, New SymReader(pdbBytes), Nothing))
+            Dim instance = RuntimeInstance.Create(compilation, references, debugFormat, includeLocalSignatures)
+            _runtimeInstances.Add(instance)
+            Return instance
         End Function
 
         Friend Function CreateRuntimeInstance(
-            assemblyName As String,
-            references As ImmutableArray(Of MetadataReference),
-            exeBytes As Byte(),
-            symReader As ISymUnmanagedReader,
-            Optional includeLocalSignatures As Boolean = True) As RuntimeInstance
+            [module] As ModuleInstance,
+            Optional references As IEnumerable(Of MetadataReference) = Nothing) As RuntimeInstance
 
-            Dim exeReference = AssemblyMetadata.CreateFromImage(exeBytes).GetReference(display:=assemblyName)
-            Dim modulesBuilder = ArrayBuilder(Of ModuleInstance).GetInstance()
-            ' Create modules for the references.
-            modulesBuilder.AddRange(references.Select(Function(r) r.ToModuleInstance(fullImage:=Nothing, symReader:=Nothing, includeLocalSignatures:=includeLocalSignatures)))
-            ' Create a module for the exe.
-            modulesBuilder.Add(exeReference.ToModuleInstance(exeBytes, symReader, includeLocalSignatures:=includeLocalSignatures))
-
-            Dim modules = modulesBuilder.ToImmutableAndFree()
-            modules.VerifyAllModules()
-
-            Return CreateRuntimeInstance(modules)
-        End Function
-
-        Friend Function CreateRuntimeInstance(modules As ImmutableArray(Of ModuleInstance)) As RuntimeInstance
-            Dim instance = New RuntimeInstance(modules)
-            runtimeInstances.Add(instance)
+            Dim instance = RuntimeInstance.Create([module], references, DebugInformationFormat.Pdb)
+            _runtimeInstances.Add(instance)
             Return instance
         End Function
 
@@ -88,7 +108,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             blocks = moduleInstances.SelectAsArray(Function(m) m.MetadataBlock)
 
             Dim compilation = blocks.ToCompilation()
-            Dim methodOrType = GetMethodOrTypeBySignature(Compilation, methodOrTypeName)
+            Dim methodOrType = GetMethodOrTypeBySignature(compilation, methodOrTypeName)
             Dim [module] = DirectCast(methodOrType.ContainingModule, PEModuleSymbol)
             Dim id = [module].Module.GetModuleVersionIdOrThrow()
             Dim moduleInstance = moduleInstances.First(Function(m) m.ModuleVersionId = id)
@@ -96,7 +116,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             moduleVersionId = id
             symReader = DirectCast(moduleInstance.SymReader, ISymUnmanagedReader)
 
-            Dim methodOrTypeHandle As Handle
+            Dim methodOrTypeHandle As EntityHandle
             If methodOrType.Kind = SymbolKind.Method Then
                 methodOrTypeHandle = DirectCast(methodOrType, PEMethodSymbol).Handle
                 localSignatureToken = moduleInstance.GetLocalSignatureToken(CType(methodOrTypeHandle, MethodDefinitionHandle))
@@ -113,8 +133,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             runtime As RuntimeInstance,
             methodName As String,
             Optional atLineNumber As Integer = -1,
-            Optional lazyAssemblyReaders As Lazy(Of ImmutableArray(Of AssemblyReaders)) = Nothing,
-            Optional previous As VisualBasicMetadataContext = Nothing) As EvaluationContext
+            Optional lazyAssemblyReaders As Lazy(Of ImmutableArray(Of AssemblyReaders)) = Nothing) As EvaluationContext
 
             Dim blocks As ImmutableArray(Of MetadataBlock) = Nothing
             Dim moduleVersionId As Guid = Nothing
@@ -124,10 +143,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             GetContextState(runtime, methodName, blocks, moduleVersionId, symReader, methodToken, localSignatureToken)
             Const methodVersion = 1
 
-            Dim ilOffset As Integer = ExpressionCompilerTestHelpers.GetOffset(methodToken, symReader, atLineNumber)
+            Dim ilOffset = ExpressionCompilerTestHelpers.GetOffset(methodToken, symReader, atLineNumber)
 
             Return EvaluationContext.CreateMethodContext(
-                previous,
+                Nothing,
                 blocks,
                 If(lazyAssemblyReaders, MakeDummyLazyAssemblyReaders()),
                 symReader,
@@ -174,7 +193,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
 
             Dim resultProperties As ResultProperties = Nothing
             Dim errorMessage As String = Nothing
-            Dim result = Evaluate(source, outputKind, methodName, expr, resultProperties, errorMessage, atLineNumber, DefaultInspectionContext.Instance, includeSymbols)
+            Dim result = Evaluate(source, outputKind, methodName, expr, resultProperties, errorMessage, atLineNumber, includeSymbols)
             Assert.Null(errorMessage)
             Return result
         End Function
@@ -187,7 +206,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             <Out> ByRef resultProperties As ResultProperties,
             <Out> ByRef errorMessage As String,
             Optional atLineNumber As Integer = -1,
-            Optional inspection As InspectionContext = Nothing,
             Optional includeSymbols As Boolean = True) As CompilationTestData
 
             Dim compilation0 = CreateCompilationWithReferences(
@@ -195,15 +213,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
                 {MscorlibRef_v4_0_30316_17626, SystemRef, MsvbRef},
                 options:=If(outputKind = OutputKind.DynamicallyLinkedLibrary, TestOptions.DebugDll, TestOptions.DebugExe))
 
-            Dim runtime = CreateRuntimeInstance(compilation0, includeSymbols)
+            Dim runtime = CreateRuntimeInstance(compilation0, debugFormat:=If(includeSymbols, DebugInformationFormat.Pdb, Nothing))
             Dim context = CreateMethodContext(runtime, methodName, atLineNumber)
             Dim testData = New CompilationTestData()
             Dim missingAssemblyIdentities As ImmutableArray(Of AssemblyIdentity) = Nothing
             Dim result = context.CompileExpression(
-                    If(inspection, DefaultInspectionContext.Instance),
                     expr,
                     DkmEvaluationFlags.TreatAsExpression,
-                    VisualBasicDiagnosticFormatter.Instance,
+                    NoAliases,
+                    DebuggerDiagnosticFormatter.Instance,
                     resultProperties,
                     errorMessage,
                     missingAssemblyIdentities,
@@ -258,6 +276,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
             localAndMethod As LocalAndMethod,
             expectedMethodName As String,
             expectedLocalName As String,
+            Optional expectedLocalDisplayName As String = Nothing,
             Optional expectedFlags As DkmClrCompilationResultFlags = DkmClrCompilationResultFlags.None,
             Optional expectedILOpt As String = Nothing,
             Optional expectedGeneric As Boolean = False,
@@ -270,6 +289,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
                 localAndMethod,
                 expectedMethodName,
                 expectedLocalName,
+                If(expectedLocalDisplayName, expectedLocalName),
                 expectedFlags,
                 AddressOf VerifyTypeParameters,
                 expectedILOpt,
@@ -278,32 +298,69 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests
                 expectedValueSourceLine)
         End Sub
 
-
         Friend Shared Function GetMethodOrTypeBySignature(compilation As Compilation, signature As String) As Symbol
-            Dim methodOrTypeName As String = signature
             Dim parameterTypeNames() As String = Nothing
-            Dim parameterListStart = methodOrTypeName.IndexOf("("c)
-            If parameterListStart > -1 Then
-                parameterTypeNames = methodOrTypeName.Substring(parameterListStart).Trim("("c, ")"c).Split(","c)
-                methodOrTypeName = methodOrTypeName.Substring(0, parameterListStart)
-            End If
+            Dim methodOrTypeName = ExpressionCompilerTestHelpers.GetMethodOrTypeSignatureParts(signature, parameterTypeNames)
 
             Dim candidates = compilation.GetMembers(methodOrTypeName)
-            Assert.NotEmpty(candidates)
-            Assert.Equal(parameterTypeNames Is Nothing, candidates.Length = 1)
+            Dim methodOrType = If(parameterTypeNames Is Nothing,
+                candidates.FirstOrDefault(),
+                candidates.FirstOrDefault(Function(c) parameterTypeNames.SequenceEqual(DirectCast(c, MethodSymbol).Parameters.Select(Function(p) p.Type.Name))))
 
-            Dim methodOrType As Symbol = Nothing
-            For Each candidate In candidates
-                methodOrType = candidate
-                If (parameterTypeNames Is Nothing) OrElse
-                    parameterTypeNames.SequenceEqual(DirectCast(methodOrType, MethodSymbol).Parameters.Select(Function(p) p.Type.Name)) Then
-                    ' Found a match.
-                    Exit For
-                End If
-            Next
             Assert.False(methodOrType Is Nothing, "Could not find method or type with signature '" + signature + "'.")
-
             Return methodOrType
+        End Function
+
+        Friend Shared Function VariableAlias(name As String, Optional type As Type = Nothing) As [Alias]
+            Return VariableAlias(name, If(type, GetType(Object)).AssemblyQualifiedName)
+        End Function
+
+        Friend Shared Function VariableAlias(name As String, typeAssemblyQualifiedName As String) As [Alias]
+            Return New [Alias](DkmClrAliasKind.Variable, name, name, typeAssemblyQualifiedName, Nothing)
+        End Function
+
+        Friend Shared Function ObjectIdAlias(id As UInteger, Optional type As Type = Nothing) As [Alias]
+            Return ObjectIdAlias(id, If(type, GetType(Object)).AssemblyQualifiedName)
+        End Function
+
+        Friend Shared Function ObjectIdAlias(id As UInteger, typeAssemblyQualifiedName As String) As [Alias]
+            Assert.NotEqual(Of UInteger)(0, id) ' Not a valid id.
+            Dim name = $"${id}"
+            Return New [Alias](DkmClrAliasKind.ObjectId, name, name, typeAssemblyQualifiedName, Nothing)
+        End Function
+
+        Friend Shared Function ReturnValueAlias(Optional id As Integer = -1, Optional type As Type = Nothing) As [Alias]
+            Return ReturnValueAlias(id, If(type, GetType(Object)).AssemblyQualifiedName)
+        End Function
+
+        Friend Shared Function ReturnValueAlias(id As Integer, typeAssemblyQualifiedName As String) As [Alias]
+            Dim name = $"Method M{If(id < 0, "", id.ToString())} returned"
+            Dim fullName = If(id < 0, "$ReturnValue", $"$ReturnValue{id}")
+            Return New [Alias](DkmClrAliasKind.ReturnValue, name, fullName, typeAssemblyQualifiedName, Nothing)
+        End Function
+
+        Friend Shared Function ExceptionAlias(Optional type As Type = Nothing, Optional stowed As Boolean = False) As [Alias]
+            Return ExceptionAlias(If(type, GetType(Exception)).AssemblyQualifiedName, stowed)
+        End Function
+
+        Friend Shared Function ExceptionAlias(typeAssemblyQualifiedName As String, Optional stowed As Boolean = False) As [Alias]
+            Dim fullName = If(stowed, "$stowedexception", "$exception")
+            Const name = "Error"
+            Dim kind = If(stowed, DkmClrAliasKind.StowedException, DkmClrAliasKind.Exception)
+            Return New [Alias](kind, name, fullName, typeAssemblyQualifiedName, Nothing)
+        End Function
+
+        Friend Shared Function [Alias](kind As DkmClrAliasKind, name As String, fullName As String, typeAssemblyQualifiedName As String, customTypeInfo As CustomTypeInfo) As [Alias]
+            Return New [Alias](kind, name, fullName, typeAssemblyQualifiedName, customTypeInfo)
+        End Function
+
+        Friend Shared Function GetMethodDebugInfo(runtime As RuntimeInstance, qualifiedMethodName As String, Optional ilOffset As Integer = 0) As MethodDebugInfo(Of TypeSymbol, LocalSymbol)
+            Dim peCompilation = runtime.Modules.SelectAsArray(Function(m) m.MetadataBlock).ToCompilation()
+            Dim peMethod = peCompilation.GlobalNamespace.GetMember(Of PEMethodSymbol)(qualifiedMethodName)
+            Dim peModule = DirectCast(peMethod.ContainingModule, PEModuleSymbol)
+            Dim symReader = runtime.Modules.Single(Function(mi) mi.ModuleVersionId = peModule.Module.GetModuleVersionIdOrThrow()).SymReader
+            Dim symbolProvider = New VisualBasicEESymbolProvider(peModule, peMethod)
+            Return MethodDebugInfo(Of TypeSymbol, LocalSymbol).ReadMethodDebugInfo(DirectCast(symReader, ISymUnmanagedReader3), symbolProvider, MetadataTokens.GetToken(peMethod.Handle), methodVersion:=1, ilOffset:=ilOffset, isVisualBasicMethod:=True)
         End Function
     End Class
 End Namespace

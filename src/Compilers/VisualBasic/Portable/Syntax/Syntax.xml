@@ -409,7 +409,7 @@ Unify Enum declarations with other block type declarations.
       </child>
 
       <child name="ValueKeyword" optional="true" kind="OnKeyword|OffKeyword|TextKeyword|BinaryKeyword">
-        <description>The keyword that identifiers the value being set for the opition: On, Off, Text or Binary.</description>
+        <description>The keyword that identifiers the value being set for the option: On, Off, Text or Binary.</description>
         <lm-equiv name="Value"></lm-equiv>
         <native-equiv name=""></native-equiv>
         <!-- TODO: constraint: Text and Binary iff CompareKeyword? -->
@@ -2398,7 +2398,7 @@ Unify Enum declarations with other block type declarations.
       **********************-->
     <node-structure name="EqualsValueSyntax" parent="VisualBasicSyntaxNode">
       <description>
-        Represents an "= initializer" clause in a declaration for a variable, pararameter or automatic property.
+        Represents an "= initializer" clause in a declaration for a variable, parameter or automatic property.
       </description>
 
       <node-kind name="EqualsValue"></node-kind>
@@ -3157,7 +3157,7 @@ Unify Enum declarations with other block type declarations.
       </child>
 
       <child name="ElseClause" optional="true" kind="SingleLineElseClause">
-        <description>An "Else" clause to be executed if the condition expression evalues as false.</description>
+        <description>An "Else" clause to be executed if the condition expression evaluates as false.</description>
       </child>
 
     </node-structure>
@@ -3200,10 +3200,10 @@ Unify Enum declarations with other block type declarations.
       <description>
         Represents a multi-line "If ... Then ... ElseIf ... Then ... Else ... End If" block.
       </description>
-      <spec-section>10.8.1</spec-section>
-      <grammar>IfStatement</grammar>
       <lm-equiv name="IfNode">A MultiLineIfBlock corresponds to an IfNode -- the If statement and its following body.</lm-equiv>
       <native-equiv name="IfStatement">A MultiLineIfBlock corresponds to an IfStatement -- the If statement and its following body.</native-equiv>
+      <spec-section>10.8.1</spec-section>
+      <grammar>IfStatement</grammar>
 
       <node-kind name="MultiLineIfBlock" />
 
@@ -4275,7 +4275,7 @@ Unify Enum declarations with other block type declarations.
       ******************-->
     <node-structure name="ForBlockSyntax" parent="ForOrForEachBlockSyntax">
       <description>
-        Represents a For block, including the introducting statement,
+        Represents a For block, including the introducing statement,
         the body and the "Next" (which can be omitted if a containing For has a Next with
         multiple variables).
       </description>
@@ -4302,7 +4302,7 @@ Unify Enum declarations with other block type declarations.
       ******************-->
     <node-structure name="ForEachBlockSyntax" parent="ForOrForEachBlockSyntax">
       <description>
-        Represents a For Each block, including the introducting statement,
+        Represents a For Each block, including the introducing statement,
         the body and the "Next" (which can be omitted if a containing For has a Next with
         multiple variables).
       </description>
@@ -8844,7 +8844,7 @@ Unify Enum declarations with other block type declarations.
     <enumeration name="TypeCharacter">
       <description>
         Represents one of the type characters or literal suffixes of VB. Used to describe
-        a) the type character suffixes that can be placed on identifers, and
+        a) the type character suffixes that can be placed on identifiers, and
         b) the suffixes that can be placed on integer literals.
       </description>
       <lm-equiv name="TypeCharacter"></lm-equiv>
@@ -8915,7 +8915,7 @@ Unify Enum declarations with other block type declarations.
       </node-kind>
 
       <field name="Base" type="LiteralBase">
-        <description>Whether the token was specified in base 10, 16 or 8.</description>
+        <description>Whether the token was specified in base 10, 16, 8 or 2.</description>
       </field>
 
       <field name="TypeSuffix" type="TypeCharacter">
@@ -9042,7 +9042,7 @@ Unify Enum declarations with other block type declarations.
 
     <enumeration name="LiteralBase">
       <description>
-        The three possible number bases that a literal can be written in.
+        The four possible number bases that a literal can be written in.
       </description>
       <native-equiv name="LiteralBase"></native-equiv>
 
@@ -9050,6 +9050,7 @@ Unify Enum declarations with other block type declarations.
         <enumerator name="Decimal" />
         <enumerator name="Hexadecimal" />
         <enumerator name="Octal" />
+        <enumerator name="Binary" />
       </enumerators>
     </enumeration>
 
@@ -9082,7 +9083,7 @@ Unify Enum declarations with other block type declarations.
       -  XmlDocumentation
       **********************-->
     <node-structure name="DocumentationCommentTriviaSyntax" parent="StructuredTriviaSyntax">
-      <description>Represents a documentation comment e.g. ''' &lt;Summary&gt; apearing in source.</description>
+      <description>Represents a documentation comment e.g. ''' &lt;Summary&gt; appearing in source.</description>
       <node-kind name="DocumentationCommentTrivia">
         <lm-equiv name="XmlDocCommentToken" />
         <native-equiv name="" />
@@ -9243,7 +9244,7 @@ Unify Enum declarations with other block type declarations.
       -  InterpolationAlignmentClause
       ******************-->
     <node-structure name="InterpolationAlignmentClauseSyntax" parent="VisualBasicSyntaxNode">
-      <description>Represents an alignment clause ',alignment' of an intepolated string embedded expression.</description>
+      <description>Represents an alignment clause ',alignment' of an interpolated string embedded expression.</description>
 
       <node-kind name="InterpolationAlignmentClause" />
 

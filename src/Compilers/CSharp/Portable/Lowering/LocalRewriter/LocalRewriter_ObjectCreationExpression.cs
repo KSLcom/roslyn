@@ -12,7 +12,14 @@ namespace Microsoft.CodeAnalysis.CSharp
         public override BoundNode VisitDynamicObjectCreationExpression(BoundDynamicObjectCreationExpression node)
         {
             var loweredArguments = VisitList(node.Arguments);
-            return _dynamicFactory.MakeDynamicConstructorInvocation(node.Syntax, node.Type, loweredArguments, node.ArgumentNamesOpt, node.ArgumentRefKindsOpt).ToExpression();
+            var constructorInvocation = _dynamicFactory.MakeDynamicConstructorInvocation(node.Syntax, node.Type, loweredArguments, node.ArgumentNamesOpt, node.ArgumentRefKindsOpt).ToExpression();
+
+            if (node.InitializerExpressionOpt == null || node.InitializerExpressionOpt.HasErrors)
+            {
+                return constructorInvocation;
+            }
+
+            return MakeObjectCreationWithInitializer(node.Syntax, constructorInvocation, node.InitializerExpressionOpt, node.Type);
         }
 
         public override BoundNode VisitObjectCreationExpression(BoundObjectCreationExpression node)
@@ -45,7 +52,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 if (node.Type.IsInterfaceType())
                 {
                     Debug.Assert(rewrittenObjectCreation.Type == ((NamedTypeSymbol)node.Type).ComImportCoClass);
-                    rewrittenObjectCreation = MakeConversion(rewrittenObjectCreation, node.Type, false, false);
+                    rewrittenObjectCreation = MakeConversionNode(rewrittenObjectCreation, node.Type, false, false);
                 }
 
                 return rewrittenObjectCreation;
@@ -72,7 +79,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             if (node.Type.IsInterfaceType())
             {
                 Debug.Assert(rewrittenObjectCreation.Type == ((NamedTypeSymbol)node.Type).ComImportCoClass);
-                rewrittenObjectCreation = MakeConversion(rewrittenObjectCreation, node.Type, false, false);
+                rewrittenObjectCreation = MakeConversionNode(rewrittenObjectCreation, node.Type, false, false);
             }
 
             if (node.InitializerExpressionOpt == null || node.InitializerExpressionOpt.HasErrors)

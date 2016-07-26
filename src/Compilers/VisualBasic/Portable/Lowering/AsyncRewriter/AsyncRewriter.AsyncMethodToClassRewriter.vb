@@ -57,8 +57,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
             Private ReadOnly _typesNeedingClearingCache As New Dictionary(Of TypeSymbol, Boolean)
 
-            Private _enclosingSequencePointSyntax As VisualBasicSyntaxNode = Nothing
-
             Friend Sub New(method As MethodSymbol,
                            F As SyntheticBoundNodeFactory,
                            state As FieldSymbol,
@@ -97,7 +95,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 ' to find the previous awaiter field.
                 If Not Me._awaiterFields.TryGetValue(awaiterType, result) Then
                     Dim slotIndex As Integer = -1
-                    If Me.SlotAllocatorOpt Is Nothing OrElse Not Me.SlotAllocatorOpt.TryGetPreviousAwaiterSlotIndex(DirectCast(awaiterType, Cci.ITypeReference), slotIndex) Then
+                    If Me.SlotAllocatorOpt Is Nothing OrElse Not Me.SlotAllocatorOpt.TryGetPreviousAwaiterSlotIndex(F.CompilationState.ModuleBuilderOpt.Translate(awaiterType, F.Syntax, F.Diagnostics), F.Diagnostics, slotIndex) Then
                         slotIndex = _nextAwaiterId
                         _nextAwaiterId = _nextAwaiterId + 1
                     End If
@@ -117,6 +115,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
                 Dim rewrittenBody As BoundStatement = DirectCast(Visit(body), BoundStatement)
 
+                Dim rootScopeHoistedLocals As ImmutableArray(Of FieldSymbol) = Nothing
+                TryUnwrapBoundStateMachineScope(rewrittenBody, rootScopeHoistedLocals)
+
                 Dim bodyBuilder = ArrayBuilder(Of BoundStatement).GetInstance()
 
                 ' NOTE: We don't need to create/use any label after Dispatch inside Try block below 
@@ -129,7 +130,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 ' STMT:         Case <state1> ' ...
                 ' STMT:         ' ...
                 ' STMT:       End Select
-                ' STMT:       ' Fall trough
+                ' STMT:       ' Fall through
                 ' STMT:       [body]
                 ' STMT:       ...
                 ' STMT:   Catch $ex As Exception
@@ -153,7 +154,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Me.F.Try(
                         Me.F.Block(
                             ImmutableArray(Of LocalSymbol).Empty,
-                            Me.F.HiddenSequencePoint(),
+                            SyntheticBoundNodeFactory.HiddenSequencePoint(),
                             Me.Dispatch(),
                             rewrittenBody
                         ),
@@ -161,7 +162,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                             Me.F.Catch(
                                 exceptionLocal,
                                 Me.F.Block(
-                                    Me.F.HiddenSequencePoint(),
+                                    SyntheticBoundNodeFactory.HiddenSequencePoint(),
                                     Me.F.Assignment(Me.F.Field(Me.F.Me(), Me.StateField, True), Me.F.Literal(StateMachineStates.FinishedStateMachine)),
                                     Me.F.ExpressionStatement(
                                         Me._owner.GenerateMethodCall(
@@ -184,7 +185,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     bodyBuilder.Add(stateDone)
                 Else
                     bodyBuilder.Add(Me.F.SequencePointWithSpan(block, block.EndBlockStatement.Span, stateDone))
-                    bodyBuilder.Add(Me.F.HiddenSequencePoint())
+                    bodyBuilder.Add(SyntheticBoundNodeFactory.HiddenSequencePoint())
                 End If
 
                 ' STMT: builder.SetResult([RetVal])
@@ -201,14 +202,18 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 bodyBuilder.Add(Me.F.Label(Me._exitLabel))
                 bodyBuilder.Add(Me.F.Return())
 
-                Dim newBody As ImmutableArray(Of BoundStatement) = bodyBuilder.ToImmutableAndFree()
-
-                Me._owner.CloseMethod(
-                    Me.F.Block(
+                Dim newStatements As ImmutableArray(Of BoundStatement) = bodyBuilder.ToImmutableAndFree()
+                Dim newBody = Me.F.Block(
                         If(Me._exprRetValue IsNot Nothing,
                            ImmutableArray.Create(Me._exprRetValue, Me.CachedState),
                            ImmutableArray.Create(Me.CachedState)),
-                       newBody))
+                       newStatements)
+
+                If rootScopeHoistedLocals.Length > 0 Then
+                    newBody = MakeStateMachineScope(rootScopeHoistedLocals, newBody)
+                End If
+
+                Me._owner.CloseMethod(newBody)
             End Sub
 
             Protected Overrides ReadOnly Property ResumeLabelName As String

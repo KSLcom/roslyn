@@ -16,7 +16,6 @@ namespace Microsoft.CodeAnalysis.CSharp
         private readonly SyntaxTree _syntaxTree;
         private readonly string _scriptClassName;
         private readonly bool _isSubmission;
-        private List<Diagnostic> _referenceDirectiveDiagnostics;
 
         private DeclarationTreeBuilder(SyntaxTree syntaxTree, string scriptClassName, bool isSubmission)
         {
@@ -138,7 +137,6 @@ namespace Microsoft.CodeAnalysis.CSharp
                 treeNode: _syntaxTree.GetReference(compilationUnit),
                 children: rootChildren.ToImmutableAndFree(),
                 referenceDirectives: GetReferenceDirectives(compilationUnit),
-                referenceDirectiveDiagnostics: _referenceDirectiveDiagnostics.AsImmutableOrEmpty(),
                 hasAssemblyAttributes: compilationUnit.AttributeLists.Any());
         }
 
@@ -151,13 +149,12 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return ImmutableArray<ReferenceDirective>.Empty;
             }
 
-            var directives = new ReferenceDirective[directiveNodes.Count];
-            for (int i = 0; i < directives.Length; i++)
+            var directives = ArrayBuilder<ReferenceDirective>.GetInstance(directiveNodes.Count);
+            foreach (var directiveNode in directiveNodes)
             {
-                directives[i] = new ReferenceDirective(directiveNodes[i].File.ValueText, new SourceLocation(directiveNodes[i]));
+                directives.Add(new ReferenceDirective(directiveNode.File.ValueText, new SourceLocation(directiveNode)));
             }
-
-            return directives.AsImmutableOrNull();
+            return directives.ToImmutableAndFree();
         }
 
         private SingleNamespaceOrTypeDeclaration CreateScriptClass(
@@ -207,54 +204,26 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             var children = VisitNamespaceChildren(compilationUnit, compilationUnit.Members, ((Syntax.InternalSyntax.CompilationUnitSyntax)(compilationUnit.Green)).Members);
 
-            // no diagnostics should be reported from a non-script tree:
-            Debug.Assert(_referenceDirectiveDiagnostics == null);
-
             return new RootSingleNamespaceDeclaration(
                 hasUsings: compilationUnit.Usings.Any(),
                 hasExternAliases: compilationUnit.Externs.Any(),
                 treeNode: _syntaxTree.GetReference(compilationUnit),
                 children: children,
                 referenceDirectives: ImmutableArray<ReferenceDirective>.Empty,
-                referenceDirectiveDiagnostics: GetMisplacedReferenceDirectivesDiagnostics(compilationUnit),
                 hasAssemblyAttributes: compilationUnit.AttributeLists.Any());
-        }
-
-        private static ImmutableArray<Diagnostic> GetMisplacedReferenceDirectivesDiagnostics(CompilationUnitSyntax compilation)
-        {
-            // report errors for the first #r directive - they are not allowed in regular code:
-            var directives = compilation.GetReferenceDirectives();
-            if (directives.Count == 0)
-            {
-                return ImmutableArray<Diagnostic>.Empty;
-            }
-
-            return ImmutableArray.Create<Diagnostic>(
-                new CSDiagnostic(
-                    new DiagnosticInfo(MessageProvider.Instance, (int)ErrorCode.ERR_ReferenceDirectiveOnlyAllowedInScripts),
-                    new SourceLocation(directives[0])));
         }
 
         public override SingleNamespaceOrTypeDeclaration VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
         {
             var children = VisitNamespaceChildren(node, node.Members, node.Green.Members);
 
-            if (_syntaxTree.Options.Kind == SourceCodeKind.Interactive || _syntaxTree.Options.Kind == SourceCodeKind.Script)
-            {
-                _referenceDirectiveDiagnostics = _referenceDirectiveDiagnostics ?? new List<Diagnostic>();
-
-                _referenceDirectiveDiagnostics.Add(new CSDiagnostic(
-                    new DiagnosticInfo(MessageProvider.Instance, (int)ErrorCode.ERR_NamespaceNotAllowedInScript),
-                    new SourceLocation(node.NamespaceKeyword)));
-            }
-
             bool hasUsings = node.Usings.Any();
             bool hasExterns = node.Externs.Any();
             NameSyntax name = node.Name;
             CSharpSyntaxNode currentNode = node;
-            while (name is QualifiedNameSyntax)
+            QualifiedNameSyntax dotted;
+            while ((dotted = name as QualifiedNameSyntax) != null)
             {
-                var dotted = name as QualifiedNameSyntax;
                 var ns = SingleNamespaceDeclaration.Create(
                     name: dotted.Right.Identifier.ValueText,
                     hasUsings: hasUsings,
@@ -462,8 +431,17 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             // PERF: The member names collection tends to be long-lived. Use a string array since
             // that uses less memory than a HashSet<string>.
-            string[] result = new string[set.Count];
-            set.CopyTo(result);
+            string[] result;
+            if (set.Count == 0)
+            {
+                result = SpecializedCollections.EmptyArray<string>();
+            }
+            else
+            {
+                result = new string[set.Count];
+                set.CopyTo(result);
+            }
+
             set.Free();
             return result;
         }

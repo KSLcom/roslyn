@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.CodeGen;
@@ -74,7 +75,88 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             stateMachineType = new IteratorStateMachine(slotAllocatorOpt, compilationState, method, methodOrdinal, isEnumerable, elementType);
             compilationState.ModuleBuilderOpt.CompilationState.SetStateMachineType(method, stateMachineType);
-            return new IteratorRewriter(body, method, isEnumerable, stateMachineType, slotAllocatorOpt, compilationState, diagnostics).Rewrite();
+            var rewriter = new IteratorRewriter(body, method, isEnumerable, stateMachineType, slotAllocatorOpt, compilationState, diagnostics);
+            if (!rewriter.VerifyPresenceOfRequiredAPIs())
+            {
+                return body;
+            }
+
+            return rewriter.Rewrite();
+        }
+
+        /// <returns>
+        /// Returns true if all types and members we need are present and good
+        /// </returns>
+        protected bool VerifyPresenceOfRequiredAPIs()
+        {
+            DiagnosticBag bag = DiagnosticBag.GetInstance();
+
+            EnsureSpecialType(SpecialType.System_Int32, bag);
+            EnsureSpecialType(SpecialType.System_IDisposable, bag);
+            EnsureSpecialMember(SpecialMember.System_IDisposable__Dispose, bag);
+
+            // IEnumerator
+            EnsureSpecialType(SpecialType.System_Collections_IEnumerator, bag);
+            EnsureSpecialPropertyGetter(SpecialMember.System_Collections_IEnumerator__Current, bag);
+            EnsureSpecialMember(SpecialMember.System_Collections_IEnumerator__MoveNext, bag);
+            EnsureSpecialMember(SpecialMember.System_Collections_IEnumerator__Reset, bag);
+
+            // IEnumerator<T>
+            EnsureSpecialType(SpecialType.System_Collections_Generic_IEnumerator_T, bag);
+            EnsureSpecialPropertyGetter(SpecialMember.System_Collections_Generic_IEnumerator_T__Current, bag);
+
+            if (_isEnumerable)
+            {
+                // IEnumerable and IEnumerable<T>
+                EnsureSpecialType(SpecialType.System_Collections_IEnumerable, bag);
+                EnsureSpecialMember(SpecialMember.System_Collections_IEnumerable__GetEnumerator, bag);
+                EnsureSpecialType(SpecialType.System_Collections_Generic_IEnumerable_T, bag);
+                EnsureSpecialMember(SpecialMember.System_Collections_Generic_IEnumerable_T__GetEnumerator, bag);
+            }
+
+            bool hasErrors = bag.HasAnyErrors();
+            if (hasErrors)
+            {
+                diagnostics.AddRange(bag);
+            }
+
+            bag.Free();
+            return !hasErrors;
+        }
+
+        private Symbol EnsureSpecialMember(SpecialMember member, DiagnosticBag bag)
+        {
+            Symbol symbol;
+            Binder.TryGetSpecialTypeMember(F.Compilation, member, body.Syntax, bag, out symbol);
+            return symbol;
+        }
+
+        private void EnsureSpecialType(SpecialType type, DiagnosticBag bag)
+        {
+            Binder.GetSpecialType(F.Compilation, type, body.Syntax, bag);
+        }
+
+        /// <summary>
+        /// Check that the property and its getter exist and collect any use-site errors.
+        /// </summary>
+        private void EnsureSpecialPropertyGetter(SpecialMember member, DiagnosticBag bag)
+        {
+            PropertySymbol symbol = (PropertySymbol)EnsureSpecialMember(member, bag);
+            if ((object)symbol != null)
+            {
+                var getter = symbol.GetMethod;
+                if ((object)getter == null)
+                {
+                    Binder.Error(bag, ErrorCode.ERR_PropertyLacksGet, body.Syntax, symbol);
+                    return;
+                }
+
+                var info = getter.GetUseSiteDiagnostic();
+                if ((object)info != null)
+                {
+                    bag.Add(new CSDiagnostic(info, body.Syntax.Location));
+                }
+            }
         }
 
         protected override bool PreserveInitialParameterValues
@@ -137,34 +219,28 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 var disposeMethod = OpenMethodImplementation(
                     IDisposable_Dispose,
-                    debuggerHidden: true,
-                    generateDebugInfo: false,
                     hasMethodBodyDependency: true);
 
-                var moveNextMethod = OpenMethodImplementation(
-                    IEnumerator_MoveNext,
-                    methodName: WellKnownMemberNames.MoveNextMethodName,
-                    debuggerHidden: IsDebuggerHidden(this.method),
-                    hasMethodBodyDependency: true);
+                var moveNextMethod = OpenMoveNextMethodImplementation(IEnumerator_MoveNext);
 
                 GenerateMoveNextAndDispose(moveNextMethod, disposeMethod);
             }
 
             // Add T IEnumerator<T>.Current
             {
-                OpenPropertyImplementation(IEnumeratorOfElementType_get_Current, debuggerHidden: true, hasMethodBodyDependency: false);
+                OpenPropertyImplementation(IEnumeratorOfElementType_get_Current);
                 F.CloseMethod(F.Return(F.Field(F.This(), _currentField)));
             }
 
             // Add void IEnumerator.Reset()
             {
-                OpenMethodImplementation(IEnumerator_Reset, debuggerHidden: true, generateDebugInfo: false, hasMethodBodyDependency: false);
+                OpenMethodImplementation(IEnumerator_Reset, hasMethodBodyDependency: false);
                 F.CloseMethod(F.Throw(F.New(F.WellKnownType(WellKnownType.System_NotSupportedException))));
             }
 
             // Add object IEnumerator.Current
             {
-                OpenPropertyImplementation(IEnumerator_get_Current, debuggerHidden: true, hasMethodBodyDependency: false);
+                OpenPropertyImplementation(IEnumerator_get_Current);
                 F.CloseMethod(F.Return(F.Field(F.This(), _currentField)));
             }
         }
@@ -197,8 +273,6 @@ namespace Microsoft.CodeAnalysis.CSharp
             // Only on it's parameters and staticness.
             var getEnumeratorGeneric = OpenMethodImplementation(
                 IEnumerableOfElementType_GetEnumerator,
-                debuggerHidden: true,
-                generateDebugInfo: false,
                 hasMethodBodyDependency: false);
 
             var bodyBuilder = ArrayBuilder<BoundStatement>.GetInstance();
@@ -278,7 +352,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             F.CloseMethod(F.Block(ImmutableArray.Create(resultVariable), bodyBuilder.ToImmutableAndFree()));
 
             // Generate IEnumerable.GetEnumerator
-            var getEnumerator = OpenMethodImplementation(IEnumerable_GetEnumerator, debuggerHidden: true, generateDebugInfo: false);
+            var getEnumerator = OpenMethodImplementation(IEnumerable_GetEnumerator);
             F.CloseMethod(F.Return(F.Call(F.This(), getEnumeratorGeneric)));
         }
 

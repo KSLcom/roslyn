@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
 using Microsoft.CodeAnalysis.Test.Utilities;
@@ -13,44 +14,48 @@ namespace Microsoft.CodeAnalysis.UnitTests.Diagnostics
 {
     public class SuppressMessageAttributeWorkspaceTests : SuppressMessageAttributeTests
     {
-        protected override void Verify(string source, string language, DiagnosticAnalyzer[] analyzers, DiagnosticDescription[] expectedDiagnostics, Func<Exception, DiagnosticAnalyzer, bool> continueOnAnalyzerException = null, string rootNamespace = null)
+        protected override async Task VerifyAsync(string source, string language, DiagnosticAnalyzer[] analyzers, DiagnosticDescription[] expectedDiagnostics, Action<Exception, DiagnosticAnalyzer, Diagnostic> onAnalyzerException = null, bool logAnalyzerExceptionAsDiagnostics = true, string rootNamespace = null)
         {
-            using (var workspace = CreateWorkspaceFromFile(source, language, rootNamespace))
+            using (var workspace = await CreateWorkspaceFromFileAsync(source, language, rootNamespace))
             {
                 var documentId = workspace.Documents[0].Id;
                 var document = workspace.CurrentSolution.GetDocument(documentId);
-                var span = document.GetSyntaxRootAsync().Result.FullSpan;
+                var span = (await document.GetSyntaxRootAsync()).FullSpan;
 
                 var actualDiagnostics = new List<Diagnostic>();
                 foreach (var analyzer in analyzers)
                 {
-                    actualDiagnostics.AddRange(DiagnosticProviderTestUtilities.GetAllDiagnostics(analyzer, document, span, donotCatchAnalyzerExceptions: continueOnAnalyzerException == null));
+                    actualDiagnostics.AddRange(
+                        await DiagnosticProviderTestUtilities.GetAllDiagnosticsAsync(analyzer, document, span, onAnalyzerException, logAnalyzerExceptionAsDiagnostics));
                 }
 
                 actualDiagnostics.Verify(expectedDiagnostics);
             }
         }
 
-        private static TestWorkspace CreateWorkspaceFromFile(string source, string language, string rootNamespace)
+        private static Task<TestWorkspace> CreateWorkspaceFromFileAsync(string source, string language, string rootNamespace)
         {
             if (language == LanguageNames.CSharp)
             {
-                return CSharpWorkspaceFactory.CreateWorkspaceFromFile(source);
+                return TestWorkspace.CreateCSharpAsync(source);
             }
             else
             {
-                return VisualBasicWorkspaceFactory.CreateWorkspaceFromFile(
+                return TestWorkspace.CreateVisualBasicAsync(
                     source,
                     compilationOptions: new VisualBasic.VisualBasicCompilationOptions(
                         OutputKind.DynamicallyLinkedLibrary, rootNamespace: rootNamespace));
             }
         }
 
-        protected override DiagnosticDescription WithArguments(DiagnosticDescription d, params string[] arguments)
+        protected override bool ConsiderArgumentsForComparingDiagnostics
         {
-            // TODO: Round tripping between Diagnostic and DiagnosticData seems to cause us to lose the arguments info.
-            //       For now return just the original diagnostic, we need to clean this up to handle this scenario better.
-            return d;
+            get
+            {
+                // Round tripping diagnostics from DiagnosticData causes the Arguments info stored within compiler DiagnosticWithInfo to be lost, so don't compare Arguments in IDE.
+                // NOTE: We will still compare squiggled text for the diagnostics, which is also a sufficient test.
+                return false;
+            }
         }
     }
 }

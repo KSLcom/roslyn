@@ -16,7 +16,7 @@ namespace CSharpSyntaxGenerator
         private readonly IDictionary<string, Node> _nodeMap;
 
         private const int INDENT_SIZE = 4;
-        private int _indentLevel = 0;
+        private int _indentLevel;
         private bool _needIndent = true;
 
         protected AbstractFileWriter(TextWriter writer, Tree tree)
@@ -108,6 +108,11 @@ namespace CSharpSyntaxGenerator
         protected static string OverrideOrNewModifier(Field field)
         {
             return IsOverride(field) ? "override " : IsNew(field) ? "new " : "";
+        }
+
+        protected static string AccessibilityModifier(Field field)
+        {
+            return IsInternal(field) ? "internal" : "public";
         }
 
         protected static bool CanBeField(Field field)
@@ -204,6 +209,11 @@ namespace CSharpSyntaxGenerator
             return f.Override != null && string.Compare(f.Override, "true", true) == 0;
         }
 
+        protected static bool IsInternal(Field f)
+        {
+            return f.Internal != null && string.Compare(f.Internal, "true", true) == 0;
+        }
+
         protected static bool IsNew(Field f)
         {
             return f.New != null && string.Compare(f.New, "true", true) == 0;
@@ -234,13 +244,13 @@ namespace CSharpSyntaxGenerator
 
         protected string StripNode(string name)
         {
-            return (_tree.Root.EndsWith("Node")) ? _tree.Root.Substring(0, _tree.Root.Length - 4) : _tree.Root;
+            return (_tree.Root.EndsWith("Node", StringComparison.Ordinal)) ? _tree.Root.Substring(0, _tree.Root.Length - 4) : _tree.Root;
         }
 
         protected string StripRoot(string name)
         {
             var root = StripNode(_tree.Root);
-            if (name.EndsWith(root))
+            if (name.EndsWith(root, StringComparison.Ordinal))
             {
                 return name.Substring(0, name.Length - root.Length);
             }
@@ -249,7 +259,7 @@ namespace CSharpSyntaxGenerator
 
         protected static string StripPost(string name, string post)
         {
-            return name.EndsWith(post)
+            return name.EndsWith(post, StringComparison.Ordinal)
                 ? name.Substring(0, name.Length - post.Length)
                 : name;
         }

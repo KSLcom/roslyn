@@ -2,11 +2,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Composition;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using Microsoft.CodeAnalysis.Collections;
 using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
@@ -19,7 +21,7 @@ using Roslyn.Utilities;
 namespace Microsoft.CodeAnalysis.CSharp
 {
     [ExportLanguageService(typeof(ISyntaxFactsService), LanguageNames.CSharp), Shared]
-    internal class CSharpSyntaxFactsService : ISyntaxFactsService
+    internal class CSharpSyntaxFactsService : AbstractSyntaxFactsService, ISyntaxFactsService
     {
         public bool IsAwaitKeyword(SyntaxToken token)
         {
@@ -47,8 +49,8 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             return
                 (SyntaxFacts.IsAnyUnaryExpression(kind) &&
-                    (token.Parent is PrefixUnaryExpressionSyntax || token.Parent is PostfixUnaryExpressionSyntax)) ||
-                (SyntaxFacts.IsBinaryExpression(kind) && token.Parent is BinaryExpressionSyntax) ||
+                    (token.Parent is PrefixUnaryExpressionSyntax || token.Parent is PostfixUnaryExpressionSyntax || token.Parent is OperatorDeclarationSyntax)) ||
+                (SyntaxFacts.IsBinaryExpression(kind) && (token.Parent is BinaryExpressionSyntax || token.Parent is OperatorDeclarationSyntax)) ||
                 (SyntaxFacts.IsAssignmentExpressionOperatorToken(kind) && token.Parent is AssignmentExpressionSyntax);
         }
 
@@ -100,7 +102,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             return csharpTree.IsInNonUserCode(position, cancellationToken);
         }
 
-        public bool IsEntirelyWithinStringOrCharLiteral(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken)
+        public bool IsEntirelyWithinStringOrCharOrNumericLiteral(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken)
         {
             var csharpTree = syntaxTree as SyntaxTree;
             if (csharpTree == null)
@@ -450,15 +452,24 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case SyntaxKind.NullKeyword:
                 case SyntaxKind.TrueKeyword:
                 case SyntaxKind.FalseKeyword:
+                case SyntaxKind.InterpolatedStringStartToken:
+                case SyntaxKind.InterpolatedStringEndToken:
+                case SyntaxKind.InterpolatedVerbatimStringStartToken:
+                case SyntaxKind.InterpolatedStringTextToken:
                     return true;
             }
 
             return false;
         }
 
-        public bool IsStringLiteral(SyntaxToken token)
+        public bool IsStringLiteralOrInterpolatedStringLiteral(SyntaxToken token)
         {
-            return token.IsKind(SyntaxKind.StringLiteralToken);
+            return token.IsKind(SyntaxKind.StringLiteralToken, SyntaxKind.InterpolatedStringTextToken);
+        }
+
+        public bool IsNumericLiteralExpression(SyntaxNode node)
+        {
+            return node?.IsKind(SyntaxKind.NumericLiteralExpression) == true;
         }
 
         public bool IsTypeNamedVarInVariableOrFieldDeclaration(SyntaxToken token, SyntaxNode parent)
@@ -550,25 +561,19 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         public SyntaxNode GetExpressionOfMemberAccessExpression(SyntaxNode node)
         {
-            if (node.IsKind(SyntaxKind.MemberBindingExpression))
-            {
-                if (node.IsParentKind(SyntaxKind.ConditionalAccessExpression))
-                {
-                    return GetExpressionOfConditionalMemberAccessExpression(node.Parent);
-                }
-                if (node.IsParentKind(SyntaxKind.InvocationExpression) &&
-                    node.Parent.IsParentKind(SyntaxKind.ConditionalAccessExpression))
-                {
-                    return GetExpressionOfConditionalMemberAccessExpression(node.Parent.Parent);
-                }
-            }
-
-            return (node as MemberAccessExpressionSyntax)?.Expression;
+            return node.IsKind(SyntaxKind.MemberBindingExpression)
+                ? GetExpressionOfConditionalMemberAccessExpression(node.GetParentConditionalAccessExpression())
+                : (node as MemberAccessExpressionSyntax)?.Expression;
         }
 
         public SyntaxNode GetExpressionOfConditionalMemberAccessExpression(SyntaxNode node)
         {
             return (node as ConditionalAccessExpressionSyntax)?.Expression;
+        }
+
+        public SyntaxNode GetExpressionOfInterpolation(SyntaxNode node)
+        {
+            return (node as InterpolationSyntax)?.Expression;
         }
 
         public bool IsInStaticContext(SyntaxNode node)
@@ -619,22 +624,19 @@ namespace Microsoft.CodeAnalysis.CSharp
         public bool IsAttributeNamedArgumentIdentifier(SyntaxNode node)
         {
             var identifier = node as IdentifierNameSyntax;
-            return
-                identifier != null &&
-                identifier.IsParentKind(SyntaxKind.NameEquals) &&
-                identifier.Parent.IsParentKind(SyntaxKind.AttributeArgument);
+            return identifier.IsAttributeNamedArgumentIdentifier();
         }
 
         public SyntaxNode GetContainingTypeDeclaration(SyntaxNode root, int position)
         {
             if (root == null)
             {
-                throw new ArgumentNullException("root");
+                throw new ArgumentNullException(nameof(root));
             }
 
             if (position < 0 || position > root.Span.End)
             {
-                throw new ArgumentOutOfRangeException("position");
+                throw new ArgumentOutOfRangeException(nameof(position));
             }
 
             return root
@@ -679,9 +681,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             return node.Kind() == SyntaxKind.ElementAccessExpression;
         }
 
-        public SyntaxNode ConvertToSingleLine(SyntaxNode node)
+        public SyntaxNode ConvertToSingleLine(SyntaxNode node, bool useElasticTrivia = false)
         {
-            return node.ConvertToSingleLine();
+            return node.ConvertToSingleLine(useElasticTrivia);
         }
 
         public SyntaxToken ToIdentifierToken(string name)
@@ -699,7 +701,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             return node.Kind() == SyntaxKind.IndexerMemberCref;
         }
 
-        public SyntaxNode GetContainingMemberDeclaration(SyntaxNode root, int position)
+        public SyntaxNode GetContainingMemberDeclaration(SyntaxNode root, int position, bool useFullSpan = true)
         {
             Contract.ThrowIfNull(root, "root");
             Contract.ThrowIfTrue(position < 0 || position > root.FullSpan.End, "position");
@@ -717,9 +719,13 @@ namespace Microsoft.CodeAnalysis.CSharp
             var node = root.FindToken(position).Parent;
             while (node != null)
             {
-                if (node is MemberDeclarationSyntax)
+                if (useFullSpan || node.Span.Contains(position))
                 {
-                    return node;
+                    var kind = node.Kind();
+                    if ((kind != SyntaxKind.GlobalStatement) && (kind != SyntaxKind.IncompleteMember) && (node is MemberDeclarationSyntax))
+                    {
+                        return node;
+                    }
                 }
 
                 node = node.Parent;
@@ -747,9 +753,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                 case SyntaxKind.ClassDeclaration:
                     var classDecl = (ClassDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(classDecl.Identifier.ValueText,
-                        GetContainerDisplayName(node.Parent), 
+                        GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Class, classDecl.Identifier.Span);
+                        DeclaredSymbolInfoKind.Class, classDecl.Identifier.Span,
+                        GetInheritanceNames(classDecl.BaseList));
                     return true;
                 case SyntaxKind.ConstructorDeclaration:
                     var ctorDecl = (ConstructorDeclarationSyntax)node;
@@ -759,6 +766,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         GetFullyQualifiedContainerName(node.Parent),
                         DeclaredSymbolInfoKind.Constructor,
                         ctorDecl.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty,
                         parameterCount: (ushort)(ctorDecl.ParameterList?.Parameters.Count ?? 0));
                     return true;
                 case SyntaxKind.DelegateDeclaration:
@@ -766,42 +774,48 @@ namespace Microsoft.CodeAnalysis.CSharp
                     declaredSymbolInfo = new DeclaredSymbolInfo(delegateDecl.Identifier.ValueText,
                         GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Delegate, delegateDecl.Identifier.Span);
+                        DeclaredSymbolInfoKind.Delegate, delegateDecl.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.EnumDeclaration:
                     var enumDecl = (EnumDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(enumDecl.Identifier.ValueText,
                         GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Enum, enumDecl.Identifier.Span);
+                        DeclaredSymbolInfoKind.Enum, enumDecl.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.EnumMemberDeclaration:
                     var enumMember = (EnumMemberDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(enumMember.Identifier.ValueText,
                         GetContainerDisplayName(node.Parent),
-                        GetFullyQualifiedContainerName(node.Parent), 
-                        DeclaredSymbolInfoKind.EnumMember, enumMember.Identifier.Span);
+                        GetFullyQualifiedContainerName(node.Parent),
+                        DeclaredSymbolInfoKind.EnumMember, enumMember.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.EventDeclaration:
                     var eventDecl = (EventDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(ExpandExplicitInterfaceName(eventDecl.Identifier.ValueText, eventDecl.ExplicitInterfaceSpecifier),
                         GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Event, eventDecl.Identifier.Span);
+                        DeclaredSymbolInfoKind.Event, eventDecl.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.IndexerDeclaration:
                     var indexerDecl = (IndexerDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(WellKnownMemberNames.Indexer,
                         GetContainerDisplayName(node.Parent),
-                        GetFullyQualifiedContainerName(node.Parent), 
-                        DeclaredSymbolInfoKind.Indexer, indexerDecl.ThisKeyword.Span);
+                        GetFullyQualifiedContainerName(node.Parent),
+                        DeclaredSymbolInfoKind.Indexer, indexerDecl.ThisKeyword.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.InterfaceDeclaration:
                     var interfaceDecl = (InterfaceDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(interfaceDecl.Identifier.ValueText,
                         GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Interface, interfaceDecl.Identifier.Span);
+                        DeclaredSymbolInfoKind.Interface, interfaceDecl.Identifier.Span,
+                        GetInheritanceNames(interfaceDecl.BaseList));
                     return true;
                 case SyntaxKind.MethodDeclaration:
                     var method = (MethodDeclarationSyntax)node;
@@ -811,6 +825,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         GetFullyQualifiedContainerName(node.Parent),
                         DeclaredSymbolInfoKind.Method,
                         method.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty,
                         parameterCount: (ushort)(method.ParameterList?.Parameters.Count ?? 0),
                         typeParameterCount: (ushort)(method.TypeParameterList?.Parameters.Count ?? 0));
                     return true;
@@ -819,14 +834,16 @@ namespace Microsoft.CodeAnalysis.CSharp
                     declaredSymbolInfo = new DeclaredSymbolInfo(ExpandExplicitInterfaceName(property.Identifier.ValueText, property.ExplicitInterfaceSpecifier),
                         GetContainerDisplayName(node.Parent),
                         GetFullyQualifiedContainerName(node.Parent),
-                        DeclaredSymbolInfoKind.Property, property.Identifier.Span);
+                        DeclaredSymbolInfoKind.Property, property.Identifier.Span,
+                        inheritanceNames: ImmutableArray<string>.Empty);
                     return true;
                 case SyntaxKind.StructDeclaration:
                     var structDecl = (StructDeclarationSyntax)node;
                     declaredSymbolInfo = new DeclaredSymbolInfo(structDecl.Identifier.ValueText,
                         GetContainerDisplayName(node.Parent),
-                        GetFullyQualifiedContainerName(node.Parent), 
-                        DeclaredSymbolInfoKind.Struct, structDecl.Identifier.Span);
+                        GetFullyQualifiedContainerName(node.Parent),
+                        DeclaredSymbolInfoKind.Struct, structDecl.Identifier.Span,
+                        GetInheritanceNames(structDecl.BaseList));
                     return true;
                 case SyntaxKind.VariableDeclarator:
                     // could either be part of a field declaration or an event field declaration
@@ -841,10 +858,12 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 ? DeclaredSymbolInfoKind.Constant
                                 : DeclaredSymbolInfoKind.Field;
 
-                        declaredSymbolInfo = new DeclaredSymbolInfo(variableDeclarator.Identifier.ValueText,
-                        GetContainerDisplayName(fieldDeclaration.Parent),
-                        GetFullyQualifiedContainerName(fieldDeclaration.Parent), 
-                        kind, variableDeclarator.Identifier.Span);
+                        declaredSymbolInfo = new DeclaredSymbolInfo(
+                            variableDeclarator.Identifier.ValueText,
+                            GetContainerDisplayName(fieldDeclaration.Parent),
+                            GetFullyQualifiedContainerName(fieldDeclaration.Parent),
+                            kind, variableDeclarator.Identifier.Span,
+                            inheritanceNames: ImmutableArray<string>.Empty);
                         return true;
                     }
 
@@ -853,6 +872,144 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             declaredSymbolInfo = default(DeclaredSymbolInfo);
             return false;
+        }
+
+        private ImmutableArray<string> GetInheritanceNames(BaseListSyntax baseList)
+        {
+            if (baseList == null)
+            {
+                return ImmutableArray<string>.Empty;
+            }
+
+            var builder = ImmutableArray.CreateBuilder<string>(baseList.Types.Count);
+
+            // It's not sufficient to just store the textual names we see in the inheritance list
+            // of a type.  For example if we have:
+            //
+            //   using Y = X;
+            //      ...
+            //      using Z = Y;
+            //      ...
+            //      class C : Z
+            //
+            // It's insufficient to just state that 'C' derives from 'Z'.  If we search for derived
+            // types from 'B' we won't examine 'C'.  To solve this, we keep track of the aliasing
+            // that occurs in containing scopes.  Then, when we're adding an inheritance name we 
+            // walk the alias maps and we also add any names that these names alias to.  In the
+            // above example we'd put Z, Y, and X in the inheritance names list for 'C'.
+
+            // Each dictionary in this list is a mapping from alias name to the name of the thing
+            // it aliases.  Then, each scope with alias mapping gets its own entry in this list.
+            // For the above example, we would produce:  [{Z => Y}, {Y => X}]
+            var aliasMaps = AllocateAliasMapList();
+            try
+            {
+                AddAliasMaps(baseList, aliasMaps);
+
+                foreach (var baseType in baseList.Types)
+                {
+                    AddInheritanceName(builder, baseType.Type, aliasMaps);
+                }
+
+                return builder.ToImmutable();
+            }
+            finally
+            {
+                FreeAliasMapList(aliasMaps);
+            }
+        }
+
+        private void AddAliasMaps(SyntaxNode node, List<Dictionary<string, string>> aliasMaps)
+        {
+            for (var current = node; current != null; current = current.Parent)
+            {
+                if (current.IsKind(SyntaxKind.NamespaceDeclaration))
+                {
+                    ProcessUsings(aliasMaps, ((NamespaceDeclarationSyntax)current).Usings);
+                }
+                else if (current.IsKind(SyntaxKind.CompilationUnit))
+                {
+                    ProcessUsings(aliasMaps, ((CompilationUnitSyntax)current).Usings);
+                }
+            }
+        }
+
+        private void ProcessUsings(List<Dictionary<string, string>> aliasMaps, SyntaxList<UsingDirectiveSyntax> usings)
+        {
+            Dictionary<string, string> aliasMap = null;
+
+            foreach (var usingDecl in usings)
+            {
+                if (usingDecl.Alias != null)
+                {
+                    var mappedName = GetTypeName(usingDecl.Name);
+                    if (mappedName != null)
+                    {
+                        aliasMap = aliasMap ?? AllocateAliasMap();
+
+                        // If we have:  using X = Foo, then we store a mapping from X -> Foo
+                        // here.  That way if we see a class that inherits from X we also state
+                        // that it inherits from Foo as well.
+                        aliasMap[usingDecl.Alias.Name.Identifier.ValueText] = mappedName;
+                    }
+                }
+            }
+
+            if (aliasMap != null)
+            {
+                aliasMaps.Add(aliasMap);
+            }
+        }
+
+        private void AddInheritanceName(
+            ImmutableArray<string>.Builder builder, TypeSyntax type,
+            List<Dictionary<string, string>> aliasMaps)
+        {
+            var name = GetTypeName(type);
+            if (name != null)
+            {
+                // First, add the name that the typename that the type directly says it inherits from.
+                builder.Add(name);
+
+                // Now, walk the alias chain and add any names this alias may eventually map to.
+                var currentName = name;
+                foreach (var aliasMap in aliasMaps)
+                {
+                    string mappedName;
+                    if (aliasMap.TryGetValue(currentName, out mappedName))
+                    {
+                        // Looks like this could be an alias.  Also include the name the alias points to
+                        builder.Add(mappedName);
+
+                        // Keep on searching.  An alias in an inner namespcae can refer to an 
+                        // alias in an outer namespace.  
+                        currentName = mappedName;
+                    }
+                }
+            }
+        }
+
+        private string GetTypeName(TypeSyntax type)
+        {
+            if (type is SimpleNameSyntax)
+            {
+                return GetSimpleTypeName((SimpleNameSyntax)type);
+            }
+            else if (type is QualifiedNameSyntax)
+            {
+                return GetSimpleTypeName(((QualifiedNameSyntax)type).Right);
+            }
+            else if (type is AliasQualifiedNameSyntax)
+            {
+                return GetSimpleTypeName(((AliasQualifiedNameSyntax)type).Name);
+            }
+
+            return null;
+        }
+
+        private static string GetSimpleTypeName(SimpleNameSyntax name)
+        {
+            return name.Identifier.ValueText;
         }
 
         private static string ExpandExplicitInterfaceName(string identifier, ExplicitInterfaceSpecifierSyntax explicitInterfaceSpecifier)
@@ -949,114 +1106,161 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private static string GetContainerDisplayName(SyntaxNode node)
+        private string GetContainerDisplayName(SyntaxNode node)
         {
-            return GetContainer(node, immediate: true);
+            return GetDisplayName(node, DisplayNameOptions.IncludeTypeParameters);
         }
 
-        private static string GetFullyQualifiedContainerName(SyntaxNode node)
+        private string GetFullyQualifiedContainerName(SyntaxNode node)
         {
-            return GetContainer(node, immediate: false);
+            return GetDisplayName(node, DisplayNameOptions.IncludeNamespaces);
         }
 
-        private static string GetContainer(SyntaxNode node, bool immediate)
-        {
-            var name = GetNodeName(node, includeTypeParameters: immediate);
-            var names = new List<string> { name };
+        private const string dotToken = ".";
 
-            // check for nested classes and always add that to the container name.
-            var parent = node.Parent;
-            while (parent is TypeDeclarationSyntax)
+        public string GetDisplayName(SyntaxNode node, DisplayNameOptions options, string rootNamespace = null)
+        {
+            if (node == null)
             {
-                var currentParent = (TypeDeclarationSyntax)parent;
-                names.Add(currentParent.Identifier.ValueText + (immediate ? ExpandTypeParameterList(currentParent.TypeParameterList) : ""));
-                parent = currentParent.Parent;
+                return string.Empty;
             }
 
-            // If they're just asking for the immediate parent, then we're done. Otherwise keep 
-            // walking all the way to the root, adding the names.
-            if (!immediate)
+            var pooled = PooledStringBuilder.GetInstance();
+            var builder = pooled.Builder;
+
+            // return type
+            var memberDeclaration = node as MemberDeclarationSyntax;
+            if ((options & DisplayNameOptions.IncludeType) != 0)
             {
-                while (parent != null && parent.Kind() != SyntaxKind.CompilationUnit)
+                var type = memberDeclaration.GetMemberType();
+                if (type != null && !type.IsMissing)
                 {
-                    names.Add(GetNodeName(parent, includeTypeParameters: false));
-                    parent = parent.Parent;
+                    builder.Append(type);
+                    builder.Append(' ');
                 }
             }
 
-            names.Reverse();
-            return string.Join(".", names);
-        }
-
-        private static string GetNodeName(SyntaxNode node, bool includeTypeParameters)
-        {
-            string name;
-            TypeParameterListSyntax typeParameterList;
-            switch (node.Kind())
+            var names = ArrayBuilder<string>.GetInstance();
+            // containing type(s)
+            var parent = node.GetAncestor<TypeDeclarationSyntax>() ?? node.Parent;
+            while (parent is TypeDeclarationSyntax)
             {
-            case SyntaxKind.ClassDeclaration:
-                var classDecl = (ClassDeclarationSyntax)node;
-                name = classDecl.Identifier.ValueText;
-                typeParameterList = classDecl.TypeParameterList;
-                break;
-            case SyntaxKind.CompilationUnit:
-                return string.Empty;
-            case SyntaxKind.DelegateDeclaration:
-                var delegateDecl = (DelegateDeclarationSyntax)node;
-                name = delegateDecl.Identifier.ValueText;
-                typeParameterList = delegateDecl.TypeParameterList;
-                break;
-            case SyntaxKind.EnumDeclaration:
-                return ((EnumDeclarationSyntax)node).Identifier.ValueText;
-            case SyntaxKind.IdentifierName:
-                return ((IdentifierNameSyntax)node).Identifier.ValueText;
-            case SyntaxKind.InterfaceDeclaration:
-                var interfaceDecl = (InterfaceDeclarationSyntax)node;
-                name = interfaceDecl.Identifier.ValueText;
-                typeParameterList = interfaceDecl.TypeParameterList;
-                break;
-            case SyntaxKind.MethodDeclaration:
-                var methodDecl = (MethodDeclarationSyntax)node;
-                name = methodDecl.Identifier.ValueText;
-                typeParameterList = methodDecl.TypeParameterList;
-                break;
-            case SyntaxKind.NamespaceDeclaration:
-                return GetNodeName(((NamespaceDeclarationSyntax)node).Name, includeTypeParameters: false);
-            case SyntaxKind.QualifiedName:
-                var qualified = (QualifiedNameSyntax)node;
-                return GetNodeName(qualified.Left, includeTypeParameters: false) + "." + GetNodeName(qualified.Right, includeTypeParameters: false);
-            case SyntaxKind.StructDeclaration:
-                var structDecl = (StructDeclarationSyntax)node;
-                name = structDecl.Identifier.ValueText;
-                typeParameterList = structDecl.TypeParameterList;
-                break;
-            default:
-                Debug.Assert(false, "Unexpected node type " + node.Kind());
-                return null;
+                names.Push(GetName(parent, options));
+                parent = parent.Parent;
+            }
+            // containing namespace(s) in source (if any)
+            if ((options & DisplayNameOptions.IncludeNamespaces) != 0)
+            {
+                while (parent != null && parent.Kind() == SyntaxKind.NamespaceDeclaration)
+                {
+                    names.Add(GetName(parent, options));
+                    parent = parent.Parent;
+                }
+            }
+            while (!names.IsEmpty())
+            {
+                var name = names.Pop();
+                if (name != null)
+                {
+                    builder.Append(name);
+                    builder.Append(dotToken);
+                }
             }
 
-            return name + (includeTypeParameters ? ExpandTypeParameterList(typeParameterList) : "");
+            // name (including generic type parameters)
+            builder.Append(GetName(node, options));
+
+            // parameter list (if any)
+            if ((options & DisplayNameOptions.IncludeParameters) != 0)
+            {
+                builder.Append(memberDeclaration.GetParameterList());
+            }
+
+            return pooled.ToStringAndFree();
         }
 
-        private static string ExpandTypeParameterList(TypeParameterListSyntax typeParameterList)
+        private static string GetName(SyntaxNode node, DisplayNameOptions options)
+        {
+            const string missingTokenPlaceholder = "?";
+
+            switch (node.Kind())
+            {
+                case SyntaxKind.CompilationUnit:
+                    return null;
+                case SyntaxKind.IdentifierName:
+                    var identifier = ((IdentifierNameSyntax)node).Identifier;
+                    return identifier.IsMissing ? missingTokenPlaceholder : identifier.Text;
+                case SyntaxKind.IncompleteMember:
+                    return missingTokenPlaceholder;
+                case SyntaxKind.NamespaceDeclaration:
+                    return GetName(((NamespaceDeclarationSyntax)node).Name, options);
+                case SyntaxKind.QualifiedName:
+                    var qualified = (QualifiedNameSyntax)node;
+                    return GetName(qualified.Left, options) + dotToken + GetName(qualified.Right, options);
+            }
+
+            string name = null;
+            var memberDeclaration = node as MemberDeclarationSyntax;
+            if (memberDeclaration != null)
+            {
+                if (memberDeclaration.Kind() == SyntaxKind.ConversionOperatorDeclaration)
+                {
+                    name = (memberDeclaration as ConversionOperatorDeclarationSyntax)?.Type.ToString();
+                }
+                else
+                {
+                    var nameToken = memberDeclaration.GetNameToken();
+                    if (nameToken != default(SyntaxToken))
+                    {
+                        name = nameToken.IsMissing ? missingTokenPlaceholder : nameToken.Text;
+                        if (memberDeclaration.Kind() == SyntaxKind.DestructorDeclaration)
+                        {
+                            name = "~" + name;
+                        }
+                        if ((options & DisplayNameOptions.IncludeTypeParameters) != 0)
+                        {
+                            var pooled = PooledStringBuilder.GetInstance();
+                            var builder = pooled.Builder;
+                            builder.Append(name);
+                            AppendTypeParameterList(builder, memberDeclaration.GetTypeParameterList());
+                            name = pooled.ToStringAndFree();
+                        }
+                    }
+                    else
+                    {
+                        Debug.Assert(memberDeclaration.Kind() == SyntaxKind.IncompleteMember);
+                        name = "?";
+                    }
+                }
+            }
+            else
+            {
+                var fieldDeclarator = node as VariableDeclaratorSyntax;
+                if (fieldDeclarator != null)
+                {
+                    var nameToken = fieldDeclarator.Identifier;
+                    if (nameToken != default(SyntaxToken))
+                    {
+                        name = nameToken.IsMissing ? missingTokenPlaceholder : nameToken.Text;
+                    }
+                }
+            }
+            Debug.Assert(name != null, "Unexpected node type " + node.Kind());
+            return name;
+        }
+
+        private static void AppendTypeParameterList(StringBuilder builder, TypeParameterListSyntax typeParameterList)
         {
             if (typeParameterList != null && typeParameterList.Parameters.Count > 0)
             {
-                var builder = new StringBuilder();
                 builder.Append('<');
                 builder.Append(typeParameterList.Parameters[0].Identifier.ValueText);
                 for (int i = 1; i < typeParameterList.Parameters.Count; i++)
                 {
-                    builder.Append(',');
+                    builder.Append(", ");
                     builder.Append(typeParameterList.Parameters[i].Identifier.ValueText);
                 }
-
                 builder.Append('>');
-                return builder.ToString();
-            }
-            else
-            {
-                return null;
             }
         }
 
@@ -1272,6 +1476,14 @@ namespace Microsoft.CodeAnalysis.CSharp
                     }
                 }
 
+                // The inside of an interpolated string is treated as its own token so we
+                // need to force navigation to the parent expression syntax.
+                if (node is InterpolatedStringTextSyntax && parent is InterpolatedStringExpressionSyntax)
+                {
+                    node = parent;
+                    break;
+                }
+
                 // If this node is not parented by a name, we're done.
                 var name = parent as NameSyntax;
                 if (name == null)
@@ -1343,6 +1555,119 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             openBrace = default(SyntaxToken);
             return false;
+        }
+
+        public TextSpan GetInactiveRegionSpanAroundPosition(SyntaxTree syntaxTree, int position, CancellationToken cancellationToken)
+        {
+            var trivia = syntaxTree.GetRoot(cancellationToken).FindTrivia(position, findInsideTrivia: false);
+            if (trivia.Kind() == SyntaxKind.DisabledTextTrivia)
+            {
+                return trivia.FullSpan;
+            }
+
+            var token = syntaxTree.FindTokenOrEndToken(position, cancellationToken);
+            if (token.Kind() == SyntaxKind.EndOfFileToken)
+            {
+                var triviaList = token.LeadingTrivia;
+                foreach (var triviaTok in triviaList.Reverse())
+                {
+                    if (triviaTok.Span.Contains(position))
+                    {
+                        return default(TextSpan);
+                    }
+
+                    if (triviaTok.Span.End < position)
+                    {
+                        if (!triviaTok.HasStructure)
+                        {
+                            return default(TextSpan);
+                        }
+
+                        var structure = triviaTok.GetStructure();
+                        if (structure is BranchingDirectiveTriviaSyntax)
+                        {
+                            var branch = (BranchingDirectiveTriviaSyntax)structure;
+                            return !branch.IsActive || !branch.BranchTaken ? TextSpan.FromBounds(branch.FullSpan.Start, position) : default(TextSpan);
+                        }
+                    }
+                }
+            }
+
+            return default(TextSpan);
+        }
+
+        public string GetNameForArgument(SyntaxNode argument)
+        {
+            if ((argument as ArgumentSyntax)?.NameColon != null)
+            {
+                return (argument as ArgumentSyntax).NameColon.Name.Identifier.ValueText;
+            }
+
+            return string.Empty;
+        }
+
+        public bool IsLeftSideOfDot(SyntaxNode node)
+        {
+            return (node as ExpressionSyntax).IsLeftSideOfDot();
+        }
+
+        public SyntaxNode GetRightSideOfDot(SyntaxNode node)
+        {
+            return (node as QualifiedNameSyntax)?.Right ??
+                (node as MemberAccessExpressionSyntax)?.Name;
+        }
+
+        public bool IsLeftSideOfAssignment(SyntaxNode node)
+        {
+            return (node as ExpressionSyntax).IsLeftSideOfAssignExpression();
+        }
+
+        public bool IsLeftSideOfAnyAssignment(SyntaxNode node)
+        {
+            return (node as ExpressionSyntax).IsLeftSideOfAnyAssignExpression();
+        }
+
+        public SyntaxNode GetRightHandSideOfAssignment(SyntaxNode node)
+        {
+            return (node as AssignmentExpressionSyntax)?.Right;
+        }
+
+        public bool IsInferredAnonymousObjectMemberDeclarator(SyntaxNode node)
+        {
+            return node.IsKind(SyntaxKind.AnonymousObjectMemberDeclarator) &&
+                ((AnonymousObjectMemberDeclaratorSyntax)node).NameEquals == null;
+        }
+
+        public bool IsOperandOfIncrementExpression(SyntaxNode node)
+        {
+            return node.IsParentKind(SyntaxKind.PostIncrementExpression) ||
+                node.IsParentKind(SyntaxKind.PreIncrementExpression);
+        }
+
+        public bool IsOperandOfDecrementExpression(SyntaxNode node)
+        {
+            return node.IsParentKind(SyntaxKind.PostDecrementExpression) ||
+                node.IsParentKind(SyntaxKind.PreDecrementExpression);
+        }
+
+        public bool IsOperandOfIncrementOrDecrementExpression(SyntaxNode node)
+        {
+            return IsOperandOfIncrementExpression(node) || IsOperandOfDecrementExpression(node);
+        }
+
+        public SyntaxList<SyntaxNode> GetContentsOfInterpolatedString(SyntaxNode interpolatedString)
+        {
+            return ((interpolatedString as InterpolatedStringExpressionSyntax)?.Contents).Value;
+        }
+
+        public bool IsStringLiteral(SyntaxToken token)
+        {
+            return token.IsKind(SyntaxKind.StringLiteralToken);
+        }
+
+        public SeparatedSyntaxList<SyntaxNode> GetArgumentsForInvocationExpression(SyntaxNode invocationExpression)
+        {
+            return ((invocationExpression as InvocationExpressionSyntax)?.ArgumentList.Arguments).Value;
         }
     }
 }

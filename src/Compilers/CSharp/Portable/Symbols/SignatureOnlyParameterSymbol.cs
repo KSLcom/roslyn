@@ -1,10 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Immutable;
-using Microsoft.CodeAnalysis.CSharp.Symbols;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Text;
+using System.Diagnostics;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Symbols
@@ -25,6 +22,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             bool isParams,
             RefKind refKind)
         {
+            Debug.Assert(type != null);
+            Debug.Assert(!customModifiers.IsDefault);
+
             _type = type;
             _customModifiers = customModifiers;
             _isParams = isParams;
@@ -70,7 +70,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         internal override bool IsCallerMemberName { get { throw ExceptionUtilities.Unreachable; } }
 
-        internal sealed override bool HasByRefBeforeCustomModifiers { get { throw ExceptionUtilities.Unreachable; } }
+        internal sealed override ushort CountOfCustomModifiersPrecedingByRef { get { return 0; } }
 
         public override Symbol ContainingSymbol { get { throw ExceptionUtilities.Unreachable; } }
 
@@ -83,5 +83,31 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         internal override ModuleSymbol ContainingModule { get { throw ExceptionUtilities.Unreachable; } }
 
         #endregion Not used by MethodSignatureComparer
+
+        public override bool Equals(object obj)
+        {
+            if ((object)this == obj)
+            {
+                return true;
+            }
+
+            var other = obj as SignatureOnlyParameterSymbol;
+            return (object)other != null &&
+                _type == other._type &&
+                _customModifiers.Equals(other._customModifiers) &&
+                _isParams == other._isParams &&
+                _refKind == other._refKind;
+        }
+
+        public override int GetHashCode()
+        {
+            return Hash.Combine(
+                _type.GetHashCode(),
+                Hash.Combine(
+                    Hash.CombineValues(_customModifiers),
+                    Hash.Combine(
+                        _isParams.GetHashCode(),
+                        _refKind.GetHashCode())));
+        }
     }
 }

@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.Differencing
@@ -112,7 +110,7 @@ namespace Microsoft.CodeAnalysis.Differencing
         }
 
         /// <summary>
-        /// Calculates costs of all paths in an edit graph starting from vertext (0,0) and ending in vertex (lengthA, lengthB). 
+        /// Calculates costs of all paths in an edit graph starting from vertex (0,0) and ending in vertex (lengthA, lengthB). 
         /// </summary>
         /// <remarks>
         /// The edit graph for A and B has a vertex at each point in the grid (i,j), i in [0, lengthA] and j in [0, lengthB].

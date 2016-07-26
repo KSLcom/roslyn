@@ -3,6 +3,7 @@
 // References\Debugger\v2.0\Microsoft.VisualStudio.Debugger.Engine.dll
 
 #endregion
+
 using System;
 using System.Collections.Generic;
 
@@ -27,7 +28,7 @@ namespace Microsoft.VisualStudio.Debugger
         {
             if (item == null)
             {
-                throw new ArgumentNullException("item");
+                throw new ArgumentNullException(nameof(item));
             }
 
             Guid key = item.GetType().GUID;
@@ -35,7 +36,7 @@ namespace Microsoft.VisualStudio.Debugger
             {
                 if (_dataItems.ContainsKey(key))
                 {
-                    throw new ArgumentException("Data item already exists", "item");
+                    throw new ArgumentException("Data item already exists", nameof(item));
                 }
             }
 

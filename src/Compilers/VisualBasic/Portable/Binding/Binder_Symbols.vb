@@ -56,7 +56,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Return sym
         End Function
 
-        Private Sub ReportUseOfModuleOrVoidType(typeSyntax As TypeSyntax, type As TypeSymbol, diagBag As DiagnosticBag)
+        Private Shared Sub ReportUseOfModuleOrVoidType(typeSyntax As TypeSyntax, type As TypeSymbol, diagBag As DiagnosticBag)
             If type.SpecialType = SpecialType.System_Void Then
                 Dim diagInfo = New BadSymbolDiagnostic(type, ERRID.ERR_BadUseOfVoid)
                 ReportDiagnostic(diagBag, typeSyntax, diagInfo)
@@ -192,10 +192,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             Dim isProperties As Boolean = (GetType(TMember) Is GetType(PropertySymbol))
             Dim isMethods As Boolean = (GetType(TMember) Is GetType(MethodSymbol))
             If Not (isProperties OrElse isMethods) Then
-                Throw New ArgumentException("Must resolve overloads on PropertySymbol or MethodSymbol", "TMember")
+                Throw New ArgumentException("Must resolve overloads on PropertySymbol or MethodSymbol", NameOf(TMember))
             End If
             If isProperties And Not typeArguments.IsEmpty Then
-                Throw New ArgumentException(VBResources.PropertiesCanNotHaveTypeArguments, "typeArguments")
+                Throw New ArgumentException(VBResources.PropertiesCanNotHaveTypeArguments, NameOf(typeArguments))
             End If
 
             Dim boundArguments As ImmutableArray(Of BoundExpression) = Nothing
@@ -260,7 +260,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End Try
         End Function
 
-        Friend Function ReportUseSiteError(diagBag As DiagnosticBag, syntax As SyntaxNodeOrToken, symbol As Symbol) As Boolean
+        Friend Shared Function ReportUseSiteError(diagBag As DiagnosticBag, syntax As SyntaxNodeOrToken, symbol As Symbol) As Boolean
             Dim useSiteErrorInfo As DiagnosticInfo = symbol.GetUseSiteErrorInfo()
 
             If useSiteErrorInfo IsNot Nothing Then
@@ -379,7 +379,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                             ' site errors only on a definition.                            ' 
                             If Not reportedAnError AndAlso Not suppressUseSiteError AndAlso
                                Not typeSymbol.IsArrayType() AndAlso typeSymbol.IsDefinition Then
-                                Binder.ReportUseSiteError(diagBag, typeSyntax, typeSymbol)
+                                ReportUseSiteError(diagBag, typeSyntax, typeSymbol)
                             End If
 
                             If typeSymbol.Kind = SymbolKind.NamedType AndAlso binder.SourceModule.AnyReferencedAssembliesAreLinked Then
@@ -472,7 +472,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         Exit While
                     ElseIf typeIsQualifiedName Then
                         currTypeSyntax = DirectCast(currTypeSyntax, QualifiedNameSyntax).Left
-                        currDiagName = currDiagName.Substring(0, currDiagName.LastIndexOf("."))
+                        currDiagName = currDiagName.Substring(0, currDiagName.LastIndexOf("."c))
                     Else
                         Exit While
                     End If
@@ -495,7 +495,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             ''' NOTE: unlike in C#, this method searches for type forwarders case-insensitively.
             ''' </remarks>
             Private Shared Function GetForwardedToAssembly(containingAssembly As AssemblySymbol, fullName As String, arity As Integer, ByRef encounteredCycle As Boolean) As AssemblySymbol
-                Debug.Assert(arity = 0 OrElse fullName.EndsWith("`" & arity))
+                Debug.Assert(arity = 0 OrElse fullName.EndsWith("`" & arity, StringComparison.Ordinal))
 
                 encounteredCycle = False
 
@@ -826,7 +826,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                                                                       diagBag,
                                                                       suppressUseSiteError:=suppressUseSiteError,
                                                                       inGetTypeContext:=inGetTypeContext)
-                Return SingleLookupResult.Good(Binder.ApplyArrayRankSpecifersToType(elementType, arrayTypeSyntax.RankSpecifiers, diagBag))
+                Return SingleLookupResult.Good(binder.ApplyArrayRankSpecifiersToType(elementType, arrayTypeSyntax.RankSpecifiers, diagBag))
             End Function
 
             ''' <summary>
@@ -918,7 +918,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     End If
                 Else
                     If Not suppressUseSiteError Then
-                        If Binder.ReportUseSiteError(diagBag, genericNameSyntax, genericType) Then
+                        If ReportUseSiteError(diagBag, genericNameSyntax, genericType) Then
                             reportedAnError = True
                         End If
                     End If

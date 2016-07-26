@@ -9,16 +9,16 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Outlining
 {
     internal class RegionCollector
     {
-        private readonly SyntacticDocument _document;
-        private readonly ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxNodeOutliner>> _nodeOutlinerMap;
-        private readonly ImmutableDictionary<int, ImmutableArray<AbstractSyntaxTriviaOutliner>> _triviaOutlinerMap;
+        private readonly Document _document;
+        private readonly ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxOutliner>> _nodeOutlinerMap;
+        private readonly ImmutableDictionary<int, ImmutableArray<AbstractSyntaxOutliner>> _triviaOutlinerMap;
         private readonly List<OutliningSpan> _regions;
         private readonly CancellationToken _cancellationToken;
 
         private RegionCollector(
-            SyntacticDocument document,
-            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxNodeOutliner>> nodeOutlinerMap,
-            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxTriviaOutliner>> triviaOutlinerMap,
+            Document document,
+            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxOutliner>> nodeOutlinerMap,
+            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxOutliner>> triviaOutlinerMap,
             List<OutliningSpan> spans,
             CancellationToken cancellationToken)
         {
@@ -30,14 +30,15 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Outlining
         }
 
         public static void CollectOutliningSpans(
-            SyntacticDocument document,
-            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxNodeOutliner>> nodeOutlinerMap,
-            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxTriviaOutliner>> triviaOutlinerMap,
+            Document document,
+            SyntaxNode syntaxRoot,
+            ImmutableDictionary<Type, ImmutableArray<AbstractSyntaxOutliner>> nodeOutlinerMap,
+            ImmutableDictionary<int, ImmutableArray<AbstractSyntaxOutliner>> triviaOutlinerMap,
             List<OutliningSpan> spans,
             CancellationToken cancellationToken)
         {
             var collector = new RegionCollector(document, nodeOutlinerMap, triviaOutlinerMap, spans, cancellationToken);
-            collector.Collect(document.Root);
+            collector.Collect(syntaxRoot);
         }
 
         private void Collect(SyntaxNode root)
@@ -59,14 +60,14 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Outlining
 
         private void GetOutliningSpans(SyntaxNode node)
         {
-            ImmutableArray<AbstractSyntaxNodeOutliner> outliners;
+            ImmutableArray<AbstractSyntaxOutliner> outliners;
             if (_nodeOutlinerMap.TryGetValue(node.GetType(), out outliners))
             {
                 foreach (var outliner in outliners)
                 {
                     _cancellationToken.ThrowIfCancellationRequested();
 
-                    outliner.CollectOutliningSpans(_document.Document, node, _regions, _cancellationToken);
+                    outliner.CollectOutliningSpans(_document, node, _regions, _cancellationToken);
                 }
             }
         }
@@ -83,14 +84,14 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Outlining
             {
                 _cancellationToken.ThrowIfCancellationRequested();
 
-                ImmutableArray<AbstractSyntaxTriviaOutliner> outliners;
+                ImmutableArray<AbstractSyntaxOutliner> outliners;
                 if (_triviaOutlinerMap.TryGetValue(trivia.RawKind, out outliners))
                 {
                     foreach (var outliner in outliners)
                     {
                         _cancellationToken.ThrowIfCancellationRequested();
 
-                        outliner.CollectOutliningSpans(_document.Document, trivia, _regions, _cancellationToken);
+                        outliner.CollectOutliningSpans(_document, trivia, _regions, _cancellationToken);
                     }
                 }
             }

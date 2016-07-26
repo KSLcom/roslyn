@@ -25,20 +25,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ChangeSignature
         internal static event Action TEST_DialogLoaded;
 
         // Expose localized strings for binding
-        public string ChangeSignatureDialogTitle { get { return ServicesVSResources.ChangeSignature; } }
-        public string Parameters { get { return ServicesVSResources.Parameters; } }
-        public string PreviewMethodSignature { get { return ServicesVSResources.PreviewMethodSignature; } }
-        public string PreviewReferenceChanges { get { return ServicesVSResources.PreviewReferenceChanges; } }
-        public string Remove { get { return ServicesVSResources.Remove; } }
+        public string ChangeSignatureDialogTitle { get { return ServicesVSResources.Change_Signature; } }
+        public string Parameters { get { return ServicesVSResources.Parameters_colon2; } }
+        public string PreviewMethodSignature { get { return ServicesVSResources.Preview_method_signature_colon; } }
+        public string PreviewReferenceChanges { get { return ServicesVSResources.Preview_reference_changes; } }
+        public string Remove { get { return ServicesVSResources.Re_move; } }
         public string Restore { get { return ServicesVSResources.Restore; } }
         public string OK { get { return ServicesVSResources.OK; } }
         public string Cancel { get { return ServicesVSResources.Cancel; } }
 
-        public Brush ParameterText { get; private set; }
-        public Brush RemovedParameterText { get; private set; }
-        public Brush DisabledParameterForeground { get; private set; }
-        public Brush DisabledParameterBackground { get; private set; }
-        public Brush StrikethroughBrush { get; private set; }
+        public Brush ParameterText { get; }
+        public Brush RemovedParameterText { get; }
+        public Brush DisabledParameterForeground { get; }
+        public Brush DisabledParameterBackground { get; }
+        public Brush StrikethroughBrush { get; }
 
         // Use C# Reorder Parameters helpTopic for C# and VB.
         internal ChangeSignatureDialog(ChangeSignatureDialogViewModel viewModel)
@@ -51,7 +51,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ChangeSignature
             // Set these headers explicitly because binding to DataGridTextColumn.Header is not
             // supported.
             modifierHeader.Header = ServicesVSResources.Modifier;
-            defaultHeader.Header = ServicesVSResources.Default;
+            defaultHeader.Header = ServicesVSResources.Default_;
             typeHeader.Header = ServicesVSResources.Type;
             parameterHeader.Header = ServicesVSResources.Parameter;
 
@@ -65,16 +65,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ChangeSignature
             DataContext = viewModel;
 
             Loaded += ChangeSignatureDialog_Loaded;
+            IsVisibleChanged += ChangeSignatureDialog_IsVisibleChanged;
         }
 
         private void ChangeSignatureDialog_Loaded(object sender, RoutedEventArgs e)
         {
             Members.Focus();
+        }
 
-            var handler = TEST_DialogLoaded;
-            if (handler != null)
+        private void ChangeSignatureDialog_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if ((bool)e.NewValue)
             {
-                handler();
+                IsVisibleChanged -= ChangeSignatureDialog_IsVisibleChanged;
+                TEST_DialogLoaded?.Invoke();
             }
         }
 

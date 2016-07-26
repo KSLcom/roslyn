@@ -2,7 +2,6 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Emit;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Roslyn.Utilities;
@@ -62,11 +61,17 @@ namespace Microsoft.CodeAnalysis.CSharp
         /// Any generated methods that don't suppress debug info will use this
         /// list of debug imports.
         /// </summary>
-        public ImportChain CurrentImportChain { get; set; }
+        public ImportChain CurrentImportChain;
 
         public readonly CSharpCompilation Compilation;
 
-        public LambdaFrame staticLambdaFrame;
+        public LambdaFrame StaticLambdaFrame;
+
+        /// <summary>
+        /// A graph of method->method references for this(...) constructor initializers.
+        /// Used to detect and report initializer cycles.
+        /// </summary>
+        private SmallDictionary<MethodSymbol, MethodSymbol> _constructorInitializers;
 
         public TypeCompilationState(NamedTypeSymbol typeOpt, CSharpCompilation compilation, PEModuleBuilder moduleBuilderOpt)
         {
@@ -88,17 +93,26 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
+        /// <summary>
+        /// The type passed to the runtime binder as context.
+        /// </summary>
+        public NamedTypeSymbol DynamicOperationContextType
+        {
+            get
+            {
+                var moduleBuilder = this.ModuleBuilderOpt;
+                if (moduleBuilder == null)
+                {
+                    return null;
+                }
+
+                return moduleBuilder.DynamicOperationContextType ?? this.Type;
+            }
+        }
+
         public bool Emitting
         {
             get { return ModuleBuilderOpt != null; }
-        }
-
-        /// <summary> 
-        /// Add a 'regular' synthesized method.
-        /// </summary>
-        public bool HasSynthesizedMethods
-        {
-            get { return _synthesizedMethods != null; }
         }
 
         public ArrayBuilder<MethodWithBody> SynthesizedMethods
@@ -106,6 +120,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             get { return _synthesizedMethods; }
         }
 
+        /// <summary> 
+        /// Add a 'regular' synthesized method.
+        /// </summary>
         public void AddSynthesizedMethod(MethodSymbol method, BoundStatement body)
         {
             if (_synthesizedMethods == null)
@@ -113,7 +130,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 _synthesizedMethods = ArrayBuilder<MethodWithBody>.GetInstance();
             }
 
-            _synthesizedMethods.Add(new MethodWithBody(method, body, method.GenerateDebugInfo ? CurrentImportChain : null));
+            _synthesizedMethods.Add(new MethodWithBody(method, body, CurrentImportChain));
         }
 
         /// <summary> 
@@ -164,6 +181,58 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
 
             _wrappers = null;
+            _constructorInitializers = null;
+        }
+
+        /// <summary>
+        /// Report an error if adding the edge (method1, method2) to the ctor-initializer
+        /// graph would add a new cycle to that graph.
+        /// </summary>
+        /// <param name="method1">a calling ctor</param>
+        /// <param name="method2">the chained-to ctor</param>
+        /// <param name="syntax">where to report a cyclic error if needed</param>
+        /// <param name="diagnostics">a diagnostic bag for receiving the diagnostic</param>
+        internal void ReportCtorInitializerCycles(MethodSymbol method1, MethodSymbol method2, CSharpSyntaxNode syntax, DiagnosticBag diagnostics)
+        {
+            // precondition and postcondition: the graph _constructorInitializers is acyclic.
+            // If adding the edge (method1, method2) would induce a cycle, we report an error
+            // and do not add it to the set of edges. If it would not induce a cycle we add
+            // it to the set of edges and return.
+
+            if (method1 == method2)
+            {
+                // direct recursion is diagnosed elsewhere
+                throw ExceptionUtilities.Unreachable;
+            }
+
+            if (_constructorInitializers == null)
+            {
+                _constructorInitializers = new SmallDictionary<MethodSymbol, MethodSymbol>();
+                _constructorInitializers.Add(method1, method2);
+                return;
+            }
+
+            MethodSymbol next = method2;
+            while (true)
+            {
+                if (_constructorInitializers.TryGetValue(next, out next))
+                {
+                    Debug.Assert((object)next != null);
+                    if (method1 == next)
+                    {
+                        // We found a (new) cycle containing the edge (method1, method2). Report an
+                        // error and do not add the edge.
+                        diagnostics.Add(ErrorCode.ERR_IndirectRecursiveConstructorCall, syntax.Location, method1);
+                        return;
+                    }
+                }
+                else
+                {
+                    // we've reached the end of the path without finding a cycle. Add the new edge.
+                    _constructorInitializers.Add(method1, method2);
+                    return;
+                }
+            }
         }
     }
 }

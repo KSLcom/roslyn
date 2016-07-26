@@ -1,10 +1,12 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Host;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem.Interop;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -24,18 +26,45 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
             }
 
             var fileChangeService = (IVsFileChangeEx)this.ServiceProvider.GetService(typeof(SVsFileChangeEx));
-            var analyzer = new VisualStudioAnalyzer(analyzerAssemblyFullPath, fileChangeService, this.HostDiagnosticUpdateSource, this.Id, this.Workspace, this.Language);
+            if (Workspace == null)
+            {
+                // This can happen only in tests.
+                var testAnalyzer = new VisualStudioAnalyzer(analyzerAssemblyFullPath, fileChangeService, this.HostDiagnosticUpdateSource, this.Id, this.Workspace, loader: null, language: this.Language);
+                _analyzers[analyzerAssemblyFullPath] = testAnalyzer;
+                return;
+            }
+
+            var analyzerLoader = Workspace.Services.GetRequiredService<IAnalyzerService>().GetLoader();
+            analyzerLoader.AddDependencyLocation(analyzerAssemblyFullPath);
+            var analyzer = new VisualStudioAnalyzer(analyzerAssemblyFullPath, fileChangeService, this.HostDiagnosticUpdateSource, this.Id, this.Workspace, analyzerLoader, this.Language);
             _analyzers[analyzerAssemblyFullPath] = analyzer;
 
             if (_pushingChangesToWorkspaceHosts)
             {
                 var analyzerReference = analyzer.GetReference();
-                this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceAdded(_id, analyzerReference));
+                this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceAdded(Id, analyzerReference));
+
+                List<VisualStudioAnalyzer> existingReferencesWithLoadErrors = _analyzers.Values.Where(a => a.HasLoadErrors).ToList();
+
+                foreach (var existingReference in existingReferencesWithLoadErrors)
+                {
+                    this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceRemoved(Id, existingReference.GetReference()));
+                    existingReference.Reset();
+                    this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceAdded(Id, existingReference.GetReference()));
+                }
 
                 GetAnalyzerDependencyCheckingService().CheckForConflictsAsync();
             }
 
-            GetAnalyzerFileWatcherService().ErrorIfAnalyzerAlreadyLoaded(_id, analyzerAssemblyFullPath);
+            if (File.Exists(analyzerAssemblyFullPath))
+            {
+                GetAnalyzerFileWatcherService().AddPath(analyzerAssemblyFullPath);
+                GetAnalyzerFileWatcherService().ErrorIfAnalyzerAlreadyLoaded(Id, analyzerAssemblyFullPath);
+            }
+            else
+            {
+                analyzer.UpdatedOnDisk += OnAnalyzerChanged;
+            }
         }
 
         public void RemoveAnalyzerAssembly(string analyzerAssemblyFullPath)
@@ -46,14 +75,22 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
                 return;
             }
 
-            GetAnalyzerFileWatcherService().RemoveAnalyzerAlreadyLoadedDiagnostics(_id, analyzerAssemblyFullPath);
+            if (Workspace == null)
+            {
+                // This can happen only in tests.
+                _analyzers.Remove(analyzerAssemblyFullPath);
+                analyzer.Dispose();
+                return;
+            }
+
+            GetAnalyzerFileWatcherService().RemoveAnalyzerAlreadyLoadedDiagnostics(Id, analyzerAssemblyFullPath);
 
             _analyzers.Remove(analyzerAssemblyFullPath);
 
             if (_pushingChangesToWorkspaceHosts)
             {
                 var analyzerReference = analyzer.GetReference();
-                this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceRemoved(_id, analyzerReference));
+                this.ProjectTracker.NotifyWorkspaceHosts(host => host.OnAnalyzerReferenceRemoved(Id, analyzerReference));
 
                 GetAnalyzerDependencyCheckingService().CheckForConflictsAsync();
             }
@@ -75,8 +112,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
                 ruleSetFileFullPath = Path.GetFullPath(ruleSetFileFullPath);
             }
 
-            if (this.ruleSet != null &&
-                this.ruleSet.FilePath.Equals(ruleSetFileFullPath, StringComparison.OrdinalIgnoreCase))
+            if (this.RuleSetFile != null &&
+                this.RuleSetFile.FilePath.Equals(ruleSetFileFullPath, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -86,7 +123,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
 
         public void AddAdditionalFile(string additionalFilePath)
         {
-            var document = this.DocumentProvider.TryGetDocumentForFile(this, (uint)VSConstants.VSITEMID.Nil, filePath: additionalFilePath, sourceCodeKind: SourceCodeKind.Regular, canUseTextBuffer: (b) => true);
+            var document = this.DocumentProvider.TryGetDocumentForFile(
+                this,
+                ImmutableArray<string>.Empty,
+                filePath: additionalFilePath,
+                sourceCodeKind: SourceCodeKind.Regular,
+                canUseTextBuffer: _ => true);
 
             if (document == null)
             {
@@ -94,7 +136,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
             }
 
             AddAdditionalDocument(document,
-                isCurrentContext: document.Project.Hierarchy == LinkedFileUtilities.GetContextHierarchy(document, RunningDocumentTable));
+                isCurrentContext: LinkedFileUtilities.IsCurrentContextHierarchy(document, RunningDocumentTable));
         }
 
         public void RemoveAdditionalFile(string additionalFilePath)
@@ -112,30 +154,30 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
         {
             ClearAnalyzerRuleSet();
             SetAnalyzerRuleSet(ruleSetFileFullPath);
-            UpdateAnalyzerRules();
+            UpdateOptions();
         }
 
         private void SetAnalyzerRuleSet(string ruleSetFileFullPath)
         {
             if (ruleSetFileFullPath.Length != 0)
             {
-                this.ruleSet = this.ProjectTracker.RuleSetFileProvider.GetOrCreateRuleSet(ruleSetFileFullPath);
-                this.ruleSet.UpdatedOnDisk += OnRuleSetFileUpdateOnDisk;
+                this.RuleSetFile = this.ProjectTracker.RuleSetFileProvider.GetOrCreateRuleSet(ruleSetFileFullPath);
+                this.RuleSetFile.UpdatedOnDisk += OnRuleSetFileUpdateOnDisk;
             }
         }
 
         private void ClearAnalyzerRuleSet()
         {
-            if (this.ruleSet != null)
+            if (this.RuleSetFile != null)
             {
-                this.ruleSet.UpdatedOnDisk -= OnRuleSetFileUpdateOnDisk;
-                this.ruleSet = null;
+                this.RuleSetFile.UpdatedOnDisk -= OnRuleSetFileUpdateOnDisk;
+                this.RuleSetFile = null;
             }
         }
 
         private void OnRuleSetFileUpdateOnDisk(object sender, EventArgs e)
         {
-            var filePath = this.ruleSet.FilePath;
+            var filePath = this.RuleSetFile.FilePath;
 
             ResetAnalyzerRuleSet(filePath);
         }

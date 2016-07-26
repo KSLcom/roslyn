@@ -41,6 +41,12 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
                 lines.AddRange(GenerateSetAccessor(node, _subjectBuffer.CurrentSnapshot))
             End If
 
+            ' If we didn't need any accessors, that already means there's some accessor after us. Spitting
+            ' End Property (if we have to) after that point would just make more broken code, so just bail
+            If lines.Count = 0 Then
+                Return Nothing
+            End If
+
             ' If we are missing a End Property, then spit it
             If propertyBlock Is Nothing OrElse propertyBlock.EndPropertyStatement.IsMissing Then
                 Dim aligningWhitespace = _subjectBuffer.CurrentSnapshot.GetAligningWhitespace(node.SpanStart)
@@ -121,6 +127,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
         ''' <param name="accessorToIgnore">An existing getter to ignore. When we are checking for existing getters, we
         ''' might be in the middle of typing one that would be a false positive. </param>
         Private Function NeedsGetAccessor(propertyDeclaration As PropertyStatementSyntax, Optional accessorToIgnore As AccessorBlockSyntax = Nothing) As Boolean
+            If propertyDeclaration.Modifiers.Any(Function(m) m.IsKind(SyntaxKind.WriteOnlyKeyword)) Then
+                Return False
+            End If
+
             Dim propertyBlock = propertyDeclaration.GetAncestor(Of PropertyBlockSyntax)()
             If propertyBlock Is Nothing Then
                 Return True
@@ -132,7 +142,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
                 End If
             Next
 
-            Return Not propertyBlock.PropertyStatement.Modifiers.Any(Function(modifier) modifier.Kind = SyntaxKind.WriteOnlyKeyword)
+            Return True
         End Function
 
         Private Function GenerateGetAccessor(propertyDeclaration As PropertyStatementSyntax, snapshot As ITextSnapshot) As String()
@@ -149,6 +159,10 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
         ''' <param name="accessorToIgnore">An existing getter to ignore. When we are checking for existing getters, we
         ''' might be in the middle of typing one that would be a false positive. </param>
         Private Function NeedsSetAccessor(propertyDeclaration As PropertyStatementSyntax, Optional accessorToIgnore As AccessorBlockSyntax = Nothing) As Boolean
+            If propertyDeclaration.Modifiers.Any(Function(m) m.IsKind(SyntaxKind.ReadOnlyKeyword)) Then
+                Return False
+            End If
+
             Dim propertyBlock = propertyDeclaration.GetAncestor(Of PropertyBlockSyntax)()
             If propertyBlock Is Nothing Then
                 Return True
@@ -160,7 +174,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.EndConstructGeneration
                 End If
             Next
 
-            Return Not propertyBlock.PropertyStatement.Modifiers.Any(Function(modifier) modifier.Kind = SyntaxKind.ReadOnlyKeyword)
+            Return True
         End Function
 
         Private Function GenerateSetAccessor(propertyDeclaration As PropertyStatementSyntax, snapshot As ITextSnapshot) As String()

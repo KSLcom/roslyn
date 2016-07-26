@@ -10,7 +10,6 @@ using Microsoft.CodeAnalysis.Editor.Shared.Tagging;
 using Microsoft.CodeAnalysis.Editor.Shared.Threading;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Internal.Log;
-using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Shared.TestHooks;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.Text.Shared.Extensions;
@@ -36,7 +35,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Classification
             // re-classify the file. We do this, since the edit may have non-local changes, or the user
             // may have made a change that introduced text that we didn't classify because we hadn't
             // parsed it yet, and we want to get back to a known state.
-            private const int ReportChangeDelayinMilliseconds = TaggerConstants.ShortDelay;
+            private const int ReportChangeDelayInMilliseconds = TaggerConstants.ShortDelay;
 
             private readonly ITextBuffer _subjectBuffer;
             private readonly WorkspaceRegistration _workspaceRegistration;
@@ -95,9 +94,17 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Classification
 
             private void OnWorkspaceRegistrationChanged(object sender, EventArgs e)
             {
-                DisconnectFromWorkspace();
-
+                // We both try to connect synchronously, and register for workspace registration events.
+                // It's possible (particularly in tests), to connect in the startup path, but then get a
+                // previously scheduled, but not yet delivered event.  Don't bother connecting to the
+                // same workspace again in that case.
                 var newWorkspace = _workspaceRegistration.Workspace;
+                if (newWorkspace == _workspace)
+                {
+                    return;
+                }
+
+                DisconnectFromWorkspace();
 
                 if (newWorkspace != null)
                 {
@@ -201,9 +208,9 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Classification
                 _notificationService.RegisterNotification(() =>
                     {
                         _workQueue.AssertIsForeground();
-                        ReportChangedSpan(new SnapshotSpan(snapshot, 0, snapshot.Length));
+                        ReportChangedSpan(snapshot.GetFullSpan());
                     },
-                    ReportChangeDelayinMilliseconds,
+                    ReportChangeDelayInMilliseconds,
                     _listener.BeginAsyncOperation("ReportEntireFileChanged"),
                     _reportChangeCancellationSource.Token);
             }
@@ -219,12 +226,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.Classification
                         return;
                     }
                 }
-
-                var tagsChanged = this.TagsChanged;
-                if (tagsChanged != null)
-                {
-                    tagsChanged(this, new SnapshotSpanEventArgs(changeSpan));
-                }
+                this.TagsChanged?.Invoke(this, new SnapshotSpanEventArgs(changeSpan));
             }
 
             public event EventHandler<SnapshotSpanEventArgs> TagsChanged;

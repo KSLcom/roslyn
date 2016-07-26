@@ -4,94 +4,178 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Shared.Extensions.ContextQuery;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Recommendations
 {
     internal abstract class AbstractRecommendationService : IRecommendationService
     {
-        protected abstract Tuple<IEnumerable<ISymbol>, AbstractSyntaxContext> GetRecommendedSymbolsAtPositionWorker(
+        protected abstract Task<Tuple<IEnumerable<ISymbol>, SyntaxContext>> GetRecommendedSymbolsAtPositionWorkerAsync(
             Workspace workspace, SemanticModel semanticModel, int position, OptionSet options, CancellationToken cancellationToken);
 
-        public IEnumerable<ISymbol> GetRecommendedSymbolsAtPosition(
+        public async Task<IEnumerable<ISymbol>> GetRecommendedSymbolsAtPositionAsync(
             Workspace workspace, SemanticModel semanticModel, int position, OptionSet options, CancellationToken cancellationToken)
         {
-            var result = GetRecommendedSymbolsAtPositionWorker(workspace, semanticModel, position, options, cancellationToken);
+            var result = await GetRecommendedSymbolsAtPositionWorkerAsync(workspace, semanticModel, position, options, cancellationToken).ConfigureAwait(false);
 
             var symbols = result.Item1;
-            var context = result.Item2;
+            var context = new ShouldIncludeSymbolContext(result.Item2, cancellationToken);
 
-            symbols = symbols.Where(s => ShouldIncludeSymbol(s, context, cancellationToken));
+            symbols = symbols.Where(context.ShouldIncludeSymbol);
             return symbols;
         }
 
-        private bool ShouldIncludeSymbol(ISymbol symbol, AbstractSyntaxContext context, CancellationToken cancellationToken)
+        protected static IEnumerable<ISymbol> GetRecommendedNamespaceNameSymbols(
+            SemanticModel semanticModel, SyntaxNode declarationSyntax, CancellationToken cancellationToken)
         {
-            var isMember = false;
-            switch (symbol.Kind)
+            if (declarationSyntax == null)
             {
-                case SymbolKind.NamedType:
-                    var namedType = (INamedTypeSymbol)symbol;
-                    if (namedType.SpecialType == SpecialType.System_Void)
+                throw new ArgumentNullException(nameof(declarationSyntax));
+            }
+
+            var containingNamespaceSymbol = semanticModel.Compilation.GetCompilationNamespace(
+                semanticModel.GetEnclosingNamespace(declarationSyntax.SpanStart, cancellationToken));
+
+            var symbols = semanticModel.LookupNamespacesAndTypes(declarationSyntax.SpanStart, containingNamespaceSymbol)
+                                       .Where(recommendationSymbol => IsNonIntersectingNamespace(recommendationSymbol, declarationSyntax));
+
+            return symbols;
+        }
+
+        protected static bool IsNonIntersectingNamespace(ISymbol recommendationSymbol, SyntaxNode declarationSyntax)
+        {
+            //
+            // Apart from filtering out non-namespace symbols, this also filters out the symbol
+            // currently being declared. For example...
+            //
+            //     namespace X$$
+            //
+            // ...X won't show in the completion list (unless it is also declared elsewhere).
+            //
+            // In addition, in VB, it will filter out Bar from the sample below...
+            //
+            //     Namespace Foo.$$
+            //         Namespace Bar
+            //         End Namespace
+            //     End Namespace
+            //
+            // ...unless, again, it's also declared elsewhere.
+            //
+            return recommendationSymbol.IsNamespace() &&
+                   recommendationSymbol.Locations.Any(
+                       candidateLocation => !(declarationSyntax.SyntaxTree == candidateLocation.SourceTree &&
+                                              declarationSyntax.Span.IntersectsWith(candidateLocation.SourceSpan)));
+        }
+
+        private sealed class ShouldIncludeSymbolContext
+        {
+            private readonly SyntaxContext _context;
+            private readonly CancellationToken _cancellationToken;
+            private IEnumerable<INamedTypeSymbol> _lazyOuterTypesAndBases;
+            private IEnumerable<INamedTypeSymbol> _lazyEnclosingTypeBases;
+
+            internal ShouldIncludeSymbolContext(SyntaxContext context, CancellationToken cancellationToken)
+            {
+                _context = context;
+                _cancellationToken = cancellationToken;
+            }
+
+            internal bool ShouldIncludeSymbol(ISymbol symbol)
+            {
+                var isMember = false;
+                switch (symbol.Kind)
+                {
+                    case SymbolKind.NamedType:
+                        var namedType = (INamedTypeSymbol)symbol;
+                        if (namedType.SpecialType == SpecialType.System_Void)
+                        {
+                            return false;
+                        }
+
+                        break;
+
+                    case SymbolKind.Method:
+                        switch (((IMethodSymbol)symbol).MethodKind)
+                        {
+                            case MethodKind.EventAdd:
+                            case MethodKind.EventRemove:
+                            case MethodKind.EventRaise:
+                            case MethodKind.PropertyGet:
+                            case MethodKind.PropertySet:
+                                return false;
+                        }
+
+                        isMember = true;
+                        break;
+
+                    case SymbolKind.Event:
+                    case SymbolKind.Field:
+                    case SymbolKind.Property:
+                        isMember = true;
+                        break;
+
+                    case SymbolKind.TypeParameter:
+                        return ((ITypeParameterSymbol)symbol).TypeParameterKind != TypeParameterKind.Cref;
+                }
+
+                if (_context.IsAttributeNameContext)
+                {
+                    var enclosingSymbol = _context.SemanticModel.GetEnclosingNamedType(_context.LeftToken.SpanStart, _cancellationToken);
+                    return symbol.IsOrContainsAccessibleAttribute(enclosingSymbol, _context.SemanticModel.Compilation.Assembly);
+                }
+
+                if (_context.IsEnumTypeMemberAccessContext)
+                {
+                    return symbol.Kind == SymbolKind.Field;
+                }
+
+                // In an expression or statement context, we don't want to display instance members declared in outer containing types.
+                if ((_context.IsStatementContext || _context.IsAnyExpressionContext) &&
+                    !symbol.IsStatic &&
+                    isMember)
+                {
+                    var containingTypeOriginalDefinition = symbol.ContainingType.OriginalDefinition;
+                    if (this.GetOuterTypesAndBases().Contains(containingTypeOriginalDefinition))
                     {
-                        return false;
+                        return this.GetEnclosingTypeBases().Contains(containingTypeOriginalDefinition);
                     }
+                }
 
-                    break;
+                var namespaceSymbol = symbol as INamespaceSymbol;
+                if (namespaceSymbol != null)
+                {
+                    return namespaceSymbol.ContainsAccessibleTypesOrNamespaces(_context.SemanticModel.Compilation.Assembly);
+                }
 
-                case SymbolKind.Method:
-                    var methodSymbol = (IMethodSymbol)symbol;
-                    if (methodSymbol.MethodKind == MethodKind.EventAdd ||
-                        methodSymbol.MethodKind == MethodKind.EventRemove ||
-                        methodSymbol.MethodKind == MethodKind.EventRaise ||
-                        methodSymbol.MethodKind == MethodKind.PropertyGet ||
-                        methodSymbol.MethodKind == MethodKind.PropertySet)
-                    {
-                        return false;
-                    }
-
-                    isMember = true;
-                    break;
-
-                case SymbolKind.Event:
-                case SymbolKind.Field:
-                case SymbolKind.Property:
-                    isMember = true;
-                    break;
-
-                case SymbolKind.TypeParameter:
-                    return ((ITypeParameterSymbol)symbol).TypeParameterKind != TypeParameterKind.Cref;
+                return true;
             }
 
-            if (context.IsAttributeNameContext)
+            private IEnumerable<INamedTypeSymbol> GetOuterTypesAndBases()
             {
-                var enclosingSymbol = context.SemanticModel.GetEnclosingNamedType(context.LeftToken.SpanStart, cancellationToken);
-                return symbol.IsOrContainsAccessibleAttribute(enclosingSymbol, context.SemanticModel.Compilation.Assembly);
+                if (_lazyOuterTypesAndBases == null)
+                {
+                    _lazyOuterTypesAndBases = _context.GetOuterTypes(_cancellationToken).SelectMany(o => o.GetBaseTypesAndThis()).Select(t => t.OriginalDefinition);
+                }
+
+                return _lazyOuterTypesAndBases;
             }
 
-            if (context.IsEnumTypeMemberAccessContext)
+            private IEnumerable<INamedTypeSymbol> GetEnclosingTypeBases()
             {
-                return symbol.Kind == SymbolKind.Field;
-            }
+                if (_lazyEnclosingTypeBases == null)
+                {
+                    var enclosingType = _context.SemanticModel.GetEnclosingNamedType(_context.LeftToken.SpanStart, _cancellationToken);
+                    _lazyEnclosingTypeBases = (enclosingType == null) ?
+                        SpecializedCollections.EmptyEnumerable<INamedTypeSymbol>() :
+                        enclosingType.GetBaseTypes().Select(b => b.OriginalDefinition);
+                }
 
-            // In an expression or statement context, we don't want to display instance members declared in outer containing types.
-            if ((context.IsStatementContext || context.IsAnyExpressionContext) &&
-                !symbol.IsStatic &&
-                isMember &&
-                context.GetOuterTypes(cancellationToken).Contains(symbol.ContainingType))
-            {
-                return false;
+                return _lazyEnclosingTypeBases;
             }
-
-            var namespaceSymbol = symbol as INamespaceSymbol;
-            if (namespaceSymbol != null)
-            {
-                return namespaceSymbol.ContainsAccessibleTypesOrNamespaces(context.SemanticModel.Compilation.Assembly);
-            }
-
-            return true;
         }
     }
 }

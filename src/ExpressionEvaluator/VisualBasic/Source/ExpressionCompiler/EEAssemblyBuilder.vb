@@ -11,6 +11,7 @@ Imports System.Collections.Immutable
 Imports System.Diagnostics
 Imports Roslyn.Utilities
 Imports System.Runtime.InteropServices
+Imports System.Reflection.Metadata
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
 
@@ -33,7 +34,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 outputKind:=OutputKind.DynamicallyLinkedLibrary,
                 serializationProperties:=serializationProperties,
                 manifestResources:=SpecializedCollections.EmptyEnumerable(Of ResourceDescription)(),
-                assemblySymbolMapper:=Nothing,
                 additionalTypes:=additionalTypes)
 
             _methods = methods
@@ -60,13 +60,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
             Return MyBase.TranslateModule(symbol, diagnostics)
         End Function
 
+        Friend Overrides ReadOnly Property IgnoreAccessibility As Boolean
+            Get
+                Return True
+            End Get
+        End Property
+
         Public Overrides ReadOnly Property CurrentGenerationOrdinal As Integer
             Get
                 Return 0
             End Get
         End Property
 
-        Friend Overrides Function TryCreateVariableSlotAllocator(symbol As MethodSymbol) As VariableSlotAllocator
+        Friend Overrides Function TryCreateVariableSlotAllocator(symbol As MethodSymbol, topLevelMethod As MethodSymbol, diagnostics As DiagnosticBag) As VariableSlotAllocator
             Dim method = TryCast(symbol, EEMethodSymbol)
             If method IsNot Nothing AndAlso _methods.Contains(method) Then
                 Dim defs = GetLocalDefinitions(method.Locals)
@@ -100,9 +106,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 local.Name,
                 DirectCast(local.Type, ITypeReference),
                 slot:=index,
-                synthesizedKind:=CType(local.SynthesizedKind, SynthesizedLocalKind),
+                synthesizedKind:=local.SynthesizedKind,
                 id:=Nothing,
-                pdbAttributes:=Cci.PdbWriter.DefaultLocalAttributesValue,
+                pdbAttributes:=LocalVariableAttributes.None,
                 constraints:=constraints,
                 isDynamic:=False,
                 dynamicTransformFlags:=ImmutableArray(Of TypedConstant).Empty)
@@ -133,7 +139,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 nameOpt As String,
                 synthesizedKind As SynthesizedLocalKind,
                 id As LocalDebugId,
-                pdbAttributes As UInteger,
+                pdbAttributes As LocalVariableAttributes,
                 constraints As LocalSlotConstraints,
                 isDynamic As Boolean,
                 dynamicTransformFlags As ImmutableArray(Of TypedConstant)) As LocalDefinition
@@ -157,22 +163,23 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 End Get
             End Property
 
-            Public Overrides Function TryGetPreviousHoistedLocalSlotIndex(currentDeclarator As SyntaxNode, currentType As ITypeReference, synthesizedKind As SynthesizedLocalKind, currentId As LocalDebugId, <Out> ByRef slotIndex As Integer) As Boolean
+            Public Overrides Function TryGetPreviousHoistedLocalSlotIndex(currentDeclarator As SyntaxNode, currentType As ITypeReference, synthesizedKind As SynthesizedLocalKind, currentId As LocalDebugId, diagnostics As DiagnosticBag, <Out> ByRef slotIndex As Integer) As Boolean
                 slotIndex = -1
                 Return False
             End Function
 
-            Public Overrides Function TryGetPreviousAwaiterSlotIndex(currentType As ITypeReference, <Out> ByRef slotIndex As Integer) As Boolean
+            Public Overrides Function TryGetPreviousAwaiterSlotIndex(currentType As ITypeReference, diagnostics As DiagnosticBag, <Out> ByRef slotIndex As Integer) As Boolean
                 slotIndex = -1
                 Return False
             End Function
 
-            Public Overrides Function TryGetPreviousClosure(scopeSyntax As SyntaxNode, <Out> ByRef closureOrdinal As Integer) As Boolean
+            Public Overrides Function TryGetPreviousClosure(scopeSyntax As SyntaxNode, <Out> ByRef closureId As DebugId) As Boolean
+                closureId = Nothing
                 Return False
             End Function
 
-            Public Overrides Function TryGetPreviousLambda(lambdaOrLambdaBodySyntax As SyntaxNode, isLambdaBody As Boolean, <Out> ByRef lambdaOrdinal As Integer) As Boolean
-                lambdaOrdinal = -1
+            Public Overrides Function TryGetPreviousLambda(lambdaOrLambdaBodySyntax As SyntaxNode, isLambdaBody As Boolean, <Out> ByRef lambdaId As DebugId) As Boolean
+                lambdaId = Nothing
                 Return False
             End Function
 
@@ -182,7 +189,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
                 End Get
             End Property
 
-            Public Overrides ReadOnly Property PreviousMethodId As MethodDebugId
+            Public Overrides ReadOnly Property MethodId As DebugId?
                 Get
                     Return Nothing
                 End Get

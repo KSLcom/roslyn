@@ -9,13 +9,11 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 {
     internal sealed class ObjectIdLocalSymbol : PlaceholderLocalSymbol
     {
-        private readonly string _id;
         private readonly bool _isWritable;
 
-        internal ObjectIdLocalSymbol(MethodSymbol method, TypeSymbol type, string id, bool isWritable) :
-            base(method, id, type)
+        internal ObjectIdLocalSymbol(MethodSymbol method, TypeSymbol type, string name, string displayName, bool isWritable) :
+            base(method, name, displayName, type)
         {
-            _id = id;
             _isWritable = isWritable;
         }
 
@@ -54,7 +52,7 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
             internal override BoundExpression GetValue(BoundPseudoVariable variable, DiagnosticBag diagnostics)
             {
-                var method = GetIntrinsicMethod(this._compilation, ExpressionCompilerConstants.GetVariableValueMethodName);
+                var method = GetIntrinsicMethod(_compilation, ExpressionCompilerConstants.GetVariableValueMethodName);
                 var local = variable.LocalSymbol;
                 var expr = InvokeGetMethod(method, variable.Syntax, local.Name);
                 return ConvertToLocalType(_compilation, expr, local.Type, diagnostics);
@@ -62,18 +60,20 @@ namespace Microsoft.CodeAnalysis.CSharp.ExpressionEvaluator
 
             internal override BoundExpression GetAddress(BoundPseudoVariable variable)
             {
-                var method = GetIntrinsicMethod(this._compilation, ExpressionCompilerConstants.GetVariableAddressMethodName);
+                var method = GetIntrinsicMethod(_compilation, ExpressionCompilerConstants.GetVariableAddressMethodName);
                 // Currently the MetadataDecoder does not support byref return types
                 // so the return type of GetVariableAddress(Of T)(name As String)
                 // is an error type. Since the method is only used for emit, an
                 // updated placeholder method is used instead.
-                Debug.Assert(method.ReturnType.TypeKind == TypeKind.Error); // If byref return types are supported in the future, use method as is.
+
+                // TODO: refs are available
+                // Debug.Assert(method.ReturnType.TypeKind == TypeKind.Error); // If byref return types are supported in the future, use method as is.
                 method = new PlaceholderMethodSymbol(
                     method.ContainingType,
                     method.Name,
                     m => method.TypeParameters.SelectAsArray(t => (TypeParameterSymbol)new SimpleTypeParameterSymbol(m, t.Ordinal, t.Name)),
                     m => m.TypeParameters[0], // return type is <>T&
-                    m => method.Parameters.SelectAsArray(p => (ParameterSymbol)new SynthesizedParameterSymbol(m, p.Type, p.Ordinal, p.RefKind, p.Name, p.CustomModifiers)));
+                    m => method.Parameters.SelectAsArray(p => (ParameterSymbol)new SynthesizedParameterSymbol(m, p.Type, p.Ordinal, p.RefKind, p.Name, p.CustomModifiers, p.CountOfCustomModifiersPrecedingByRef)));
                 var local = variable.LocalSymbol;
                 return InvokeGetMethod(method.Construct(local.Type), variable.Syntax, local.Name);
             }

@@ -1,13 +1,15 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.Editor.Commands;
+using Microsoft.CodeAnalysis.Editor.Host;
+using Microsoft.CodeAnalysis.Editor.Shared;
 using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
-using Microsoft.CodeAnalysis.Editor.Shared.SuggestionSupport;
 using Microsoft.CodeAnalysis.Notification;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.VisualStudio.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
@@ -35,8 +37,8 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
             }
 
             var documents = textContainer.GetRelatedDocuments();
-            var supportSuggestionService = workspace.Services.GetService<IDocumentSupportsSuggestionService>();
-            if (!documents.All(d => supportSuggestionService.SupportsRename(d)))
+            var supportsFeatureService = workspace.Services.GetService<IDocumentSupportsFeatureService>();
+            if (!documents.All(d => supportsFeatureService.SupportsRename(d)))
             {
                 return nextHandler();
             }
@@ -48,7 +50,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
         {
             _waitIndicator.Wait(
                 title: EditorFeaturesResources.Rename,
-                message: EditorFeaturesResources.FindingTokenToRename,
+                message: EditorFeaturesResources.Finding_token_to_rename,
                 allowCancel: true,
                 action: waitContext =>
             {
@@ -58,14 +60,6 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
 
         private void ExecuteRenameWorker(RenameCommandArgs args, CancellationToken cancellationToken)
         {
-            // If there is already an active session, focus its dashboard;
-            if (_renameService.ActiveSession != null)
-            {
-                var dashboard = GetDashboard(args.TextView);
-                dashboard.Focus();
-                return;
-            }
-
             var snapshot = args.SubjectBuffer.CurrentSnapshot;
             Workspace workspace;
             if (!Workspace.TryGetWorkspace(snapshot.AsText().Container, out workspace))
@@ -76,24 +70,44 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
             var caretPoint = args.TextView.GetCaretPoint(args.SubjectBuffer);
             if (!caretPoint.HasValue)
             {
-                ShowErrorDialog(workspace, EditorFeaturesResources.YouMustRenameAnIdentifier);
+                ShowErrorDialog(workspace, EditorFeaturesResources.You_must_rename_an_identifier);
                 return;
+            }
+
+            // If there is already an active session, commit it first
+            if (_renameService.ActiveSession != null)
+            {
+                // Is the caret within any of the rename fields in this buffer?
+                // If so, focus the dashboard
+                SnapshotSpan editableSpan;
+                if (_renameService.ActiveSession.TryGetContainingEditableSpan(caretPoint.Value, out editableSpan))
+                {
+                    var dashboard = GetDashboard(args.TextView);
+                    dashboard.Focus();
+                    return;
+                }
+                else
+                {
+                    // Otherwise, commit the existing session and start a new one.
+                    _renameService.ActiveSession.Commit();
+                }
             }
 
             var position = caretPoint.Value;
             var document = args.SubjectBuffer.CurrentSnapshot.GetOpenDocumentInCurrentContextWithChanges();
             if (document == null)
             {
-                ShowErrorDialog(workspace, EditorFeaturesResources.YouMustRenameAnIdentifier);
+                ShowErrorDialog(workspace, EditorFeaturesResources.You_must_rename_an_identifier);
                 return;
             }
 
             var selectedSpans = args.TextView.Selection.GetSnapshotSpansOnBuffer(args.SubjectBuffer);
 
             // Now make sure the entire selection is contained within that token.
-            if (selectedSpans.Count > 1)
+            // There can be zero selectedSpans in projection scenarios.
+            if (selectedSpans.Count != 1)
             {
-                ShowErrorDialog(workspace, EditorFeaturesResources.YouMustRenameAnIdentifier);
+                ShowErrorDialog(workspace, EditorFeaturesResources.You_must_rename_an_identifier);
                 return;
             }
 
@@ -107,7 +121,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.InlineRename
         private static void ShowErrorDialog(Workspace workspace, string message)
         {
             var notificationService = workspace.Services.GetService<INotificationService>();
-            notificationService.SendNotification(message, EditorFeaturesResources.Rename, NotificationSeverity.Error);
+            notificationService.SendNotification(message, title: EditorFeaturesResources.Rename, severity: NotificationSeverity.Error);
         }
     }
 }

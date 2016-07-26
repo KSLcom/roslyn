@@ -20,17 +20,6 @@ namespace Microsoft.Cci
     }
 
     /// <summary>
-    /// Represents an exported type.
-    /// </summary>
-    internal interface ITypeExport : IDefinition
-    {
-        /// <summary>
-        /// Type reference of the exported type.
-        /// </summary>
-        ITypeReference ExportedType { get; }
-    }
-
-    /// <summary>
     /// This interface models the metadata representation of an array type reference.
     /// </summary>
     internal interface IArrayTypeReference : ITypeReference
@@ -43,7 +32,7 @@ namespace Microsoft.Cci
         /// <summary>
         /// This type of array is a single dimensional array with zero lower bound for index values.
         /// </summary>
-        bool IsVector
+        bool IsSZArray
         {
             get;
             // ^ ensures result ==> Rank == 1;
@@ -53,7 +42,7 @@ namespace Microsoft.Cci
         /// A possibly empty list of lower bounds for dimension indices. When not explicitly specified, a lower bound defaults to zero.
         /// The first lower bound in the list corresponds to the first dimension. Dimensions cannot be skipped.
         /// </summary>
-        IEnumerable<int> LowerBounds
+        ImmutableArray<int> LowerBounds
         {
             get;
             // ^ ensures count(result) <= Rank;
@@ -62,7 +51,7 @@ namespace Microsoft.Cci
         /// <summary>
         /// The number of array dimensions.
         /// </summary>
-        uint Rank
+        int Rank
         {
             get;
             // ^ ensures result > 0;
@@ -73,7 +62,7 @@ namespace Microsoft.Cci
         /// The first upper bound in the list corresponds to the first dimension. Dimensions cannot be skipped.
         /// An unspecified upper bound means that instances of this type can have an arbitrary upper bound for that dimension.
         /// </summary>
-        IEnumerable<ulong> Sizes
+        ImmutableArray<int> Sizes
         {
             get;
             // ^ ensures count(result) <= Rank;
@@ -118,13 +107,9 @@ namespace Microsoft.Cci
         /// <summary>
         /// The CLI spec says that custom modifiers must precede the ByRef type code in the encoding of a parameter.
         /// Unfortunately, the managed C++ compiler emits them in the reverse order.  In order to avoid breaking
-        /// interop scenarios, we need to support such signatures.  When this flag is set, we need to reverse the
-        /// emit order.
+        /// interop scenarios, we need to support such signatures. 
         /// </summary>
-        /// <remarks>
-        /// We support before (correct) and after (incorrect, but works), but not in between.
-        /// </remarks>
-        bool HasByRefBeforeCustomModifiers { get; }
+        ushort CountOfCustomModifiersPrecedingByRef { get; }
 
         /// <summary>
         /// The type of argument value that corresponds to this parameter.
@@ -140,7 +125,7 @@ namespace Microsoft.Cci
         /// <summary>
         /// A list of classes or interfaces. All type arguments matching this parameter must be derived from all of the classes and implement all of the interfaces.
         /// </summary>
-        IEnumerable<ITypeReference> GetConstraints(EmitContext context);
+        IEnumerable<TypeReferenceWithAttributes> GetConstraints(EmitContext context);
 
         /// <summary>
         /// True if all type arguments matching this parameter are constrained to be reference types.
@@ -343,7 +328,7 @@ namespace Microsoft.Cci
     }
 
     /// <summary>
-    /// Models an explicit implemenation or override of a base class virtual method or an explicit implementation of an interface method.
+    /// Models an explicit implementation or override of a base class virtual method or an explicit implementation of an interface method.
     /// </summary>
     internal struct MethodImplementation
     {
@@ -413,6 +398,42 @@ namespace Microsoft.Cci
     }
 
     /// <summary>
+    /// A type ref with attributes attached directly to the type reference
+    /// itself. Unlike <see cref="IReference.GetAttributes(EmitContext)"/> a
+    /// <see cref="TypeReferenceWithAttributes"/> will never provide attributes
+    /// for the "pointed at" declaration, and all attributes will be emitted
+    /// directly on the type ref, rather than the declaration.
+    /// </summary>
+    // TODO(https://github.com/dotnet/roslyn/issues/12677):
+    // Consider: This is basically just a work-around for our overly loose
+    // interpretation of IReference and IDefinition. This type would probably
+    // be unnecessary if we added a GetAttributes method onto IDefinition and
+    // properly segregated attributes that are on type references and attributes
+    // that are on underlying type definitions.
+    internal struct TypeReferenceWithAttributes
+    {
+        /// <summary>
+        /// The type reference.
+        /// </summary>
+        public ITypeReference TypeRef { get; }
+
+        /// <summary>
+        /// The attributes on the type reference itself.
+        /// </summary>
+        public ImmutableArray<ICustomAttribute> Attributes { get; }
+
+        public TypeReferenceWithAttributes(
+            ITypeReference typeRef,
+            ImmutableArray<ICustomAttribute> attributes = default(ImmutableArray<ICustomAttribute>))
+        {
+            TypeRef = typeRef;
+            Attributes = attributes.IsDefault
+                ? ImmutableArray<ICustomAttribute>.Empty
+                : attributes;
+        }
+    }
+
+    /// <summary>
     /// This interface models the metadata representation of a type.
     /// </summary>
     internal interface ITypeDefinition : IDefinition, ITypeReference
@@ -470,7 +491,7 @@ namespace Microsoft.Cci
         /// <summary>
         /// Zero or more interfaces implemented by this type.
         /// </summary>
-        IEnumerable<ITypeReference> Interfaces(EmitContext context);
+        IEnumerable<TypeReferenceWithAttributes> Interfaces(EmitContext context);
 
         /// <summary>
         /// True if the type may not be instantiated.
@@ -619,7 +640,7 @@ namespace Microsoft.Cci
         Boolean,
 
         /// <summary>
-        /// An usigned 16 bit integer representing a Unicode UTF16 code point.
+        /// An unsigned 16 bit integer representing a Unicode UTF16 code point.
         /// </summary>
         Char,
 
@@ -699,7 +720,7 @@ namespace Microsoft.Cci
         UIntPtr,
 
         /// <summary>
-        /// A type that denotes the absense of a value.
+        /// A type that denotes the absence of a value.
         /// </summary>
         Void,
 
@@ -720,49 +741,34 @@ namespace Microsoft.Cci
     internal enum TypeMemberVisibility
     {
         /// <summary>
-        /// The visibility has not been specified. Use the applicable default.
+        /// The member is visible only within its own type.
         /// </summary>
-        Default,
-
-        /// <summary>
-        /// The member is visible only within its own assembly.
-        /// </summary>
-        Assembly,
-
-        /// <summary>
-        /// The member is visible only within its own type and any subtypes.
-        /// </summary>
-        Family,
+        Private = 1,
 
         /// <summary>
         /// The member is visible only within the intersection of its family (its own type and any subtypes) and assembly. 
         /// </summary>
-        FamilyAndAssembly,
+        FamilyAndAssembly = 2,
+
+        /// <summary>
+        /// The member is visible only within its own assembly.
+        /// </summary>
+        Assembly = 3,
+
+        /// <summary>
+        /// The member is visible only within its own type and any subtypes.
+        /// </summary>
+        Family = 4,
 
         /// <summary>
         /// The member is visible only within the union of its family and assembly. 
         /// </summary>
-        FamilyOrAssembly,
-
-        /// <summary>
-        /// The member is visible only to the compiler producing its assembly.
-        /// </summary>
-        Other,
-
-        /// <summary>
-        /// The member is visible only within its own type.
-        /// </summary>
-        Private,
+        FamilyOrAssembly = 5,
 
         /// <summary>
         /// The member is visible everywhere its declaring type is visible.
         /// </summary>
-        Public,
-
-        /// <summary>
-        /// A mask that can be used to mask out flag bits when the latter are stored in the same memory word as this enumeration.
-        /// </summary>
-        Mask = 0xF
+        Public = 6
     }
 
     /// <summary>
@@ -773,23 +779,18 @@ namespace Microsoft.Cci
         /// <summary>
         /// Two type or method instances are compatible only if they have exactly the same type argument for this parameter.
         /// </summary>
-        NonVariant,
+        NonVariant = 0,
 
         /// <summary>
         /// A type or method instance will match another instance if it has a type for this parameter that is the same or a subtype of the type the
         /// other instance has for this parameter.
         /// </summary>
-        Covariant,
+        Covariant = 1,
 
         /// <summary>
         /// A type or method instance will match another instance if it has a type for this parameter that is the same or a supertype of the type the
         /// other instance has for this parameter.
         /// </summary>
-        Contravariant,
-
-        /// <summary>
-        /// A mask that can be used to mask out flag bits when the latter are stored in the same memory word as the enumeration.
-        /// </summary>
-        Mask = 3,
+        Contravariant = 2,
     }
 }

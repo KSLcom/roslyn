@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Extensions;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Text;
@@ -20,14 +19,14 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.LineSeparator
     {
         /// <summary>
         /// Given a tree returns line separator spans.
-        /// The operation may take fairly long time on a big tree so it is cancelable.
+        /// The operation may take fairly long time on a big tree so it is cancellable.
         /// </summary>
         public async Task<IEnumerable<TextSpan>> GetLineSeparatorsAsync(
             Document document,
             TextSpan textSpan,
             CancellationToken cancellationToken)
         {
-            var tree = await document.GetCSharpSyntaxTreeAsync(cancellationToken).ConfigureAwait(false);
+            var tree = await document.GetSyntaxTreeAsync(cancellationToken).ConfigureAwait(false);
             var node = await tree.GetRootAsync(cancellationToken).ConfigureAwait(false);
             var spans = new List<TextSpan>();
 
@@ -148,47 +147,28 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.LineSeparator
 
         private static bool IsBadProperty(SyntaxNode node)
         {
-            var propDecl = node as PropertyDeclarationSyntax;
-            if (propDecl != null)
-            {
-                if (propDecl.AccessorList.OpenBraceToken.IsMissing ||
-                    propDecl.AccessorList.CloseBraceToken.IsMissing)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return IsBadAccessorList(node as PropertyDeclarationSyntax);
         }
 
         private static bool IsBadEvent(SyntaxNode node)
         {
-            var eventDecl = node as EventDeclarationSyntax;
-            if (eventDecl != null)
-            {
-                if (eventDecl.AccessorList.OpenBraceToken.IsMissing ||
-                    eventDecl.AccessorList.CloseBraceToken.IsMissing)
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return IsBadAccessorList(node as EventDeclarationSyntax);
         }
 
         private static bool IsBadIndexer(SyntaxNode node)
         {
-            var indexerDecl = node as IndexerDeclarationSyntax;
-            if (indexerDecl != null)
+            return IsBadAccessorList(node as IndexerDeclarationSyntax);
+        }
+
+        private static bool IsBadAccessorList(BasePropertyDeclarationSyntax baseProperty)
+        {
+            if (baseProperty?.AccessorList == null)
             {
-                if (indexerDecl.AccessorList.OpenBraceToken.IsMissing ||
-                    indexerDecl.AccessorList.CloseBraceToken.IsMissing)
-                {
-                    return true;
-                }
+                return false;
             }
 
-            return false;
+            return baseProperty.AccessorList.OpenBraceToken.IsMissing ||
+                baseProperty.AccessorList.CloseBraceToken.IsMissing;
         }
 
         private static bool IsBadConstructor(SyntaxNode node)

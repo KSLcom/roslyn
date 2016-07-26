@@ -76,7 +76,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                     Throw ExceptionUtilities.UnexpectedValue(nameFromCref.Kind)
             End Select
 
-            RemoveOverridenMethodsAndProperties(symbols)
+            RemoveOverriddenMethodsAndProperties(symbols)
 
             Return symbols.ToImmutableAndFree()
         End Function
@@ -422,7 +422,7 @@ lAgain:
             Return result.AsImmutableOrNull()
         End Function
 
-        Private Sub CreateGoodOrAmbiguousFromLookupResultAndFree(lookupResult As LookupResult, result As ArrayBuilder(Of Symbol), preserveAliases As Boolean)
+        Private Shared Sub CreateGoodOrAmbiguousFromLookupResultAndFree(lookupResult As LookupResult, result As ArrayBuilder(Of Symbol), preserveAliases As Boolean)
             Dim di As DiagnosticInfo = lookupResult.Diagnostic
 
             If TypeOf di Is AmbiguousSymbolDiagnostic Then

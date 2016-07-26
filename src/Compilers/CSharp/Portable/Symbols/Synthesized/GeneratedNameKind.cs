@@ -1,5 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
+
 namespace Microsoft.CodeAnalysis.CSharp.Symbols
 {
     internal enum GeneratedNameKind
@@ -13,6 +15,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         LambdaMethod = 'b',
         LambdaDisplayClass = 'c',
         StateMachineType = 'd',
+        LocalFunction = 'g',
 
         // Used by EnC:
         AwaiterField = 'u',
@@ -25,6 +28,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         ReusableHoistedLocalField = '7',
         LambdaCacheField = '9',
         FixedBufferField = 'e',
+        AnonymousType = 'f',
+        TransparentIdentifier = 'h',
+        AnonymousTypeField = 'i',
         AutoPropertyBackingField = 'k',
         IteratorCurrentThreadIdField = 'l',
         IteratorFinallyMethod = 'm',
@@ -32,6 +38,21 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         AsyncBuilderField = 't',
         DynamicCallSiteContainerType = 'o',
         DynamicCallSiteField = 'p',
+
+        // Deprecated - emitted by Dev12, but not by Roslyn.
+        // Don't reuse the values because the debugger might encounter them when consuming old binaries.
+        [Obsolete]
+        Deprecated_OuterscopeLocals = '6',
+        [Obsolete]
+        Deprecated_IteratorInstance = 'a',
+        [Obsolete]
+        Deprecated_InitializerLocal = 'g',
+        [Obsolete]
+        Deprecated_AnonymousTypeTypeParameter = 'j',
+        [Obsolete]
+        Deprecated_DynamicDelegate = 'q',
+        [Obsolete]
+        Deprecated_ComrefCallLocal = 'r',
     }
 
     internal static class GeneratedNameKindExtensions

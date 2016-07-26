@@ -9,19 +9,19 @@ using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Options
 {
-    [Export(typeof(IOptionService))]
-    [Shared]
-    internal class OptionService : IOptionService
+    [Export(typeof(IGlobalOptionService)), Shared]
+    internal class GlobalOptionService : IGlobalOptionService
     {
         private readonly Lazy<HashSet<IOption>> _options;
         private readonly ImmutableDictionary<string, ImmutableArray<Lazy<IOptionSerializer, OptionSerializerMetadata>>> _featureNameToOptionSerializers =
             ImmutableDictionary.Create<string, ImmutableArray<Lazy<IOptionSerializer, OptionSerializerMetadata>>>();
 
         private readonly object _gate = new object();
+
         private ImmutableDictionary<OptionKey, object> _currentValues;
 
         [ImportingConstructor]
-        public OptionService(
+        public GlobalOptionService(
             [ImportMany] IEnumerable<Lazy<IOptionProvider>> optionProviders,
             [ImportMany] IEnumerable<Lazy<IOptionSerializer, OptionSerializerMetadata>> optionSerializers)
         {
@@ -64,7 +64,7 @@ namespace Microsoft.CodeAnalysis.Options
                     foreach (var serializer in optionSerializers)
                     {
                         // There can be options (ex, formatting) that only exist in only one specific language. In those cases,
-                        // feature's serialzier should exist in only that language.
+                        // feature's serializer should exist in only that language.
                         if (!SupportedSerializer(optionKey, serializer.Metadata))
                         {
                             continue;
@@ -88,11 +88,6 @@ namespace Microsoft.CodeAnalysis.Options
         public IEnumerable<IOption> GetRegisteredOptions()
         {
             return _options.Value;
-        }
-
-        public OptionSet GetOptions()
-        {
-            return new OptionSet(this);
         }
 
         public T GetOption<T>(Option<T> option)
@@ -128,14 +123,21 @@ namespace Microsoft.CodeAnalysis.Options
         {
             if (optionSet == null)
             {
-                throw new ArgumentNullException("OptionSet");
+                throw new ArgumentNullException(nameof(optionSet));
+            }
+
+            var workspaceOptionSet = optionSet as WorkspaceOptionSet;
+
+            if (workspaceOptionSet == null)
+            {
+                throw new ArgumentException(WorkspacesResources.Options_did_not_come_from_Workspace, paramName: nameof(optionSet));
             }
 
             var changedOptions = new List<OptionChangedEventArgs>();
 
             lock (_gate)
             {
-                foreach (var optionKey in optionSet.GetAccessedOptions())
+                foreach (var optionKey in workspaceOptionSet.GetAccessedOptions())
                 {
                     var setValue = optionSet.GetOption(optionKey);
                     object currentValue = this.GetOption(optionKey);
@@ -157,7 +159,7 @@ namespace Microsoft.CodeAnalysis.Options
                         foreach (var serializer in optionSerializers)
                         {
                             // There can be options (ex, formatting) that only exist in only one specific language. In those cases,
-                            // feature's serialzier should exist in only that language.
+                            // feature's serializer should exist in only that language.
                             if (!SupportedSerializer(optionKey, serializer.Metadata))
                             {
                                 continue;
@@ -172,7 +174,12 @@ namespace Microsoft.CodeAnalysis.Options
                 }
             }
 
-            // Outside of the lock, raise events
+            // Outside of the lock, raise the events on our task queue.
+            RaiseEvents(changedOptions);
+        }
+
+        private void RaiseEvents(List<OptionChangedEventArgs> changedOptions)
+        {
             var optionChanged = OptionChanged;
             if (optionChanged != null)
             {

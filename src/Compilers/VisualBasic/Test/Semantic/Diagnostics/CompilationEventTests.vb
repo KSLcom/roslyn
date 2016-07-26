@@ -6,6 +6,7 @@ Imports System.Runtime.Serialization
 Imports System.Threading
 Imports Microsoft.CodeAnalysis.Diagnostics
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
+Imports Roslyn.Test.Utilities
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Semantics
 
@@ -21,9 +22,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Semantics
             Next
 
             Dim actual = ArrayBuilder(Of CompilationEvent).GetInstance()
-            While queue.Count > 0 OrElse Not queue.IsCompleted
+            While queue.Count > 0
                 Dim te = queue.DequeueAsync(CancellationToken.None)
-                Assert.True(te.IsCompleted)
                 actual.Add(te.Result)
             End While
             Dim unexpected = False
@@ -38,7 +38,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.Semantics
                 End If
             Next
             If expected.Count <> 0 Then
-                Console.WriteLine("MISING EVENTS:")
+                Console.WriteLine("MISSING EVENTS:")
             End If
             For Each e In expected
                 Console.WriteLine(e)
@@ -109,13 +109,46 @@ End Namespace
                 "SymbolDeclaredCompilationEvent(I C(Of T1).I As Integer @ TestQueuedSymbols.vb: (7,15)-(7,16))",
                 "SymbolDeclaredCompilationEvent(C C(Of T1) @ TestQueuedSymbols.vb: (1,4)-(11,13), TestQueuedSymbols.vb: (12,4)-(15,13))",
                 "SymbolDeclaredCompilationEvent(M Sub C(Of T1).M(x1 As Integer) @ TestQueuedSymbols.vb: (2,8)-(2,44))",
-                "SymbolDeclaredCompilationEvent(M Sub C(Of T1).M(x1 As Integer) @ TestQueuedSymbols.vb: (13,8)-(13,36))",
                 "SymbolDeclaredCompilationEvent(M2 Sub Mod1.M2() @ TestQueuedSymbols.vb: (17,8)-(17,24))",
                 "SymbolDeclaredCompilationEvent(get_P Property Get C(Of T1).P() As Integer)",
                 "SymbolDeclaredCompilationEvent(set_P Property Set C(Of T1).P(AutoPropertyValue As Integer))",
                 "SymbolDeclaredCompilationEvent(N Sub C(Of T1).N(Of T2)(y As Integer = 12) @ TestQueuedSymbols.vb: (8,8)-(8,56))",
                 "CompilationUnitCompletedEvent(TestQueuedSymbols.vb)",
                 "CompilationCompletedEvent")
+            Assert.True(q.IsCompleted)
+        End Sub
+
+        <Fact>
+        <WorkItem(1958, "https://github.com/dotnet/roslyn/issues/1958")>
+        Public Sub TestMyEvents()
+            Dim source =
+    <compilation>
+        <file name="TestMyEvents.vb"><![CDATA[
+Module Module1
+    Sub Main()
+        System.Console.WriteLine(My.Computer.Clock.LocalTime)
+    End Sub
+End Module
+]]>
+        </file>
+    </compilation>
+            Dim q = New AsyncQueue(Of CompilationEvent)()
+            Dim defines = PredefinedPreprocessorSymbols.AddPredefinedPreprocessorSymbols(OutputKind.ConsoleApplication)
+            defines = defines.Add(KeyValuePair.Create("_MyType", CObj("Console")))
+            Dim parseOptions = New VisualBasicParseOptions(preprocessorSymbols:=defines)
+            Dim compilationOptions = TestOptions.ReleaseExe.WithParseOptions(parseOptions)
+            Dim compilation = CreateCompilationWithMscorlibAndVBRuntime(source, options:=compilationOptions).WithEventQueue(q)
+            Dim tree = compilation.SyntaxTrees.Single()
+            Dim model = compilation.GetSemanticModel(tree)
+            compilation.VerifyDiagnostics()
+            VerifyEvents(q,
+                "CompilationStartedEvent",
+                "SymbolDeclaredCompilationEvent(<empty>  @ TestMyEvents.vb: (0,0)-(5,0))",
+                "SymbolDeclaredCompilationEvent(Module1 Module1 @ TestMyEvents.vb: (0,0)-(4,10))",
+                "SymbolDeclaredCompilationEvent(Main Sub Module1.Main() @ TestMyEvents.vb: (1,4)-(1,14))",
+                "CompilationUnitCompletedEvent(TestMyEvents.vb)",
+                "CompilationCompletedEvent")
+            Assert.True(q.IsCompleted)
         End Sub
     End Class
 

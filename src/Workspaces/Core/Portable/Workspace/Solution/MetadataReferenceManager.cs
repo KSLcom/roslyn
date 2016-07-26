@@ -1,5 +1,6 @@
-﻿using System;
-using System.Collections.Immutable;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Microsoft.CodeAnalysis
@@ -15,7 +16,7 @@ namespace Microsoft.CodeAnalysis
         private static readonly object s_guard = new object();
 
         // Hand out the same compilation reference for everyone who asks.  Use 
-        // WeakReference<Compilation> so that if no one is using the MetadataReference,
+        // WeakReference<Compilation> so that if no-one is using the MetadataReference,
         // it can be collected.
         internal static Compilation GetCompilationForMetadataReference(ProjectState projectState, Compilation compilation)
         {

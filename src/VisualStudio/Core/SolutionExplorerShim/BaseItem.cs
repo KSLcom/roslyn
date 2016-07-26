@@ -7,10 +7,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using Microsoft.Internal.VisualStudio.PlatformUI;
-using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplorer
 {
@@ -34,7 +32,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
     {
         public virtual event PropertyChangedEventHandler PropertyChanged { add { } remove { } }
 
-        private string _name;
+        private readonly string _name;
 
         public BaseItem(string name)
         {

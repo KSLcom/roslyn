@@ -152,11 +152,23 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
         {
             EnsureInitialized();
 
-            yield return new GraphCommand(
-                GraphCommandDefinition.Contains,
-                targetCategories: null,
-                linkCategories: new[] { GraphCommonSchema.Contains },
-                trackChanges: true);
+            // Only nodes that explicitly state that they contain children (e.g., source files) and named types should
+            // be expandable.
+            if (nodes.Any(n => n.Properties.Any(p => p.Key == DgmlNodeProperties.ContainsChildren)) ||
+                nodes.Any(n => IsAnySymbolKind(n, SymbolKind.NamedType)))
+            {
+                yield return new GraphCommand(
+                    GraphCommandDefinition.Contains,
+                    targetCategories: null,
+                    linkCategories: new[] { GraphCommonSchema.Contains },
+                    trackChanges: true);
+            }
+
+            // All graph commands below this point apply only to Roslyn-owned nodes.
+            if (!nodes.All(n => IsRoslynNode(n)))
+            {
+                yield break;
+            }
 
             // Only show 'Base Types' and 'Derived Types' on a class or interface.
             if (nodes.Any(n => IsAnySymbolKind(n, SymbolKind.NamedType) &&
@@ -300,6 +312,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
             return ((IList<SymbolKey>)node[RoslynGraphProperties.ExplicitInterfaceImplementations]).Count > 0;
         }
 
+        private bool IsRoslynNode(GraphNode node)
+        {
+            return node[RoslynGraphProperties.SymbolKind] != null
+                && node[RoslynGraphProperties.TypeKind] != null;
+        }
+
         private bool IsAnySymbolKind(GraphNode node, params SymbolKind[] symbolKinds)
         {
             return symbolKinds.Any(k => k.Equals(node[RoslynGraphProperties.SymbolKind]));
@@ -311,16 +329,16 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
         }
 
         private static readonly GraphCommandDefinition s_overridesCommandDefinition =
-            new GraphCommandDefinition("Overrides", ServicesVSResources.Overrides, GraphContextDirection.Target, 700);
+            new GraphCommandDefinition("Overrides", ServicesVSResources.Overrides_, GraphContextDirection.Target, 700);
 
         private static readonly GraphCommandDefinition s_overriddenByCommandDefinition =
-            new GraphCommandDefinition("OverriddenBy", ServicesVSResources.OverriddenBy, GraphContextDirection.Source, 700);
+            new GraphCommandDefinition("OverriddenBy", ServicesVSResources.Overridden_By, GraphContextDirection.Source, 700);
 
         private static readonly GraphCommandDefinition s_implementsCommandDefinition =
-            new GraphCommandDefinition("Implements", ServicesVSResources.Implements, GraphContextDirection.Target, 600);
+            new GraphCommandDefinition("Implements", ServicesVSResources.Implements_, GraphContextDirection.Target, 600);
 
         private static readonly GraphCommandDefinition s_implementedByCommandDefinition =
-            new GraphCommandDefinition("ImplementedBy", ServicesVSResources.ImplementedBy, GraphContextDirection.Source, 600);
+            new GraphCommandDefinition("ImplementedBy", ServicesVSResources.Implemented_By, GraphContextDirection.Source, 600);
 
         public T GetExtension<T>(GraphObject graphObject, T previous) where T : class
         {
@@ -332,7 +350,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Progression
                 // TODO: The check here is to see if the SymbolId property exists on the node
                 // and if so, that's been created by us. However, eventually we'll want to extend
                 // this to other scenarios where C#\VB nodes that aren't created by us are passed in.
-                if (graphNode.GetValue<SymbolKey>(RoslynGraphProperties.SymbolId) == null)
+                if (graphNode.GetValue<SymbolKey?>(RoslynGraphProperties.SymbolId) == null)
                 {
                     return null;
                 }

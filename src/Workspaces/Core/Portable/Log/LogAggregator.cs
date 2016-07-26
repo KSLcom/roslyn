@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -12,7 +13,7 @@ namespace Microsoft.CodeAnalysis.Internal.Log
     /// </summary>
     internal class LogAggregator : IEnumerable<KeyValuePair<object, LogAggregator.Counter>>
     {
-        private static int s_globalId = 0;
+        private static int s_globalId;
 
         private readonly ConcurrentDictionary<object, Counter> _map = new ConcurrentDictionary<object, Counter>(concurrencyLevel: 2, capacity: 2);
 
@@ -62,6 +63,12 @@ namespace Microsoft.CodeAnalysis.Internal.Log
             counter.IncreaseCount();
         }
 
+        public void IncreaseCountBy(object key, int value)
+        {
+            var counter = GetCounter(key);
+            counter.IncreaseCountBy(value);
+        }
+
         public int GetCount(object key)
         {
             Counter counter;
@@ -95,7 +102,7 @@ namespace Microsoft.CodeAnalysis.Internal.Log
 
         internal class Counter
         {
-            private int _count = 0;
+            private int _count;
 
             public void SetCount(int count)
             {
@@ -107,6 +114,13 @@ namespace Microsoft.CodeAnalysis.Internal.Log
                 // Counter class probably not needed. but it is here for 2 reasons.
                 // make handling concurrency easier and be a place holder for different type of counter
                 Interlocked.Increment(ref _count);
+            }
+
+            public void IncreaseCountBy(int value)
+            {
+                // Counter class probably not needed. but it is here for 2 reasons.
+                // make handling concurrency easier and be a place holder for different type of counter
+                Interlocked.Add(ref _count, value);
             }
 
             public int GetCount()

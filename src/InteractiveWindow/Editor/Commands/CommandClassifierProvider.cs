@@ -1,4 +1,6 @@
-﻿using System.ComponentModel.Composition;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System.ComponentModel.Composition;
 using Microsoft.VisualStudio.Language.StandardClassification;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
@@ -9,7 +11,6 @@ namespace Microsoft.VisualStudio.InteractiveWindow.Commands
 {
     [Export(typeof(IClassifierProvider))]
     [ContentType(PredefinedInteractiveCommandsContentTypes.InteractiveCommandContentTypeName)]
-    [TextViewRole(PredefinedTextViewRoles.Document)]
     internal sealed class CommandClassifierProvider : IClassifierProvider
     {
         [Import]

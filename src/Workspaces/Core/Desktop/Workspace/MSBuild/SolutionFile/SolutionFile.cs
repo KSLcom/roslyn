@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
@@ -26,17 +26,17 @@ namespace Microsoft.CodeAnalysis.MSBuild
         {
             if (headerLines == null)
             {
-                throw new ArgumentNullException("headerLines");
+                throw new ArgumentNullException(nameof(headerLines));
             }
 
             if (projectBlocks == null)
             {
-                throw new ArgumentNullException("projectBlocks");
+                throw new ArgumentNullException(nameof(projectBlocks));
             }
 
             if (globalSectionBlocks == null)
             {
-                throw new ArgumentNullException("globalSectionBlocks");
+                throw new ArgumentNullException(nameof(globalSectionBlocks));
             }
 
             _headerLines = headerLines.ToList().AsReadOnly();
@@ -104,9 +104,9 @@ namespace Microsoft.CodeAnalysis.MSBuild
             var headerLines = new List<string>();
 
             var headerLine1 = GetNextNonEmptyLine(reader);
-            if (headerLine1 == null || !headerLine1.StartsWith("Microsoft Visual Studio Solution File"))
+            if (headerLine1 == null || !headerLine1.StartsWith("Microsoft Visual Studio Solution File", StringComparison.Ordinal))
             {
-                throw new Exception(string.Format(WorkspacesResources.MissingHeaderInSolutionFile, "Microsoft Visual Studio Solution File"));
+                throw new Exception(string.Format(WorkspacesResources.Expected_header_colon_0, "Microsoft Visual Studio Solution File"));
             }
 
             headerLines.Add(headerLine1);
@@ -121,9 +121,9 @@ namespace Microsoft.CodeAnalysis.MSBuild
             if (reader.Peek() == 'V')
             {
                 visualStudioVersionLineOpt = GetNextNonEmptyLine(reader);
-                if (!visualStudioVersionLineOpt.StartsWith("VisualStudioVersion"))
+                if (!visualStudioVersionLineOpt.StartsWith("VisualStudioVersion", StringComparison.Ordinal))
                 {
-                    throw new Exception(string.Format(WorkspacesResources.MissingHeaderInSolutionFile, "VisualStudioVersion"));
+                    throw new Exception(string.Format(WorkspacesResources.Expected_header_colon_0, "VisualStudioVersion"));
                 }
             }
 
@@ -131,9 +131,9 @@ namespace Microsoft.CodeAnalysis.MSBuild
             if (reader.Peek() == 'M')
             {
                 minimumVisualStudioVersionLineOpt = GetNextNonEmptyLine(reader);
-                if (!minimumVisualStudioVersionLineOpt.StartsWith("MinimumVisualStudioVersion"))
+                if (!minimumVisualStudioVersionLineOpt.StartsWith("MinimumVisualStudioVersion", StringComparison.Ordinal))
                 {
-                    throw new Exception(string.Format(WorkspacesResources.MissingHeaderInSolutionFile, "MinimumVisualStudioVersion"));
+                    throw new Exception(string.Format(WorkspacesResources.Expected_header_colon_0, "MinimumVisualStudioVersion"));
                 }
             }
 
@@ -156,7 +156,7 @@ namespace Microsoft.CodeAnalysis.MSBuild
             // We should now be at the end of the file
             if (reader.Peek() != -1)
             {
-                throw new Exception(WorkspacesResources.MissingEndOfFileInSolutionFile);
+                throw new Exception(WorkspacesResources.Expected_end_of_file);
             }
 
             return new SolutionFile(headerLines, visualStudioVersionLineOpt, minimumVisualStudioVersionLineOpt, projectBlocks, globalSectionBlocks);
@@ -172,7 +172,7 @@ namespace Microsoft.CodeAnalysis.MSBuild
 
             if (GetNextNonEmptyLine(reader) != "Global")
             {
-                throw new Exception(string.Format(WorkspacesResources.MissingLineInSolutionFile, "Global"));
+                throw new Exception(string.Format(WorkspacesResources.Expected_0_line, "Global"));
             }
 
             var globalSectionBlocks = new List<SectionBlock>();
@@ -185,7 +185,7 @@ namespace Microsoft.CodeAnalysis.MSBuild
 
             if (GetNextNonEmptyLine(reader) != "EndGlobal")
             {
-                throw new Exception(string.Format(WorkspacesResources.MissingLineInSolutionFile, "EndGlobal"));
+                throw new Exception(string.Format(WorkspacesResources.Expected_0_line, "EndGlobal"));
             }
 
             // Consume potential empty lines at the end of the global block

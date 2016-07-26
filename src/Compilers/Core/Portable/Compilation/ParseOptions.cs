@@ -2,10 +2,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using Microsoft.CodeAnalysis;
 using Roslyn.Utilities;
-using System.Runtime.Serialization;
 
 namespace Microsoft.CodeAnalysis
 {
@@ -39,7 +38,11 @@ namespace Microsoft.CodeAnalysis
             return CommonWithKind(kind);
         }
 
-        protected abstract ParseOptions CommonWithKind(SourceCodeKind kind);
+        // It was supposed to be a protected implementation detail. 
+        // The "pattern" we have for these is the public With* method is the only public callable one, 
+        // and that forwards to the protected Common* like all the other methods in the class. 
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public abstract ParseOptions CommonWithKind(SourceCodeKind kind);
 
         /// <summary>
         /// Creates a new options instance with the specified documentation mode.
@@ -101,7 +104,7 @@ namespace Microsoft.CodeAnalysis
                 Hash.Combine(Hash.CombineValues(this.PreprocessorSymbolNames, StringComparer.Ordinal), 0))));
         }
 
-        private int HashFeatures(IReadOnlyDictionary<string, string> features)
+        private static int HashFeatures(IReadOnlyDictionary<string, string> features)
         {
             int value = 0;
             foreach (var kv in features)

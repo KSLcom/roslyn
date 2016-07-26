@@ -13,9 +13,6 @@ namespace Microsoft.CodeAnalysis
     /// <seealso cref="SymbolDisplayPartKind"/>
     public struct SymbolDisplayPart
     {
-        private const string KindKey = "Kind";
-        private const string TextKey = "Text";
-
         private readonly SymbolDisplayPartKind _kind;
         private readonly string _text;
         private readonly ISymbol _symbol;
@@ -42,12 +39,12 @@ namespace Microsoft.CodeAnalysis
         {
             if (!kind.IsValid())
             {
-                throw new ArgumentOutOfRangeException("kind");
+                throw new ArgumentOutOfRangeException(nameof(kind));
             }
 
             if (text == null)
             {
-                throw new ArgumentNullException("text");
+                throw new ArgumentNullException(nameof(text));
             }
 
             _kind = kind;

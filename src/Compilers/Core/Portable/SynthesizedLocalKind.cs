@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.Emit;
 
 namespace Microsoft.CodeAnalysis
@@ -25,6 +26,11 @@ namespace Microsoft.CodeAnalysis
     /// </remarks>
     internal enum SynthesizedLocalKind
     {
+        /// <summary>
+        /// Temp created for pattern matching by type.
+        /// </summary>
+        PatternMatchingTemp = -4,
+
         /// <summary>
         /// Temp variable created by the optimizer.
         /// </summary>
@@ -79,7 +85,7 @@ namespace Microsoft.CodeAnalysis
         ForEachArray = 6,
 
         /// <summary>
-        /// Local variables that store upper bound of multi-dimentional array, for each dimension (C#, VB?).
+        /// Local variables that store upper bound of multi-dimensional array, for each dimension (C#, VB?).
         /// </summary>
         ForEachArrayLimit = 7,
 
@@ -103,7 +109,7 @@ namespace Microsoft.CodeAnalysis
         // VB TODO:
         ForStep = 12,
         // VB TODO:
-        ForLoopObject = 13,
+        ForInitialValue = 13,
         // VB TODO:
         ForDirection = 14,
 
@@ -128,7 +134,8 @@ namespace Microsoft.CodeAnalysis
         StateMachineReturnValue = AsyncMethodReturnValue, // TODO VB: why do we need this in iterators?
 
         /// <summary>
-        /// Stores the return value of a VB function that is not accessible from user code (e.g. operator, lambda, async, iterator).
+        /// VB: Stores the return value of a function that is not accessible from user code (e.g. operator, lambda, async, iterator).
+        /// C#: Stores the return value of a method/lambda with a block body, so that we can put a sequence point on the closing brace of the body.
         /// </summary>
         FunctionReturnValue = 21,
 
@@ -172,6 +179,28 @@ namespace Microsoft.CodeAnalysis
         XmlInExpressionLambda = 32,
 
         /// <summary>
+        /// Local variable that stores the result of an await expression (the awaiter object).
+        /// The variable is assigned the result of a call to await-expression.GetAwaiter() and subsequently used 
+        /// to check whether the task completed. Eventually the value is stored in an awaiter field.
+        /// 
+        /// The value assigned to the variable needs to be preserved when remapping the IL offset from old method body 
+        /// to new method body during EnC. If the awaiter expression is contained in an active statement and the 
+        /// containing MoveNext method changes the debugger finds the next sequence point that follows the await expression 
+        /// and transfers the execution to the new method version. This sequence point is placed by the compiler at 
+        /// the immediately after the stloc instruction that stores the awaiter object to this variable.
+        /// The subsequent ldloc then restores it in the new method version.
+        /// 
+        /// (VB, C#).
+        /// </summary>
+        Awaiter = 33,
+
+        /// <summary>
+        /// Stores a dynamic analysis instrumentation payload array. The value is initialized in
+        /// synthesized mehtod prologue code and referred to throughout the method body.
+        /// </summary>
+        InstrumentationPayload = 34,
+
+        /// <summary>
         /// All values have to be less than or equal to <see cref="MaxValidValueForLocalVariableSerializedToDebugInformation"/> 
         /// (<see cref="EditAndContinueMethodDebugInformation"/>)
         /// </summary>
@@ -202,8 +231,8 @@ namespace Microsoft.CodeAnalysis
 
         public static bool MustSurviveStateMachineSuspension(this SynthesizedLocalKind kind)
         {
-            // Conditional branch discriminator doens't need to be hoisted. 
-            // Its lifetime never spans accross await expression/yield statement.
+            // Conditional branch discriminator doesn't need to be hoisted. 
+            // Its lifetime never spans across await expression/yield statement.
             // This is true even in cases like:
             // 
             //   if (F(arg, await G())) { ... }
@@ -219,7 +248,12 @@ namespace Microsoft.CodeAnalysis
 
         public static bool IsSlotReusable(this SynthesizedLocalKind kind, OptimizationLevel optimizations)
         {
-            if (optimizations == OptimizationLevel.Debug)
+            return kind.IsSlotReusable(optimizations != OptimizationLevel.Release);
+        }
+
+        public static bool IsSlotReusable(this SynthesizedLocalKind kind, bool isDebug)
+        {
+            if (isDebug)
             {
                 // Don't reuse any long-lived locals in debug builds to provide good debugging experience 
                 // for user-defined locals and to allow EnC.
@@ -239,14 +273,14 @@ namespace Microsoft.CodeAnalysis
             }
         }
 
-        public static uint PdbAttributes(this SynthesizedLocalKind kind)
+        public static LocalVariableAttributes PdbAttributes(this SynthesizedLocalKind kind)
         {
             // Marking variables with hidden attribute is only needed for compat with Dev12 EE.
-            // We mark all synthesized locals, other than lambda display class as hidden so that they don't whow up in Dev12 EE.
+            // We mark all synthesized locals, other than lambda display class as hidden so that they don't show up in Dev12 EE.
             // Display class is special - it is used by the EE to access variables lifted into a closure.
             return (kind != SynthesizedLocalKind.LambdaDisplayClass && kind != SynthesizedLocalKind.UserDefined && kind != SynthesizedLocalKind.With)
-                ? Cci.PdbWriter.HiddenLocalAttributesValue
-                : Cci.PdbWriter.DefaultLocalAttributesValue;
+                ? LocalVariableAttributes.DebuggerHidden
+                : LocalVariableAttributes.None;
         }
     }
 }

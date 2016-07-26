@@ -2,14 +2,15 @@
 
 using System;
 using System.Collections.Immutable;
-using System.Diagnostics.SymbolStore;
+using System.Diagnostics;
 using System.Runtime.InteropServices.ComTypes;
-using Microsoft.VisualStudio.SymReaderInterop;
+using Microsoft.DiaSymReader;
+using Roslyn.Utilities;
 using Xunit;
 
-namespace Microsoft.CodeAnalysis.ExpressionEvaluator
+namespace Microsoft.CodeAnalysis.ExpressionEvaluator.UnitTests
 {
-    internal sealed class MockSymUnmanagedReader : ISymUnmanagedReader
+    internal sealed class MockSymUnmanagedReader : ISymUnmanagedReader, ISymUnmanagedReader2, ISymUnmanagedReader3
     {
         private readonly ImmutableDictionary<int, MethodDebugInfoBytes> _methodDebugInfoMap;
 
@@ -18,28 +19,12 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             _methodDebugInfoMap = methodDebugInfoMap;
         }
 
-        int ISymUnmanagedReader.GetSymAttribute(SymbolToken token, string name, int bytesDesired, out int bytesRead, byte[] buffer)
-        {
-            Assert.Equal("MD2", name);
-
-            MethodDebugInfoBytes info;
-            if (!_methodDebugInfoMap.TryGetValue(token.GetToken(), out info))
-            {
-                bytesRead = 0;
-                return SymUnmanagedReaderExtensions.S_FALSE; // This is a guess.  We're not consuming it, so it doesn't really matter.
-            }
-
-            Assert.NotNull(info);
-            info.Bytes.TwoPhaseCopy(bytesDesired, out bytesRead, buffer);
-            return SymUnmanagedReaderExtensions.S_OK;
-        }
-
-        int ISymUnmanagedReader.GetMethodByVersion(SymbolToken methodToken, int version, out ISymUnmanagedMethod retVal)
+        public int GetMethodByVersion(int methodToken, int version, out ISymUnmanagedMethod retVal)
         {
             Assert.Equal(1, version);
 
             MethodDebugInfoBytes info;
-            if (!_methodDebugInfoMap.TryGetValue(methodToken.GetToken(), out info))
+            if (!_methodDebugInfoMap.TryGetValue(methodToken, out info))
             {
                 retVal = null;
                 return SymUnmanagedReaderExtensions.E_FAIL;
@@ -50,77 +35,123 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             return SymUnmanagedReaderExtensions.S_OK;
         }
 
-        int ISymUnmanagedReader.GetDocument(string url, Guid language, Guid languageVendor, Guid documentType, out ISymUnmanagedDocument retVal)
+        public int GetSymAttribute(int methodToken, string name, int bufferLength, out int count, byte[] customDebugInformation)
+        {
+            // The EE should never be calling ISymUnmanagedReader.GetSymAttribute.  
+            // In order to account for EnC updates, it should always be calling 
+            // ISymUnmanagedReader3.GetSymAttributeByVersion instead.
+            throw ExceptionUtilities.Unreachable;
+        }
+
+        public int GetSymAttributeByVersion(int methodToken, int version, string name, int bufferLength, out int count, byte[] customDebugInformation)
+        {
+            Assert.Equal(1, version);
+
+            Assert.Equal("MD2", name);
+
+            MethodDebugInfoBytes info;
+            if (!_methodDebugInfoMap.TryGetValue(methodToken, out info))
+            {
+                count = 0;
+                return SymUnmanagedReaderExtensions.S_FALSE; // This is a guess.  We're not consuming it, so it doesn't really matter.
+            }
+
+            Assert.NotNull(info);
+            info.Bytes.TwoPhaseCopy(bufferLength, out count, customDebugInformation);
+            return SymUnmanagedReaderExtensions.S_OK;
+        }
+
+        public int GetDocument(string url, Guid language, Guid languageVendor, Guid documentType, out ISymUnmanagedDocument document)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetDocuments(int cDocs, out int pcDocs, ISymUnmanagedDocument[] pDocs)
+        public int GetDocuments(int bufferLength, out int count, ISymUnmanagedDocument[] documents)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetUserEntryPoint(out SymbolToken EntryPoint)
+        public int GetUserEntryPoint(out int methodToken)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetMethod(SymbolToken methodToken, out ISymUnmanagedMethod retVal)
+        public int GetMethod(int methodToken, out ISymUnmanagedMethod method)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetVariables(SymbolToken parent, int cVars, out int pcVars, ISymUnmanagedVariable[] vars)
+        public int GetVariables(int methodToken, int bufferLength, out int count, ISymUnmanagedVariable[] variables)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetGlobalVariables(int cVars, out int pcVars, ISymUnmanagedVariable[] vars)
+        public int GetGlobalVariables(int bufferLength, out int count, ISymUnmanagedVariable[] variables)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetMethodFromDocumentPosition(ISymUnmanagedDocument document, int line, int column, out ISymUnmanagedMethod retVal)
+        public int GetMethodFromDocumentPosition(ISymUnmanagedDocument document, int line, int column, out ISymUnmanagedMethod method)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetNamespaces(int cNameSpaces, out int pcNameSpaces, ISymUnmanagedNamespace[] namespaces)
+        public int GetNamespaces(int bufferLength, out int count, ISymUnmanagedNamespace[] namespaces)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.Initialize(object importer, string filename, string searchPath, IStream stream)
+        public int Initialize(object metadataImporter, string fileName, string searchPath, IStream stream)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.UpdateSymbolStore(string filename, IStream stream)
+        public int UpdateSymbolStore(string fileName, IStream stream)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.ReplaceSymbolStore(string filename, IStream stream)
+        public int ReplaceSymbolStore(string fileName, IStream stream)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetSymbolStoreFileName(int cchName, out int pcchName, char[] szName)
+        public int GetSymbolStoreFileName(int bufferLength, out int count, char[] name)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetMethodsFromDocumentPosition(ISymUnmanagedDocument document, int line, int column, int cMethod, out int pcMethod, ISymUnmanagedMethod[] pRetVal)
+        public int GetMethodsFromDocumentPosition(ISymUnmanagedDocument document, int line, int column, int bufferLength, out int count, ISymUnmanagedMethod[] methods)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetDocumentVersion(ISymUnmanagedDocument pDoc, out int version, out bool pbCurrent)
+        public int GetDocumentVersion(ISymUnmanagedDocument document, out int version, out bool isCurrent)
         {
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedReader.GetMethodVersion(ISymUnmanagedMethod pMethod, out int version)
+        public int GetMethodVersion(ISymUnmanagedMethod method, out int version)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int GetMethodByVersionPreRemap(int methodToken, int version, out ISymUnmanagedMethod method)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int GetSymAttributePreRemap(int methodToken, string name, int bufferLength, out int count, byte[] customDebugInformation)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int GetMethodsInDocument(ISymUnmanagedDocument document, int bufferLength, out int count, ISymUnmanagedMethod[] methods)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int GetSymAttributeByVersionPreRemap(int methodToken, int version, string name, int bufferLength, out int count, byte[] customDebugInformation)
         {
             throw new NotImplementedException();
         }
@@ -189,7 +220,7 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             throw new NotImplementedException();
         }
 
-        int ISymUnmanagedMethod.GetToken(out SymbolToken pToken)
+        int ISymUnmanagedMethod.GetToken(out int pToken)
         {
             throw new NotImplementedException();
         }
@@ -199,13 +230,15 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
     {
         private readonly ImmutableArray<ISymUnmanagedScope> _children;
         private readonly ImmutableArray<ISymUnmanagedNamespace> _namespaces;
+        private readonly ISymUnmanagedConstant[] _constants;
         private readonly int _startOffset;
         private readonly int _endOffset;
 
-        public MockSymUnmanagedScope(ImmutableArray<ISymUnmanagedScope> children, ImmutableArray<ISymUnmanagedNamespace> namespaces, int startOffset = 0, int endOffset = 1)
+        public MockSymUnmanagedScope(ImmutableArray<ISymUnmanagedScope> children, ImmutableArray<ISymUnmanagedNamespace> namespaces, ISymUnmanagedConstant[] constants = null, int startOffset = 0, int endOffset = 1)
         {
             _children = children;
             _namespaces = namespaces;
+            _constants = constants ?? new ISymUnmanagedConstant[0];
             _startOffset = startOffset;
             _endOffset = endOffset;
         }
@@ -258,13 +291,17 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 
         public int GetConstantCount(out int pRetVal)
         {
-            pRetVal = 0;
+            pRetVal = _constants.Length;
             return SymUnmanagedReaderExtensions.S_OK;
         }
 
         public int GetConstants(int cConstants, out int pcConstants, ISymUnmanagedConstant[] constants)
         {
-            pcConstants = 0;
+            pcConstants = _constants.Length;
+            if (constants != null)
+            {
+                Array.Copy(_constants, constants, constants.Length);
+            }
             return SymUnmanagedReaderExtensions.S_OK;
         }
     }
@@ -298,6 +335,44 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
         int ISymUnmanagedNamespace.GetVariables(int cVars, out int pcVars, ISymUnmanagedVariable[] pVars)
         {
             throw new NotImplementedException();
+        }
+    }
+
+    internal delegate int GetSignatureDelegate(int bufferLength, out int count, byte[] signature);
+
+    internal sealed class MockSymUnmanagedConstant : ISymUnmanagedConstant
+    {
+        private readonly string _name;
+        private readonly object _value;
+        private readonly GetSignatureDelegate _getSignature;
+
+        public MockSymUnmanagedConstant(string name, object value, GetSignatureDelegate getSignature)
+        {
+            _name = name;
+            _value = value;
+            _getSignature = getSignature;
+        }
+
+        int ISymUnmanagedConstant.GetName(int bufferLength, out int count, char[] name)
+        {
+            count = _name.Length + 1; // + 1 for null terminator
+            Debug.Assert((bufferLength == 0) || (bufferLength == count));
+            for (int i = 0; i < bufferLength - 1; i++)
+            {
+                name[i] = _name[i];
+            }
+            return SymUnmanagedReaderExtensions.S_OK;
+        }
+
+        int ISymUnmanagedConstant.GetSignature(int bufferLength, out int count, byte[] signature)
+        {
+            return _getSignature(bufferLength, out count, signature);
+        }
+
+        int ISymUnmanagedConstant.GetValue(out object value)
+        {
+            value = _value;
+            return SymUnmanagedReaderExtensions.S_OK;
         }
     }
 

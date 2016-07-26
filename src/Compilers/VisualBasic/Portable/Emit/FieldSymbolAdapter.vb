@@ -7,7 +7,7 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Emit
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
-    Partial Class FieldSymbol
+    Friend Partial Class FieldSymbol
         Implements IFieldReference
         Implements IFieldDefinition
         Implements ITypeMemberReference
@@ -202,11 +202,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End Get
         End Property
 
-        Private ReadOnly Property IFieldDefinitionOffset As UInteger Implements IFieldDefinition.Offset
+        Private ReadOnly Property IFieldDefinitionOffset As Integer Implements IFieldDefinition.Offset
             Get
                 CheckDefinitionInvariant()
-                Dim offset = Me.TypeLayoutOffset
-                Return CUInt(If(offset, 0))
+                Return If(TypeLayoutOffset, 0)
             End Get
         End Property
 

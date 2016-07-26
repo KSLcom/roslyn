@@ -10,7 +10,7 @@ Imports Microsoft.VisualStudio.LanguageServices.VisualBasic.Progression
 Imports <xmlns="http://schemas.microsoft.com/vs/2009/dgml">
 
 Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.Progression
-    Module ProgressionTestHelpers
+    Friend Module ProgressionTestHelpers
         Public ReadOnly CompositionCatalog As ComposableCatalog =
             TestExportProvider.EntireAssemblyCatalogWithCSharpAndVisualBasic.WithParts(
                 GetType(CSharpProgressionLanguageService),
@@ -36,10 +36,19 @@ Namespace Microsoft.VisualStudio.LanguageServices.UnitTests.Progression
 
         Public Sub AssertSimplifiedGraphIs(graph As Graph, xml As XElement)
             Dim graphXml = graph.ToSimplifiedXDocument()
-            If Not XNode.DeepEquals(graphXml, xml) Then
+            If Not XNode.DeepEquals(graphXml.Root, xml) Then
                 ' They aren't equal, so therefore the text representations definitely aren't equal.
                 ' We'll Assert.Equal those, so that way xunit will show nice before/after text
-                Assert.Equal(xml.ToString(), graphXml.ToString())
+                'Assert.Equal(xml.ToString(), graphXml.ToString())
+
+                ' In an attempt to diagnose some flaky tests, the whole contents of both objects will be output
+                Throw New Exception($"Graph XML was not equal, check for out-of-order elements.
+Expected:
+{xml.ToString()}
+
+Actual:
+{graphXml.ToString()}
+")
             End If
         End Sub
     End Module

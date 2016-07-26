@@ -4,7 +4,7 @@ using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection;
-using Microsoft.CodeAnalysis.Emit;
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
@@ -33,13 +33,13 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private int _instructionCountAtLastLabel = -1;
 
         // This data is only relevant when builder has been realized.
-        internal byte[] RealizedIL;
+        internal ImmutableArray<byte> RealizedIL;
         internal ImmutableArray<Cci.ExceptionHandlerRegion> RealizedExceptionHandlers;
         internal SequencePointList RealizedSequencePoints;
 
         // debug sequence points from all blocks, note that each 
         // sequence point references absolute IL offset via IL marker
-        public ArrayBuilder<RawSequencePoint> SeqPointsOpt = null;
+        public ArrayBuilder<RawSequencePoint> SeqPointsOpt;
 
         /// <summary> 
         /// In some cases we have to get a final IL offset during emit phase, for example for
@@ -53,12 +53,12 @@ namespace Microsoft.CodeAnalysis.CodeGen
         /// will be put into allocatedILMarkers array. Note that only markers from reachable blocks 
         /// are materialized, the rest will have offset -1.
         /// </summary>
-        private ArrayBuilder<ILMarker> _allocatedILMarkers = null;
+        private ArrayBuilder<ILMarker> _allocatedILMarkers;
 
         // Since blocks are created lazily in GetCurrentBlock,
         // pendingBlockCreate is set to true when a block must be
         // created, in particular for leader blocks in exception handlers.
-        private bool _pendingBlockCreate = false;
+        private bool _pendingBlockCreate;
 
         internal ILBuilder(ITokenDeferral module, LocalSlotManager localSlotManager, OptimizationLevel optimizations)
         {
@@ -182,7 +182,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         /// </summary>
         internal void Realize()
         {
-            if (this.RealizedIL == null)
+            if (this.RealizedIL.IsDefault)
             {
                 this.RealizeBlocks();
 
@@ -295,10 +295,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
                     if (branchCode == ILOpCode.Endfinally)
                     {
                         var enclosingFinally = block.EnclosingHandler;
-                        if (enclosingFinally != null)
-                        {
-                            enclosingFinally.UnblockFinally();
-                        }
+                        enclosingFinally?.UnblockFinally();
                     }
                 }
 
@@ -327,7 +324,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             {
                 // if branch is blocked by a finally, then should branch to corresponding 
                 // BlockedBranchDestination instead. Original label may not be reachable.
-                // if there are no blocking finallys, then BlockedBranchDestination returns null
+                // if there are no blocking finally blocks, then BlockedBranchDestination returns null
                 // and we just visit the target.
                 var blockedDest = BlockedBranchDestination(block, branchBlock);
                 if (blockedDest == null)
@@ -381,9 +378,9 @@ namespace Microsoft.CodeAnalysis.CodeGen
                 destHandlerScope = destHandler.ContainingExceptionScope;
             }
 
-            // go from the source out untill we no longer crossing any finallies 
+            // go from the source out until no longer crossing any finally blocks
             // between source and destination
-            // if any finallys found in the process, check if they are blocking
+            // if any finally blocks found in the process, check if they are blocking
             while (srcHandler != destHandler)
             {
                 // branches within same ContainingExceptionScope do not go through finally.
@@ -599,7 +596,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         private static bool CanMoveLabelToAnotherHandler(ExceptionHandlerScope currentHandler,
                                                  ExceptionHandlerScope newHandler)
         {
-            // Generally, asuming already valid code that contains "LABEL1: goto LABEL2" 
+            // Generally, assuming already valid code that contains "LABEL1: goto LABEL2" 
             // we can substitute LABEL1 for LABEL2 so that the branches go directly to 
             // the final destination.
             // Technically we can allow "moving" a label to any scope that contains the current one
@@ -632,15 +629,15 @@ namespace Microsoft.CodeAnalysis.CodeGen
                     return true;
                 }
 
-                var contanerScope = currentHandler.ContainingExceptionScope;
-                if (!contanerScope.FinallyOnly())
+                var containerScope = currentHandler.ContainingExceptionScope;
+                if (!containerScope.FinallyOnly())
                 {
                     // this may move the label outside of catch-protected region
                     // we will disallow that.
                     return false;
                 }
 
-                currentHandler = contanerScope.ContainingHandler;
+                currentHandler = containerScope.ContainingHandler;
             } while (currentHandler != null);
 
             return false;
@@ -727,7 +724,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
                     }
                     else
                     {
-                        // special blco becomes a true nop
+                        // special block becomes a true nop
                         current.SetBranch(null, ILOpCode.Nop);
                     }
                 }
@@ -844,7 +841,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             if (_optimizations == OptimizationLevel.Release && OptimizeLabels())
             {
                 // redo unreachable code elimination if some labels were optimized
-                // as that could result in more more dead code. 
+                // as that could result in more dead code. 
                 MarkAllBlocksUnreachable();
                 MarkReachableBlocks();
                 DropUnreachableBlocks();
@@ -868,8 +865,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
             }
 
             // Now linearize everything with computed offsets.
-            var realizedIlBitStream = Cci.MemoryStream.GetInstance();
-            var writer = new Cci.BinaryWriter(realizedIlBitStream);
+            var writer = Cci.PooledBlobBuilder.GetInstance();
 
             for (var block = leaderBlock; block != null; block = block.NextBlock)
             {
@@ -882,16 +878,12 @@ namespace Microsoft.CodeAnalysis.CodeGen
                     for (int i = blockFirstMarker; i <= blockLastMarker; i++)
                     {
                         int blockOffset = _allocatedILMarkers[i].BlockOffset;
-                        int absoluteOffset = (int)realizedIlBitStream.Position + blockOffset;
+                        int absoluteOffset = writer.Count + blockOffset;
                         _allocatedILMarkers[i] = new ILMarker() { BlockOffset = blockOffset, AbsoluteOffset = absoluteOffset };
                     }
                 }
 
-                var bits = block.RegularInstructions;
-                if (bits != null)
-                {
-                    bits.WriteTo(realizedIlBitStream);
-                }
+                block.RegularInstructions?.WriteContentTo(writer);
 
                 switch (block.BranchCode)
                 {
@@ -905,7 +897,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
                         WriteOpCode(writer, ILOpCode.Switch);
 
                         var switchBlock = (SwitchBlock)block;
-                        writer.WriteUint(switchBlock.BranchesCount);
+                        writer.WriteUInt32(switchBlock.BranchesCount);
 
                         int switchBlockEnd = switchBlock.Start + switchBlock.TotalSize;
 
@@ -914,7 +906,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
                         foreach (var branchBlock in blockBuilder)
                         {
-                            writer.WriteInt(branchBlock.Start - switchBlockEnd);
+                            writer.WriteInt32(branchBlock.Start - switchBlockEnd);
                         }
 
                         blockBuilder.Free();
@@ -930,15 +922,15 @@ namespace Microsoft.CodeAnalysis.CodeGen
                             int curBlockEnd = block.Start + block.TotalSize;
                             int offset = target - curBlockEnd;
 
-                            if (block.BranchCode.BranchOperandSize() == 1)
+                            if (block.BranchCode.GetBranchOperandSize() == 1)
                             {
                                 sbyte btOffset = (sbyte)offset;
                                 Debug.Assert(btOffset == offset);
-                                writer.WriteSbyte(btOffset);
+                                writer.WriteSByte(btOffset);
                             }
                             else
                             {
-                                writer.WriteInt(offset);
+                                writer.WriteInt32(offset);
                             }
                         }
 
@@ -946,8 +938,8 @@ namespace Microsoft.CodeAnalysis.CodeGen
                 }
             }
 
-            this.RealizedIL = realizedIlBitStream.ToArray();
-            realizedIlBitStream.Free();
+            this.RealizedIL = writer.ToImmutableArray();
+            writer.Free();
 
             RealizeSequencePoints();
 
@@ -1208,8 +1200,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
         internal ILBuilder GetSnapshot()
         {
             var snapshot = (ILBuilder)this.MemberwiseClone();
-            snapshot.RealizedIL = new byte[this.RealizedIL.Length];
-            Array.Copy(this.RealizedIL, snapshot.RealizedIL, this.RealizedIL.Length);
+            snapshot.RealizedIL = RealizedIL;
             return snapshot;
         }
 
@@ -1229,7 +1220,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         internal int AllocateILMarker()
         {
-            Debug.Assert(this.RealizedIL == null, "Too late to allocate a new IL marker");
+            Debug.Assert(this.RealizedIL.IsDefault, "Too late to allocate a new IL marker");
             if (_allocatedILMarkers == null)
             {
                 _allocatedILMarkers = ArrayBuilder<ILMarker>.GetInstance();
@@ -1254,7 +1245,7 @@ namespace Microsoft.CodeAnalysis.CodeGen
 
         public int GetILOffsetFromMarker(int ilMarker)
         {
-            Debug.Assert(this.RealizedIL != null, "Builder must be realized to perform this operation");
+            Debug.Assert(!RealizedIL.IsDefault, "Builder must be realized to perform this operation");
             Debug.Assert(_allocatedILMarkers != null, "There are not markers in this builder");
             Debug.Assert(ilMarker >= 0 && ilMarker < _allocatedILMarkers.Count, "Wrong builder?");
             return _allocatedILMarkers[ilMarker].AbsoluteOffset;

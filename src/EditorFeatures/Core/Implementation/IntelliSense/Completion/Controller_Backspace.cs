@@ -30,18 +30,19 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
             AssertIsForeground();
 
             char? deletedChar;
-            var caretPoint = GetCaretPointInViewBuffer().Position;
+            var subjectBufferCaretPoint = GetCaretPointInSubjectBuffer();
+            var viewBufferCaretPoint = GetCaretPointInViewBuffer();
             if (isDelete)
             {
-                deletedChar = GetCaretPointInViewBuffer().Position >= 0 && GetCaretPointInViewBuffer().Position < textView.TextBuffer.CurrentSnapshot.Length
-                    ? textView.TextBuffer.CurrentSnapshot[GetCaretPointInViewBuffer().Position]
+                deletedChar = viewBufferCaretPoint.Position >= 0 && viewBufferCaretPoint.Position < textView.TextBuffer.CurrentSnapshot.Length
+                    ? textView.TextBuffer.CurrentSnapshot[viewBufferCaretPoint.Position]
                     : default(char?);
             }
             else
             {
                 // backspace
-                deletedChar = caretPoint > 0
-                    ? textView.TextBuffer.CurrentSnapshot[caretPoint - 1]
+                deletedChar = viewBufferCaretPoint > 0
+                    ? textView.TextBuffer.CurrentSnapshot[viewBufferCaretPoint - 1]
                     : default(char?);
             }
 
@@ -61,10 +62,11 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
                     this.TextView.Caret.PositionChanged += OnCaretPositionChanged;
                 }
 
-                var triggerInfo = CompletionTriggerInfo.CreateBackspaceTriggerInfo(deletedChar);
-                var completionService = this.CreateCompletionService();
+                var trigger = CompletionTrigger.CreateDeletionTrigger(deletedChar.GetValueOrDefault());
+                var completionService = this.GetCompletionService();
 
-                this.StartNewModelComputation(completionService, triggerInfo, filterItems: false);
+                this.StartNewModelComputation(
+                    completionService, trigger, filterItems: false, dismissIfEmptyAllowed: true);
 
                 return;
             }
@@ -88,18 +90,22 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
 
                 var model = sessionOpt.Computation.InitialUnfilteredModel;
 
-                if ((model == null && CaretHasLeftDefaultTrackingSpan(caretPoint, documentBeforeDeletion)) ||
+                if ((model == null && CaretHasLeftDefaultTrackingSpan(subjectBufferCaretPoint, documentBeforeDeletion)) ||
                     (model != null && this.IsCaretOutsideAllItemBounds(model, this.GetCaretPointInViewBuffer())) ||
-                    (model != null && CreateCompletionService().DismissIfLastFilterCharacterDeleted && AllFilterTextsEmpty(model, GetCaretPointInViewBuffer())))
+                    (model != null && model.OriginalList.Rules.DismissIfLastCharacterDeleted && AllFilterTextsEmpty(model, GetCaretPointInViewBuffer())))
                 {
                     // If the caret moved out of bounds of our items, then we want to dismiss the list. 
                     this.StopModelComputation();
                     return;
                 }
-                else if (model != null && model.TriggerInfo.TriggerReason != CompletionTriggerReason.BackspaceOrDeleteCommand)
+                else if (model != null && model.Trigger.Kind != CompletionTriggerKind.Deletion)
                 {
                     // Filter the model if it wasn't invoked on backspace.
-                    sessionOpt.FilterModel(CompletionFilterReason.BackspaceOrDelete);
+                    sessionOpt.FilterModel(
+                        CompletionFilterReason.BackspaceOrDelete,
+                        recheckCaretPosition: false,
+                        dismissIfEmptyAllowed: true,
+                        filterState: null);
                 }
             }
         }
@@ -107,10 +113,11 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
         private bool CaretHasLeftDefaultTrackingSpan(int caretPoint, Document document)
         {
             // We haven't finished computing the model, but we may need to dismiss.
-            // Get the default tracking span and see if we're outside it.
-            var defaultTrackingSpan = CreateCompletionService().GetDefaultTrackingSpanAsync(document, caretPoint, CancellationToken.None).WaitAndGetResult(CancellationToken.None);
+            // Get the context span and see if we're outside it.
+            var text = document.GetTextAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None);
+            var contextSpan = GetCompletionService().GetDefaultCompletionListSpan(text, caretPoint);
             var newCaretPoint = GetCaretPointInViewBuffer();
-            return !defaultTrackingSpan.IntersectsWith(new TextSpan(newCaretPoint, 0));
+            return !contextSpan.IntersectsWith(new TextSpan(newCaretPoint, 0));
         }
 
         internal bool AllFilterTextsEmpty(Model model, SnapshotPoint caretPoint)
@@ -132,16 +139,16 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
         private bool IsFilterTextEmpty(
            Model model,
            SnapshotPoint caretPoint,
-           CompletionItem item,
+           PresentationItem item,
            Dictionary<TextSpan, string> textSpanToText,
            Dictionary<TextSpan, ViewTextSpan> textSpanToViewSpan)
         {
             // Easy first check.  See if the caret point is before the start of the item.
             ViewTextSpan filterSpanInViewBuffer;
-            if (!textSpanToViewSpan.TryGetValue(item.FilterSpan, out filterSpanInViewBuffer))
+            if (!textSpanToViewSpan.TryGetValue(item.Item.Span, out filterSpanInViewBuffer))
             {
-                filterSpanInViewBuffer = model.GetSubjectBufferFilterSpanInViewBuffer(item.FilterSpan);
-                textSpanToViewSpan[item.FilterSpan] = filterSpanInViewBuffer;
+                filterSpanInViewBuffer = model.GetViewBufferSpan(item.Item.Span);
+                textSpanToViewSpan[item.Item.Span] = filterSpanInViewBuffer;
             }
 
             if (caretPoint < filterSpanInViewBuffer.TextSpan.Start)
@@ -151,7 +158,7 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.IntelliSense.Completion
 
             var textSnapshot = caretPoint.Snapshot;
 
-            var currentText = model.GetCurrentTextInSnapshot(item.FilterSpan, textSnapshot, textSpanToText);
+            var currentText = model.GetCurrentTextInSnapshot(item.Item.Span, textSnapshot, textSpanToText);
             var currentTextSpan = new TextSpan(filterSpanInViewBuffer.TextSpan.Start, currentText.Length);
 
             return currentText.Length == 0;

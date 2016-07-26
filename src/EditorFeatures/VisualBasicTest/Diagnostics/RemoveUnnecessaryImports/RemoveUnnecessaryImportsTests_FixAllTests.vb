@@ -1,12 +1,6 @@
 ' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 Option Strict Off
-Imports Microsoft.CodeAnalysis.CodeFixes
-Imports Microsoft.CodeAnalysis.Diagnostics.RemoveUnnecessaryImports
-Imports Microsoft.CodeAnalysis.Diagnostics
-Imports Microsoft.CodeAnalysis.Editor.UnitTests.Extensions
-Imports Microsoft.CodeAnalysis.VisualBasic.CodeFixes.RemoveUnnecessaryImports
-Imports Microsoft.CodeAnalysis.VisualBasic.Diagnostics.RemoveUnnecessaryImports
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.Diagnostics.RemoveUnnecessaryImports
     Partial Public Class RemoveUnnecessaryImportsTests
@@ -15,7 +9,7 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.UnitTests.Diagnostics.Remove
         <Fact>
         <Trait(Traits.Feature, Traits.Features.CodeActionsSimplifyTypeNames)>
         <Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)>
-        Public Sub TestFixAllInDocument()
+        Public Async Function TestFixAllInDocument() As Task
             Dim input = <Workspace>
                             <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                 <Document><![CDATA[
@@ -51,7 +45,7 @@ End Class]]>
             Dim expected = <Workspace>
                                <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                    <Document>
-<![CDATA[Class Program
+                                       <![CDATA[Class Program
     Public x As Int32
 End Class]]>
                                    </Document>
@@ -77,13 +71,13 @@ End Class]]>
                                </Project>
                            </Workspace>.ToString()
 
-            Test(input, expected, isLine:=False, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
-        End Sub
+            Await TestAsync(input, expected, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
+        End Function
 
         <Fact>
         <Trait(Traits.Feature, Traits.Features.CodeActionsSimplifyTypeNames)>
         <Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)>
-        Public Sub TestFixAllInProject()
+        Public Async Function TestFixAllInProject() As Task
             Dim input = <Workspace>
                             <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                 <Document><![CDATA[
@@ -119,12 +113,12 @@ End Class]]>
             Dim expected = <Workspace>
                                <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                    <Document>
-<![CDATA[Class Program
+                                       <![CDATA[Class Program
     Public x As Int32
 End Class]]>
                                    </Document>
                                    <Document>
-<![CDATA[Class Program2
+                                       <![CDATA[Class Program2
     Public x As Int32
 End Class]]>
                                    </Document>
@@ -142,13 +136,13 @@ End Class]]>
                                </Project>
                            </Workspace>.ToString()
 
-            Test(input, expected, isLine:=False, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
-        End Sub
+            Await TestAsync(input, expected, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
+        End Function
 
         <Fact>
         <Trait(Traits.Feature, Traits.Features.CodeActionsSimplifyTypeNames)>
         <Trait(Traits.Feature, Traits.Features.CodeActionsFixAllOccurrences)>
-        Public Sub TestFixAllInSolution()
+        Public Async Function TestFixAllInSolution() As Task
             Dim input = <Workspace>
                             <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                 <Document><![CDATA[
@@ -184,12 +178,12 @@ End Class]]>
             Dim expected = <Workspace>
                                <Project Language="Visual Basic" AssemblyName="Assembly1" CommonReferences="true">
                                    <Document>
-<![CDATA[Class Program
+                                       <![CDATA[Class Program
     Public x As Int32
 End Class]]>
                                    </Document>
                                    <Document>
-<![CDATA[Class Program2
+                                       <![CDATA[Class Program2
     Public x As Int32
 End Class]]>
                                    </Document>
@@ -197,14 +191,14 @@ End Class]]>
                                <Project Language="Visual Basic" AssemblyName="Assembly2" CommonReferences="true">
                                    <ProjectReference>Assembly1</ProjectReference>
                                    <Document>
-<![CDATA[Class Program3
+                                       <![CDATA[Class Program3
     Public x As Int32
 End Class]]>
                                    </Document>
                                </Project>
                            </Workspace>.ToString()
 
-            Test(input, expected, isLine:=False, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
-        End Sub
+            Await TestAsync(input, expected, compareTokens:=False, fixAllActionEquivalenceKey:=Nothing)
+        End Function
     End Class
 End Namespace

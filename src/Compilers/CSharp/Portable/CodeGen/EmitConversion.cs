@@ -1,11 +1,8 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Diagnostics;
-using Microsoft.CodeAnalysis.CodeGen;
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.CodeGen
@@ -23,10 +20,11 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                     // The null pointer is represented as 0u.
                     _builder.EmitIntConstant(0);
                     _builder.EmitOpCode(ILOpCode.Conv_u);
+                    EmitPopIfUnused(used);
                     return;
             }
 
-            if (!used && !ConversionHasSideEffects(conversion))
+            if (!used && !conversion.ConversionHasSideEffects())
             {
                 EmitExpression(conversion.Operand, false); // just do expr side effects
                 return;
@@ -71,6 +69,10 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 case ConversionKind.ExplicitUserDefined:
                 case ConversionKind.AnonymousFunction:
                 case ConversionKind.MethodGroup:
+                case ConversionKind.ImplicitTupleLiteral:
+                case ConversionKind.ImplicitTuple:
+                case ConversionKind.ExplicitTupleLiteral:
+                case ConversionKind.ExplicitTuple:
                 case ConversionKind.ImplicitDynamic:
                 case ConversionKind.ExplicitDynamic:
                     // None of these things should reach codegen (yet? maybe?)
@@ -113,30 +115,6 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 default:
                     throw ExceptionUtilities.UnexpectedValue(conversion.ConversionKind);
             }
-        }
-
-        private static bool ConversionHasSideEffects(BoundConversion conversion)
-        {
-            // only some intrinsic conversions are side effect free the only side effect of an
-            // intrinsic conversion is a throw when we fail to convert.
-            switch (conversion.ConversionKind)
-            {
-                case ConversionKind.Identity:
-                // NOTE: even explicit float/double identity conversion does not have side
-                // effects since it does not throw
-                case ConversionKind.ImplicitNumeric:
-                case ConversionKind.ImplicitEnumeration:
-                // implicit ref cast does not throw ...
-                case ConversionKind.ImplicitReference:
-                case ConversionKind.Boxing:
-                    return false;
-
-                // unchecked numeric conversion does not throw 
-                case ConversionKind.ExplicitNumeric:
-                    return conversion.Checked;
-            }
-
-            return true;
         }
 
         private void EmitIdentityConversion(BoundConversion conversion)

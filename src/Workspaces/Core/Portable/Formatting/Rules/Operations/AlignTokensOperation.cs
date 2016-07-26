@@ -2,7 +2,6 @@
 
 using System.Collections.Generic;
 using System.Diagnostics;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Formatting.Rules
@@ -22,8 +21,8 @@ namespace Microsoft.CodeAnalysis.Formatting.Rules
             this.Tokens = tokens;
         }
 
-        public SyntaxToken BaseToken { get; private set; }
-        public IEnumerable<SyntaxToken> Tokens { get; private set; }
-        public AlignTokensOption Option { get; private set; }
+        public SyntaxToken BaseToken { get; }
+        public IEnumerable<SyntaxToken> Tokens { get; }
+        public AlignTokensOption Option { get; }
     }
 }

@@ -117,6 +117,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Public MustOverride ReadOnly Property IsIterator As Boolean
 
         ''' <summary>
+        ''' Source: Returns False; methods from source cannot return by reference.
+        ''' Metadata: Returns whether or not this method returns by reference.
+        ''' </summary>
+        Public MustOverride ReadOnly Property ReturnsByRef As Boolean
+
+        ''' <summary>
         ''' Gets the return type of the method. If the method is a Sub, returns
         ''' the same type symbol as is returned by Compilation.VoidType.
         ''' </summary>
@@ -197,7 +203,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                     Return False
                 End If
 
-                ' NOTE: Conditional symbols on the overridden method must be inherited by the overriding method, but the native VB compiler doesn't do so. We will maintain comptability.
+                ' NOTE: Conditional symbols on the overridden method must be inherited by the overriding method, but the native VB compiler doesn't do so. We will maintain compatibility.
                 Return True
             Else
                 Return False
@@ -214,7 +220,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         ''' </summary>
         ''' <remarks>
         ''' Forces binding and decoding of attributes.
-        ''' NOTE: Conditional symbols on the overridden method must be inherited by the overriding method, but the native VB compiler doesn't do so. We maintain comptability.
+        ''' NOTE: Conditional symbols on the overridden method must be inherited by the overriding method, but the native VB compiler doesn't do so. We maintain compatibility.
         ''' </remarks>
         Friend ReadOnly Property IsConditional As Boolean
             Get
@@ -266,7 +272,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
                     Return DirectCast(Me.AssociatedSymbol, PropertySymbol).GetAccessorOverride(getter:=(MethodKind = MethodKind.PropertyGet))
                 Else
                     If Me.IsOverrides AndAlso Me.ConstructedFrom Is Me Then
-                        Return OverriddenMembers.OverriddenMember
+                        If IsDefinition Then
+                            Return OverriddenMembers.OverriddenMember
+                        End If
+
+                        Return OverriddenMembersResult(Of MethodSymbol).GetOverriddenMember(Me, Me.OriginalDefinition.OverriddenMethod)
                     End If
                 End If
 
@@ -397,6 +407,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End Get
         End Property
 
+        Friend Overridable ReadOnly Property IsScriptInitializer As Boolean
+            Get
+                Return False
+            End Get
+        End Property
+
         Friend ReadOnly Property IsSubmissionConstructor As Boolean
             Get
                 Return IsScriptConstructor AndAlso ContainingAssembly.IsInteractive
@@ -471,7 +487,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             End If
 
             Dim array = DirectCast(firstType, ArrayTypeSymbol)
-            Return array.Rank = 1 AndAlso array.ElementType.SpecialType = SpecialType.System_String
+            Return array.IsSZArray AndAlso array.ElementType.SpecialType = SpecialType.System_String
         End Function
 
         Friend Overrides Function Accept(Of TArgument, TResult)(visitor As VisualBasicSymbolVisitor(Of TArgument, TResult), arg As TArgument) As TResult
@@ -559,6 +575,11 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Friend Function CalculateUseSiteErrorInfo() As DiagnosticInfo
 
             Debug.Assert(IsDefinition)
+
+            ' Check returns by ref.
+            If Me.ReturnsByRef Then
+                Return ErrorFactory.ErrorInfo(ERRID.ERR_UnsupportedMethod1, CustomSymbolDisplayFormatter.ShortErrorName(Me))
+            End If
 
             ' Check return type.
             Dim errorInfo As DiagnosticInfo = DeriveUseSiteErrorInfoFromType(Me.ReturnType)
@@ -712,11 +733,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         ''' The bound method body is typically a high-level tree - it may contain 
         ''' lambdas, foreach etc... which will be processed in CompileMethod(...)
         ''' </summary>
+        ''' <param name="compilationState">Enables synthesized methods to create <see cref="SyntheticBoundNodeFactory"/> instances.</param>
         ''' <param name="methodBodyBinder">Optionally returns a binder, OUT parameter!</param>
         ''' <remarks>
         ''' The method MAY return a binder used for binding so it can be reused later in method compiler
         ''' </remarks>
-        Friend Overridable Function GetBoundMethodBody(diagnostics As DiagnosticBag, <Out()> Optional ByRef methodBodyBinder As Binder = Nothing) As BoundBlock
+        Friend Overridable Function GetBoundMethodBody(compilationState As TypeCompilationState, diagnostics As DiagnosticBag, <Out()> Optional ByRef methodBodyBinder As Binder = Nothing) As BoundBlock
             Throw ExceptionUtilities.Unreachable
         End Function
 
@@ -746,6 +768,19 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         ''' The resulting syntax offset is then negative for locals defined outside of the constructor body.
         ''' </remarks>
         Friend MustOverride Function CalculateLocalSyntaxOffset(localPosition As Integer, localTree As SyntaxTree) As Integer
+
+        ''' <summary>
+        ''' Specifies whether existing, "unused" locals (corresponding to proxies) are preserved during lambda rewriting.
+        ''' </summary>
+        ''' <remarks>
+        ''' This value will be checked by the <see cref="LambdaRewriter"/> and is needed so that existing locals aren't
+        ''' omitted in the EE (method symbols in the EE will override this property to return True).
+        ''' </remarks>
+        Friend Overridable ReadOnly Property PreserveOriginalLocals As Boolean
+            Get
+                Return False
+            End Get
+        End Property
 
 #Region "IMethodSymbol"
 
@@ -798,7 +833,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         End Property
 
         Private Function IMethodSymbol_GetTypeInferredDuringReduction(reducedFromTypeParameter As ITypeParameterSymbol) As ITypeSymbol Implements IMethodSymbol.GetTypeInferredDuringReduction
-            Return Me.GetTypeInferredDuringReduction(reducedFromTypeParameter.EnsureVbSymbolOrNothing(Of TypeParameterSymbol)("reducedFromTypeParameter"))
+            Return Me.GetTypeInferredDuringReduction(reducedFromTypeParameter.EnsureVbSymbolOrNothing(Of TypeParameterSymbol)(NameOf(reducedFromTypeParameter)))
         End Function
 
         Private ReadOnly Property IMethodSymbol_ReducedFrom As IMethodSymbol Implements IMethodSymbol.ReducedFrom
@@ -809,15 +844,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 
         Private Function IMethodSymbol_ReduceExtensionMethod(receiverType As ITypeSymbol) As IMethodSymbol Implements IMethodSymbol.ReduceExtensionMethod
             If receiverType Is Nothing Then
-                Throw New ArgumentNullException("receiverType")
+                Throw New ArgumentNullException(NameOf(receiverType))
             End If
 
-            Return Me.ReduceExtensionMethod(receiverType.EnsureVbSymbolOrNothing(Of TypeSymbol)("receiverType"))
+            Return Me.ReduceExtensionMethod(receiverType.EnsureVbSymbolOrNothing(Of TypeSymbol)(NameOf(receiverType)))
         End Function
 
         Private ReadOnly Property IMethodSymbol_Parameters As ImmutableArray(Of IParameterSymbol) Implements IMethodSymbol.Parameters
             Get
-                Return ImmutableArray.Create(Of IParameterSymbol, ParameterSymbol)(Me.Parameters)
+                Return ImmutableArray(Of IParameterSymbol).CastUp(Me.Parameters)
             End Get
         End Property
 
@@ -867,6 +902,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
         Private ReadOnly Property IMethodSymbol_ReturnsVoid As Boolean Implements IMethodSymbol.ReturnsVoid
             Get
                 Return Me.IsSub
+            End Get
+        End Property
+
+        Private ReadOnly Property IMethodSymbol_ReturnsByRef As Boolean Implements IMethodSymbol.ReturnsByRef
+            Get
+                Return Me.ReturnsByRef
             End Get
         End Property
 
@@ -938,6 +979,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
 #End Region
 
 #Region "IMethodSymbolInternal"
+        Private ReadOnly Property IMethodSymbolInternal_IsIterator As Boolean Implements IMethodSymbolInternal.IsIterator
+            Get
+                Return Me.IsIterator
+            End Get
+        End Property
+
         Private Function IMethodSymbolInternal_CalculateLocalSyntaxOffset(localPosition As Integer, localTree As SyntaxTree) As Integer Implements IMethodSymbolInternal.CalculateLocalSyntaxOffset
             Return CalculateLocalSyntaxOffset(localPosition, localTree)
         End Function

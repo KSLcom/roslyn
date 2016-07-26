@@ -4,12 +4,14 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
-using System.Text;
 using Microsoft.CodeAnalysis.Collections;
-using Microsoft.VisualStudio.SymReaderInterop;
+using Microsoft.DiaSymReader;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.ExpressionEvaluator
 {
@@ -18,23 +20,25 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
         internal const uint COR_E_BADIMAGEFORMAT = 0x8007000b;
         internal const uint CORDBG_E_MISSING_METADATA = 0x80131c35;
 
-        internal static bool HaveNotChanged(this ImmutableArray<MetadataBlock> metadataBlocks, MetadataContext previous)
-        {
-            return ((previous != null) && metadataBlocks.SequenceEqual(previous.MetadataBlocks));
-        }
-
         /// <summary>
         /// Group module metadata into assemblies.
+        /// If <paramref name="moduleVersionId"/> is set, the
+        /// assemblies are limited to those referenced by that module.
         /// </summary>
-        internal static ImmutableArray<MetadataReference> MakeAssemblyReferences(this ImmutableArray<MetadataBlock> metadataBlocks)
+        internal static ImmutableArray<MetadataReference> MakeAssemblyReferences(
+            this ImmutableArray<MetadataBlock> metadataBlocks,
+            Guid moduleVersionId,
+            AssemblyIdentityComparer identityComparer)
         {
+            Debug.Assert((identityComparer == null) || (moduleVersionId != default(Guid)));
+
             // Get metadata for each module.
             var metadataBuilder = ArrayBuilder<ModuleMetadata>.GetInstance();
             // Win8 applications contain a reference to Windows.winmd version >= 1.3
             // and perhaps multiple application winmds. At runtime, Windows.winmd
             // is replaced by multiple Windows.*.winmd version >= 1.3. In the EE, we
             // need to map compile-time assembly references to the runtime assemblies
-            // supplied by the debugger. To do so, we “merge” all winmds named
+            // supplied by the debugger. To do so, we "merge" all winmds named
             // Windows.*.winmd into a single fake Windows.winmd at runtime.
             // All other (application) winmds are left as is.
             var runtimeWinMdBuilder = ArrayBuilder<ModuleMetadata>.GetInstance();
@@ -79,26 +83,72 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                 modulesByName[name] = modulesByName.ContainsKey(name) ? null : metadata;
             }
 
-            // Build assembly references from modules in primary module
-            // manifests. There will be duplicate assemblies if the process has
-            // multiple app domains and those duplicates need to be dropped.
+            // Build assembly references from modules in primary module manifests.
             var referencesBuilder = ArrayBuilder<MetadataReference>.GetInstance();
-            var moduleIds = PooledHashSet<Guid>.GetInstance();
+            var identitiesBuilder = (identityComparer == null) ? null : ArrayBuilder<AssemblyIdentity>.GetInstance();
+            AssemblyIdentity corLibrary = null;
+            AssemblyIdentity intrinsicsAssembly = null;
+
             foreach (var metadata in metadataBuilder)
             {
                 if (!IsPrimaryModule(metadata))
                 {
                     continue;
                 }
-                var mvid = metadata.GetModuleVersionId();
-                if (moduleIds.Contains(mvid))
+                if (identitiesBuilder != null)
                 {
-                    continue;
+                    var reader = metadata.MetadataReader;
+                    var identity = reader.ReadAssemblyIdentityOrThrow();
+                    identitiesBuilder.Add(identity);
+                    // If this assembly has no references, and declares
+                    // System.Object, assume it is the COR library.
+                    if ((corLibrary == null) &&
+                        (reader.AssemblyReferences.Count == 0) &&
+                        reader.DeclaresTheObjectClass())
+                    {
+                        corLibrary = identity;
+                    }
+                    else if ((intrinsicsAssembly == null) &&
+                        reader.DeclaresType((r, t) => r.IsPublicNonInterfaceType(t, ExpressionCompilerConstants.IntrinsicAssemblyNamespace, ExpressionCompilerConstants.IntrinsicAssemblyTypeName)))
+                    {
+                        intrinsicsAssembly = identity;
+                    }
                 }
-                moduleIds.Add(mvid);
-                referencesBuilder.Add(MakeAssemblyMetadata(metadata, modulesByName));
+                var reference = MakeAssemblyMetadata(metadata, modulesByName);
+                referencesBuilder.Add(reference);
             }
-            moduleIds.Free();
+
+            if (identitiesBuilder != null)
+            {
+                // Remove assemblies not directly referenced by the target module.
+                var module = metadataBuilder.FirstOrDefault(m => m.MetadataReader.GetModuleVersionIdOrThrow() == moduleVersionId);
+                Debug.Assert(module != null);
+                if (module != null)
+                {
+                    var referencedModules = ArrayBuilder<AssemblyIdentity>.GetInstance();
+                    referencedModules.Add(module.MetadataReader.ReadAssemblyIdentityOrThrow());
+                    referencedModules.AddRange(module.MetadataReader.GetReferencedAssembliesOrThrow());
+                    // Ensure COR library is included, otherwise any compilation will fail.
+                    // (Note, an equivalent assembly may have already been included from
+                    // GetReferencedAssembliesOrThrow above but RemoveUnreferencedModules
+                    // allows duplicates.)
+                    Debug.Assert(corLibrary != null);
+                    if (corLibrary != null)
+                    {
+                        referencedModules.Add(corLibrary);
+                    }
+                    // Ensure Debugger intrinsic methods assembly is included.
+                    if (intrinsicsAssembly != null)
+                    {
+                        referencedModules.Add(intrinsicsAssembly);
+                    }
+                    RemoveUnreferencedModules(referencesBuilder, identitiesBuilder, identityComparer, referencedModules);
+                    referencedModules.Free();
+                }
+                identitiesBuilder.Free();
+            }
+
+            metadataBuilder.Free();
 
             // Any runtime winmd modules were separated out initially. Now add
             // those to a placeholder for the missing compile time module since
@@ -109,8 +159,77 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             }
 
             runtimeWinMdBuilder.Free();
-            metadataBuilder.Free();
             return referencesBuilder.ToImmutableAndFree();
+        }
+
+        /// <summary>
+        /// Remove any modules that are not in the set of referenced modules.
+        /// If there are duplicates of referenced modules, potentially differing by
+        /// version, one instance of the highest version is kept and others dropped.
+        /// </summary>
+        /// <remarks>
+        /// Binding against this reduced set of modules will not handle certain valid cases
+        /// where binding to full set would succeed (e.g.: binding to types outside the
+        /// referenced modules). And since duplicates are dropped, this will prevent resolving
+        /// ambiguities between two versions of the same assembly by using aliases. Also,
+        /// there is no attempt here to follow binding redirects or to use the CLR to determine
+        /// which version of an assembly to prefer when there are duplicate assemblies.
+        /// </remarks>
+        private static void RemoveUnreferencedModules(
+            ArrayBuilder<MetadataReference> modules,
+            ArrayBuilder<AssemblyIdentity> identities,
+            AssemblyIdentityComparer identityComparer,
+            ArrayBuilder<AssemblyIdentity> referencedModules)
+        {
+            Debug.Assert(modules.Count == identities.Count);
+
+            var referencedIndices = PooledHashSet<int>.GetInstance();
+
+            int n = identities.Count;
+            int index;
+            foreach (var referencedModule in referencedModules)
+            {
+                index = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    var identity = identities[i];
+                    var compareResult = identityComparer.Compare(referencedModule, identity);
+                    switch (compareResult)
+                    {
+                        case AssemblyIdentityComparer.ComparisonResult.NotEquivalent:
+                            break;
+                        case AssemblyIdentityComparer.ComparisonResult.Equivalent:
+                        case AssemblyIdentityComparer.ComparisonResult.EquivalentIgnoringVersion:
+                            if ((index < 0) || (identity.Version > identities[index].Version))
+                            {
+                                index = i;
+                            }
+                            break;
+                        default:
+                            throw ExceptionUtilities.UnexpectedValue(compareResult);
+                    }
+                }
+                if (index >= 0)
+                {
+                    referencedIndices.Add(index);
+                }
+            }
+
+            Debug.Assert(referencedIndices.Count <= modules.Count);
+            Debug.Assert(referencedIndices.Count <= referencedModules.Count);
+
+            index = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (referencedIndices.Contains(i))
+                {
+                    modules[index] = modules[i];
+                    index++;
+                }
+            }
+            modules.Clip(index);
+
+            referencedIndices.Free();
         }
 
         private static PortableExecutableReference MakeAssemblyMetadata(ModuleMetadata metadata, Dictionary<string, ModuleMetadata> modulesByName)
@@ -129,15 +248,23 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
                     foreach (var handle in reader.AssemblyFiles)
                     {
                         var assemblyFile = reader.GetAssemblyFile(handle);
-                        var name = reader.GetString(assemblyFile.Name);
-                        // Find the assembly file in the set of netmodules with that name.
-                        // The file may be missing if the file is not a module (say a resource)
-                        // or if the module has not been loaded yet. The value will be null
-                        // if the name was ambiguous.
-                        ModuleMetadata module;
-                        if (modulesByName.TryGetValue(name, out module) && (module != null))
+                        if (assemblyFile.ContainsMetadata)
                         {
-                            builder.Add(module);
+                            var name = reader.GetString(assemblyFile.Name);
+                            // Find the assembly file in the set of netmodules with that name.
+                            // The file may be missing if the file is not a module (say a resource)
+                            // or if the module has not been loaded yet. The value will be null
+                            // if the name was ambiguous.
+                            ModuleMetadata module;
+                            if (!modulesByName.TryGetValue(name, out module))
+                            {
+                                // AssemblyFile names may contain file information (".dll", etc).
+                                modulesByName.TryGetValue(GetFileNameWithoutExtension(name), out module);
+                            }
+                            if (module != null)
+                            {
+                                builder.Add(module);
+                            }
                         }
                     }
                 }
@@ -151,9 +278,42 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             return assemblyMetadata.GetReference(embedInteropTypes: false, display: metadata.Name);
         }
 
+        internal static string GetFileNameWithoutExtension(string fileName)
+        {
+            var lastDotIndex = fileName.LastIndexOf('.');
+            var extensionStartIndex = lastDotIndex + 1;
+            if ((lastDotIndex > 0) && (extensionStartIndex < fileName.Length))
+            {
+                var extension = fileName.Substring(extensionStartIndex);
+                switch (extension)
+                {
+                    case "dll":
+                    case "exe":
+                    case "netmodule":
+                    case "winmd":
+                        return fileName.Substring(0, lastDotIndex);
+                }
+            }
+            return fileName;
+        }
+
+        private static byte[] GetWindowsProxyBytes()
+        {
+            var assembly = typeof(ExpressionCompiler).GetTypeInfo().Assembly;
+            using (var stream = assembly.GetManifestResourceStream("Microsoft.CodeAnalysis.ExpressionEvaluator.Resources.WindowsProxy.winmd"))
+            {
+                var bytes = new byte[stream.Length];
+                using (var memoryStream = new MemoryStream(bytes))
+                {
+                    stream.CopyTo(memoryStream);
+                }
+                return bytes;
+            }
+        }
+
         private static PortableExecutableReference MakeCompileTimeWinMdAssemblyMetadata(ArrayBuilder<ModuleMetadata> runtimeModules)
         {
-            var metadata = ModuleMetadata.CreateFromImage(Resources.WindowsProxy_winmd);
+            var metadata = ModuleMetadata.CreateFromImage(GetWindowsProxyBytes());
             var builder = ArrayBuilder<ModuleMetadata>.GetInstance();
             builder.Add(metadata);
             builder.AddRange(runtimeModules);
@@ -194,76 +354,10 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             return assemblyName.Equals("windows", StringComparison.OrdinalIgnoreCase);
         }
 
-        internal static LocalInfo<TTypeSymbol> GetLocalInfo<TModuleSymbol, TTypeSymbol, TMethodSymbol, TFieldSymbol, TSymbol>(
-            this MetadataDecoder<TModuleSymbol, TTypeSymbol, TMethodSymbol, TFieldSymbol, TSymbol> metadataDecoder,
-                byte[] signature)
-            where TModuleSymbol : class
-            where TTypeSymbol : class, TSymbol, ITypeSymbol
-            where TMethodSymbol : class, TSymbol, IMethodSymbol
-            where TFieldSymbol : class, TSymbol, IFieldSymbol
-            where TSymbol : class, ISymbol
+        internal static bool IsWindowsAssemblyIdentity(this AssemblyIdentity assemblyIdentity)
         {
-            unsafe
-            {
-                fixed (byte* ptr = signature)
-                {
-                    var blobReader = new BlobReader(ptr, signature.Length);
-                    return metadataDecoder.DecodeLocalVariableOrThrow(ref blobReader);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Returns the local info for all locals indexed by slot.
-        /// </summary>
-        internal static ImmutableArray<LocalInfo<TTypeSymbol>> GetLocalInfo<TModuleSymbol, TTypeSymbol, TMethodSymbol, TFieldSymbol, TSymbol>(
-            this MetadataDecoder<TModuleSymbol, TTypeSymbol, TMethodSymbol, TFieldSymbol, TSymbol> metadataDecoder,
-            int localSignatureToken)
-            where TModuleSymbol : class
-            where TTypeSymbol : class, TSymbol, ITypeSymbol
-            where TMethodSymbol : class, TSymbol, IMethodSymbol
-            where TFieldSymbol : class, TSymbol, IFieldSymbol
-            where TSymbol : class, ISymbol
-        {
-            var handle = MetadataTokens.Handle(localSignatureToken);
-            if (handle.IsNil)
-            {
-                return ImmutableArray<LocalInfo<TTypeSymbol>>.Empty;
-            }
-            var reader = metadataDecoder.Module.MetadataReader;
-            var signature = reader.GetStandaloneSignature((StandaloneSignatureHandle)handle).Signature;
-            var blobReader = reader.GetBlobReader(signature);
-            return metadataDecoder.DecodeLocalSignatureOrThrow(ref blobReader);
-        }
-
-        /// <summary>
-        /// Get the set of nested scopes containing the
-        /// IL offset from outermost scope to innermost.
-        /// </summary>
-        internal static void GetScopes(this ISymUnmanagedReader symReader, int methodToken, int methodVersion, int ilOffset, bool isScopeEndInclusive, ArrayBuilder<ISymUnmanagedScope> scopes)
-        {
-            if (symReader == null)
-            {
-                return;
-            }
-
-            var symMethod = symReader.GetMethodByVersion(methodToken, methodVersion);
-            if (symMethod == null)
-            {
-                return;
-            }
-
-            symMethod.GetAllScopes(scopes, ilOffset, isScopeEndInclusive);
-        }
-
-        internal static MethodScope GetMethodScope(this ArrayBuilder<ISymUnmanagedScope> scopes, int methodToken, int methodVersion)
-        {
-            if (scopes.Count == 0)
-            {
-                return null;
-            }
-            var scope = scopes.Last();
-            return new MethodScope(methodToken, methodVersion, scope.GetStartOffset(), scope.GetEndOffset());
+            return IsWindowsAssemblyName(assemblyIdentity.Name) &&
+                assemblyIdentity.ContentType == System.Reflection.AssemblyContentType.WindowsRuntime;
         }
 
         internal static ImmutableArray<string> GetLocalNames(this ArrayBuilder<ISymUnmanagedScope> scopes)
@@ -271,119 +365,19 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
             var builder = ArrayBuilder<string>.GetInstance();
             foreach (var scope in scopes)
             {
-                var locals = scope.GetLocals();
-                foreach (var local in locals)
+                foreach (var local in scope.GetLocals())
                 {
                     int attributes;
                     local.GetAttributes(out attributes);
-                    if (attributes == Cci.PdbWriter.HiddenLocalAttributesValue)
+                    if (attributes == (int)LocalVariableAttributes.DebuggerHidden)
                     {
                         continue;
                     }
-                    var slot = local.GetSlot();
-                    // Local slot may be less than the current count
-                    // if the array was padded with nulls earlier.
-                    while (builder.Count <= slot)
-                    {
-                        builder.Add(null);
-                    }
-                    Debug.Assert(builder[slot] == null);
-                    builder[slot] = local.GetName();
+
+                    builder.SetItem(local.GetSlot(), local.GetName());
                 }
             }
             return builder.ToImmutableAndFree();
-        }
-
-        internal static ImmutableArray<NamedLocalConstant> GetConstantSignatures(this ArrayBuilder<ISymUnmanagedScope> scopes)
-        {
-            var builder = ArrayBuilder<NamedLocalConstant>.GetInstance();
-            foreach (var scope in scopes)
-            {
-                var constants = ((ISymUnmanagedScope2)scope).GetConstants();
-                if (constants == null)
-                {
-                    continue;
-                }
-                foreach (var constant in constants)
-                {
-                    NamedLocalConstant value;
-                    if (constant.TryGetConstantValue(out value))
-                    {
-                        builder.Add(value);
-                    }
-                }
-            }
-            return builder.ToImmutableAndFree();
-        }
-
-        private static ISymUnmanagedConstant[] GetConstants(this ISymUnmanagedScope2 scope)
-        {
-            int length;
-            scope.GetConstants(0, out length, null);
-            if (length == 0)
-            {
-                return null;
-            }
-
-            var constants = new ISymUnmanagedConstant[length];
-            scope.GetConstants(length, out length, constants);
-            return constants;
-        }
-
-        private static bool TryGetConstantValue(this ISymUnmanagedConstant constant, out NamedLocalConstant value)
-        {
-            value = default(NamedLocalConstant);
-
-            int length;
-            int hresult = constant.GetName(0, out length, null);
-            SymUnmanagedReaderExtensions.ThrowExceptionForHR(hresult);
-            Debug.Assert(length > 0);
-            if (length == 0)
-            {
-                return false;
-            }
-
-            var chars = new char[length];
-            hresult = constant.GetName(length, out length, chars);
-            SymUnmanagedReaderExtensions.ThrowExceptionForHR(hresult);
-            Debug.Assert(chars[length - 1] == 0);
-            var name = new string(chars, 0, length - 1);
-
-            constant.GetSignature(0, out length, null);
-            Debug.Assert(length > 0);
-            if (length == 0)
-            {
-                return false;
-            }
-
-            var signature = new byte[length];
-            constant.GetSignature(length, out length, signature);
-
-            object val;
-            constant.GetValue(out val);
-
-            var constantValue = GetConstantValue(signature, val);
-            value = new NamedLocalConstant(name, signature, constantValue);
-            return true;
-        }
-
-        private static ConstantValue GetConstantValue(byte[] signature, object value)
-        {
-            if (signature.Length == 1)
-            {
-                switch ((SignatureTypeCode)signature[0])
-                {
-                    case SignatureTypeCode.Object:
-                        // Dev12 and Dev14 C#/VB compilers emit (int)0 for (object)null.
-                        Debug.Assert(object.Equals(value, 0) || (value == null));
-                        return ConstantValue.Null;
-                    case SignatureTypeCode.String:
-                        return ConstantValue.Create((string)value);
-                }
-            }
-
-            Debug.Assert(value != null);
-            return ConstantValue.Create(value, SpecialTypeExtensions.FromRuntimeTypeOfLiteralValue(value));
         }
 
         private static bool IsBadMetadataException(Exception e)
@@ -410,11 +404,6 @@ namespace Microsoft.CodeAnalysis.ExpressionEvaluator
         private static uint GetHResult(Exception e)
         {
             return unchecked((uint)e.HResult);
-        }
-
-        internal static string GetUtf8String(this BlobHandle blobHandle, MetadataReader metadataReader)
-        {
-            return Encoding.UTF8.GetString(metadataReader.GetBlobBytes(blobHandle));
         }
     }
 }

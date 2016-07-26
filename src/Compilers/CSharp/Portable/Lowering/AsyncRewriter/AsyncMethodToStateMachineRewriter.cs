@@ -96,7 +96,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             if (!_awaiterFields.TryGetValue(awaiterType, out result))
             {
                 int slotIndex;
-                if (slotAllocatorOpt == null || !slotAllocatorOpt.TryGetPreviousAwaiterSlotIndex((Cci.ITypeReference)awaiterType, out slotIndex))
+                if (slotAllocatorOpt == null || !slotAllocatorOpt.TryGetPreviousAwaiterSlotIndex(F.ModuleBuilderOpt.Translate(awaiterType, F.Syntax, F.Diagnostics), F.Diagnostics, out slotIndex))
                 {
                     slotIndex = _nextAwaiterId++;
                 }
@@ -118,6 +118,9 @@ namespace Microsoft.CodeAnalysis.CSharp
 
             BoundStatement rewrittenBody = (BoundStatement)Visit(body);
 
+            ImmutableArray<StateMachineFieldSymbol> rootScopeHoistedLocals;
+            TryUnwrapBoundStateMachineScope(ref rewrittenBody, out rootScopeHoistedLocals);
+
             var bodyBuilder = ArrayBuilder<BoundStatement>.GetInstance();
 
             bodyBuilder.Add(F.HiddenSequencePoint());
@@ -136,7 +139,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     F.CatchBlocks(
                         new BoundCatchBlock(
                             F.Syntax,
-                            exceptionLocal,
+                            ImmutableArray.Create(exceptionLocal),
                             F.Local(exceptionLocal),
                             exceptionLocal.Type,
                             exceptionFilterOpt: null,
@@ -187,18 +190,25 @@ namespace Microsoft.CodeAnalysis.CSharp
             bodyBuilder.Add(F.Label(_exitLabel));
             bodyBuilder.Add(F.Return());
 
-            var newBody = bodyBuilder.ToImmutableAndFree();
+            var newStatements = bodyBuilder.ToImmutableAndFree();
 
             var locals = ArrayBuilder<LocalSymbol>.GetInstance();
             locals.Add(cachedState);
             if ((object)_exprRetValue != null) locals.Add(_exprRetValue);
 
-            F.CloseMethod(
+            var newBody =
                 F.SequencePoint(
                     body.Syntax,
                     F.Block(
-                        locals.ToImmutableAndFree(),
-                        newBody)));
+                        locals.ToImmutableAndFree(), 
+                        newStatements));
+
+            if (rootScopeHoistedLocals.Length > 0)
+            {
+                newBody = MakeStateMachineScope(rootScopeHoistedLocals, newBody);
+            }
+
+            F.CloseMethod(newBody);
         }
 
         protected override BoundStatement GenerateReturn(bool finished)
@@ -256,15 +266,20 @@ namespace Microsoft.CodeAnalysis.CSharp
             MethodSymbol isCompletedMethod = ((object)node.IsCompleted != null) ? VisitMethodSymbol(node.IsCompleted.GetMethod) : null;
             TypeSymbol type = VisitType(node.Type);
 
-            // The lifespan of awaiter temp doesn't cross sequence points (user code in between awaits), so it doesn't need to be named.
+            // The awaiter temp facilitates EnC method remapping and thus have to be long-lived.
+            // It transfers the awaiter objects from the old version of the MoveNext method to the new one.
+            Debug.Assert(node.Syntax.IsKind(SyntaxKind.AwaitExpression));
             TypeSymbol awaiterType = node.IsDynamic ? DynamicTypeSymbol.Instance : getAwaiter.ReturnType;
-            var awaiterTemp = F.SynthesizedLocal(awaiterType);
+            var awaiterTemp = F.SynthesizedLocal(awaiterType, syntax: node.Syntax, kind: SynthesizedLocalKind.Awaiter);
 
             var awaitIfIncomplete = F.Block(
                     // temp $awaiterTemp = <expr>.GetAwaiter();
                     F.Assignment(
                         F.Local(awaiterTemp),
                         MakeCallMaybeDynamic(expression, getAwaiter, WellKnownMemberNames.GetAwaiter)),
+
+                    // hidden sequence point facilitates EnC method remapping, see explanation on SynthesizedLocalKind.Awaiter:
+                    F.HiddenSequencePoint(),
 
                     // if(!($awaiterTemp.IsCompleted)) { ... }
                     F.If(
@@ -286,10 +301,10 @@ namespace Microsoft.CodeAnalysis.CSharp
                 LocalSymbol resultTemp = F.SynthesizedLocal(type);
                 return F.Block(
                     ImmutableArray.Create(awaiterTemp, resultTemp),
-                        awaitIfIncomplete,
-                        F.Assignment(F.Local(resultTemp), getResultCall),
-                        F.ExpressionStatement(nullAwaiter),
-                        F.Assignment(resultPlace, F.Local(resultTemp)));
+                    awaitIfIncomplete,
+                    F.Assignment(F.Local(resultTemp), getResultCall),
+                    F.ExpressionStatement(nullAwaiter),
+                    F.Assignment(resultPlace, F.Local(resultTemp)));
             }
             else
             {
@@ -297,9 +312,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // $awaiterTemp = null;
                 return F.Block(
                     ImmutableArray.Create(awaiterTemp),
-                        awaitIfIncomplete,
-                        F.ExpressionStatement(getResultCall),
-                        F.ExpressionStatement(nullAwaiter));
+                    awaitIfIncomplete,
+                    F.ExpressionStatement(getResultCall),
+                    F.ExpressionStatement(nullAwaiter));
             }
         }
 
@@ -462,7 +477,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         F.Assignment(
                             F.Local(notifyCompletionTemp),
                                 // Use reference conversion rather than dynamic conversion:
-                                F.Convert(notifyCompletionTemp.Type, F.Local(awaiterTemp), ConversionKind.ExplicitReference)),
+                                F.Convert(notifyCompletionTemp.Type, F.Local(awaiterTemp), Conversion.ExplicitReference)),
                         F.ExpressionStatement(
                             F.Call(
                                 F.Field(F.This(), _asyncMethodBuilderField),
@@ -502,7 +517,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             LocalSymbol thisTemp = (F.CurrentType.TypeKind == TypeKind.Class) ? F.SynthesizedLocal(F.CurrentType) : null;
 
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
-            var useUnsafeOnCompleted = F.Compilation.Conversions.ClassifyImplicitConversion(
+            var useUnsafeOnCompleted = F.Compilation.Conversions.ClassifyImplicitConversionFromType(
                 loweredAwaiterType,
                 F.Compilation.GetWellKnownType(WellKnownType.System_Runtime_CompilerServices_ICriticalNotifyCompletion),
                 ref useSiteDiagnostics).IsImplicit;

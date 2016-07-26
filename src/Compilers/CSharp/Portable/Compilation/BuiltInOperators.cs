@@ -11,8 +11,8 @@ using System.Collections.Generic;
 namespace Microsoft.CodeAnalysis.CSharp
 {
     /// <summary>
-    /// Internal cahe of built-in operators.
-    /// Cache is compilation-specific becuse it uses compilation-specific SpecialTypes.
+    /// Internal cache of built-in operators.
+    /// Cache is compilation-specific because it uses compilation-specific SpecialTypes.
     /// </summary>
     internal class BuiltInOperators
     {
@@ -776,13 +776,13 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return true;
             }
 
-            var leftConversion = Conversions.ClassifyConversion(leftType, rightType, ref useSiteDiagnostics);
+            var leftConversion = Conversions.ClassifyConversionFromType(leftType, rightType, ref useSiteDiagnostics);
             if (leftConversion.IsIdentity || leftConversion.IsReference)
             {
                 return true;
             }
 
-            var rightConversion = Conversions.ClassifyConversion(rightType, leftType, ref useSiteDiagnostics);
+            var rightConversion = Conversions.ClassifyConversionFromType(rightType, leftType, ref useSiteDiagnostics);
             if (rightConversion.IsIdentity || rightConversion.IsReference)
             {
                 return true;

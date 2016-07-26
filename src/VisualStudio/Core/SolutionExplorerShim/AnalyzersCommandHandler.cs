@@ -3,16 +3,15 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.ComponentModel;
 using System.ComponentModel.Composition;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using EnvDTE;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Editor.Host;
 using Microsoft.CodeAnalysis.Notification;
+using Microsoft.Internal.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.CodeAnalysis;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
@@ -20,41 +19,58 @@ using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
 using Microsoft.VisualStudio.LanguageServices.SolutionExplorer;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Roslyn.Utilities;
 using VSLangProj140;
 
 namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplorer
 {
     [Export]
-    internal class AnalyzersCommandHandler : IVsUpdateSolutionEvents
+    internal class AnalyzersCommandHandler : IAnalyzersCommandHandler, IVsUpdateSolutionEvents
     {
-        [Import]
-        private AnalyzerItemsTracker _tracker = null;
+        private readonly AnalyzerItemsTracker _tracker;
+        private readonly AnalyzerReferenceManager _analyzerReferenceManager;
+        private readonly IServiceProvider _serviceProvider;
 
-        [Import]
-        private AnalyzerReferenceManager _analyzerReferenceManager = null;
+        private ContextMenuController _analyzerFolderContextMenuController;
+        private ContextMenuController _analyzerContextMenuController;
+        private ContextMenuController _diagnosticContextMenuController;
 
-        [Import(typeof(SVsServiceProvider))]
-        private IServiceProvider _serviceProvider = null;
-
+        // Analyzers folder context menu items
         private MenuCommand _addMenuItem;
-        private MenuCommand _projectAddMenuItem;
-        private MenuCommand _projectContextAddMenuItem;
-        private MenuCommand _referencesContextAddMenuItem;
-        private MenuCommand _removeMenuItem;
         private MenuCommand _openRuleSetMenuItem;
-        private MenuCommand _setActiveRuleSetMenuItem;
 
+        // Analyzer context menu items
+        private MenuCommand _removeMenuItem;
+
+        // Diagnostic context menu items
+        private MenuCommand _setSeverityDefaultMenuItem;
         private MenuCommand _setSeverityErrorMenuItem;
         private MenuCommand _setSeverityWarningMenuItem;
         private MenuCommand _setSeverityInfoMenuItem;
         private MenuCommand _setSeverityHiddenMenuItem;
         private MenuCommand _setSeverityNoneMenuItem;
-
         private MenuCommand _openHelpLinkMenuItem;
+
+        // Other menu items
+        private MenuCommand _projectAddMenuItem;
+        private MenuCommand _projectContextAddMenuItem;
+        private MenuCommand _referencesContextAddMenuItem;
+        private MenuCommand _setActiveRuleSetMenuItem;
 
         private Workspace _workspace;
 
-        private ImmutableArray<DiagnosticItem> _selectedDiagnosticItems = ImmutableArray<DiagnosticItem>.Empty;
+        private bool _allowProjectSystemOperations = true;
+
+        [ImportingConstructor]
+        public AnalyzersCommandHandler(
+            AnalyzerItemsTracker tracker,
+            AnalyzerReferenceManager analyzerReferenceManager,
+            [Import(typeof(SVsServiceProvider))]IServiceProvider serviceProvider)
+        {
+            _tracker = tracker;
+            _analyzerReferenceManager = analyzerReferenceManager;
+            _serviceProvider = serviceProvider;
+        }
 
         /// <summary>
         /// Hook up the context menu handlers.
@@ -63,37 +79,123 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
         {
             if (menuCommandService != null)
             {
+                // Analyzers folder context menu items
                 _addMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.AddAnalyzer, AddAnalyzerHandler);
-                _projectAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ProjectAddAnalyzer, AddAnalyzerHandler);
-                _projectContextAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ProjectContextAddAnalyzer, AddAnalyzerHandler);
-                _referencesContextAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ReferencesContextAddAnalyzer, AddAnalyzerHandler);
+                _openRuleSetMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.OpenRuleSet, OpenRuleSetHandler);
 
+                // Analyzer context menu items
                 _removeMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.RemoveAnalyzer, RemoveAnalyzerHandler);
 
-                _openRuleSetMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.OpenRuleSet, OpenRuleSetHandler);
-                _setActiveRuleSetMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetActiveRuleSet, SetActiveRuleSetHandler);
-
+                // Diagnostic context menu items
+                _setSeverityDefaultMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityDefault, SetSeverityHandler);
                 _setSeverityErrorMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityError, SetSeverityHandler);
                 _setSeverityWarningMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityWarning, SetSeverityHandler);
                 _setSeverityInfoMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityInfo, SetSeverityHandler);
                 _setSeverityHiddenMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityHidden, SetSeverityHandler);
                 _setSeverityNoneMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetSeverityNone, SetSeverityHandler);
-
                 _openHelpLinkMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.OpenDiagnosticHelpLink, OpenDiagnosticHelpLinkHandler);
 
-                UpdateMenuItemVisibility();
-                UpdateSeverityMenuItemsChecked();
+                // Other menu items
+                _projectAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ProjectAddAnalyzer, AddAnalyzerHandler);
+                _projectContextAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ProjectContextAddAnalyzer, AddAnalyzerHandler);
+                _referencesContextAddMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.ReferencesContextAddAnalyzer, AddAnalyzerHandler);
+                _setActiveRuleSetMenuItem = AddCommandHandler(menuCommandService, ID.RoslynCommands.SetActiveRuleSet, SetActiveRuleSetHandler);
+
+                UpdateOtherMenuItemsVisibility();
 
                 if (_tracker != null)
                 {
                     _tracker.SelectedHierarchyItemChanged += SelectedHierarchyItemChangedHandler;
-                    _tracker.SelectedDiagnosticItemsChanged += SelectedDiagnosticItemsChangedHandler;
                 }
 
                 var buildManager = (IVsSolutionBuildManager)_serviceProvider.GetService(typeof(SVsSolutionBuildManager));
                 uint cookie;
                 buildManager.AdviseUpdateSolutionEvents(this, out cookie);
             }
+        }
+
+        public IContextMenuController AnalyzerFolderContextMenuController
+        {
+            get
+            {
+                if (_analyzerFolderContextMenuController == null)
+                {
+                    _analyzerFolderContextMenuController = new ContextMenuController(
+                        ID.RoslynCommands.AnalyzerFolderContextMenu,
+                        ShouldShowAnalyzerFolderContextMenu,
+                        UpdateAnalyzerFolderContextMenu);
+                }
+
+                return _analyzerFolderContextMenuController;
+            }
+        }
+
+        private bool ShouldShowAnalyzerFolderContextMenu(IEnumerable<object> items)
+        {
+            return items.Count() == 1;
+        }
+
+        private void UpdateAnalyzerFolderContextMenu()
+        {
+            if (_addMenuItem != null)
+            {
+                _addMenuItem.Visible = SelectedProjectSupportsAnalyzers();
+                _addMenuItem.Enabled = _allowProjectSystemOperations;
+            }
+        }
+
+        public IContextMenuController AnalyzerContextMenuController
+        {
+            get
+            {
+                if (_analyzerContextMenuController == null)
+                {
+                    _analyzerContextMenuController = new ContextMenuController(
+                        ID.RoslynCommands.AnalyzerContextMenu,
+                        ShouldShowAnalyzerContextMenu,
+                        UpdateAnalyzerContextMenu);
+                }
+
+                return _analyzerContextMenuController;
+            }
+        }
+
+        private bool ShouldShowAnalyzerContextMenu(IEnumerable<object> items)
+        {
+            return items.All(item => item is AnalyzerItem);
+        }
+
+        private void UpdateAnalyzerContextMenu()
+        {
+            _removeMenuItem.Enabled = _allowProjectSystemOperations;
+        }
+
+        public IContextMenuController DiagnosticContextMenuController
+        {
+            get
+            {
+                if (_diagnosticContextMenuController == null)
+                {
+                    _diagnosticContextMenuController = new ContextMenuController(
+                        ID.RoslynCommands.DiagnosticContextMenu,
+                        ShouldShowDiagnosticContextMenu,
+                        UpdateDiagnosticContextMenu);
+                }
+
+                return _diagnosticContextMenuController;
+            }
+        }
+
+        private bool ShouldShowDiagnosticContextMenu(IEnumerable<object> items)
+        {
+            return items.All(item => item is DiagnosticItem);
+        }
+
+        private void UpdateDiagnosticContextMenu()
+        {
+            UpdateSeverityMenuItemsChecked();
+            UpdateSeverityMenuItemsEnabled();
+            UpdateOpenHelpLinkMenuItemVisibility();
         }
 
         private MenuCommand AddCommandHandler(IMenuCommandService menuCommandService, int roslynCommand, EventHandler handler)
@@ -105,48 +207,17 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
             return menuCommand;
         }
 
-        private void SelectedDiagnosticItemsChangedHandler(object sender, EventArgs e)
-        {
-            foreach (var item in _selectedDiagnosticItems)
-            {
-                item.PropertyChanged -= DiagnosticItemPropertyChangedHandler;
-            }
-
-            _selectedDiagnosticItems = _tracker.SelectedDiagnosticItems;
-
-            foreach (var item in _selectedDiagnosticItems)
-            {
-                item.PropertyChanged += DiagnosticItemPropertyChangedHandler;
-            }
-
-            UpdateSeverityMenuItemsChecked();
-            UpdateSeverityMenuItemsEnabled();
-        }
-
-        private void DiagnosticItemPropertyChangedHandler(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(DiagnosticItem.EffectiveSeverity))
-            {
-                UpdateSeverityMenuItemsChecked();
-            }
-        }
-
         private void SelectedHierarchyItemChangedHandler(object sender, EventArgs e)
         {
-            UpdateMenuItemVisibility();
+            UpdateOtherMenuItemsVisibility();
         }
 
-        private void UpdateMenuItemVisibility()
+        private void UpdateOtherMenuItemsVisibility()
         {
             bool selectedProjectSupportsAnalyzers = SelectedProjectSupportsAnalyzers();
-            _addMenuItem.Visible = selectedProjectSupportsAnalyzers;
             _projectAddMenuItem.Visible = selectedProjectSupportsAnalyzers;
             _projectContextAddMenuItem.Visible = selectedProjectSupportsAnalyzers && _tracker.SelectedItemId == VSConstants.VSITEMID_ROOT;
             _referencesContextAddMenuItem.Visible = selectedProjectSupportsAnalyzers;
-
-            _openHelpLinkMenuItem.Visible = _tracker.SelectedDiagnosticItems.Length == 1 &&
-                                            !string.IsNullOrWhiteSpace(_tracker.SelectedDiagnosticItems[0].Descriptor.HelpLinkUri);
-
 
             string itemName;
             _setActiveRuleSetMenuItem.Visible = selectedProjectSupportsAnalyzers &&
@@ -154,24 +225,104 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
                                                 Path.GetExtension(itemName).Equals(".ruleset", StringComparison.OrdinalIgnoreCase);
         }
 
+        private void UpdateOtherMenuItemsEnabled()
+        {
+            _projectAddMenuItem.Enabled = _allowProjectSystemOperations;
+            _projectContextAddMenuItem.Enabled = _allowProjectSystemOperations;
+            _referencesContextAddMenuItem.Enabled = _allowProjectSystemOperations;
+            _removeMenuItem.Enabled = _allowProjectSystemOperations;
+        }
+
+        private void UpdateOpenHelpLinkMenuItemVisibility()
+        {
+            _openHelpLinkMenuItem.Visible = _tracker.SelectedDiagnosticItems.Length == 1 &&
+                                            _tracker.SelectedDiagnosticItems[0].GetHelpLink() != null;
+        }
+
         private void UpdateSeverityMenuItemsChecked()
         {
-            _setSeverityErrorMenuItem.Checked = AnyDiagnosticsWithSeverity(ReportDiagnostic.Error);
-            _setSeverityWarningMenuItem.Checked = AnyDiagnosticsWithSeverity(ReportDiagnostic.Warn);
-            _setSeverityInfoMenuItem.Checked = AnyDiagnosticsWithSeverity(ReportDiagnostic.Info);
-            _setSeverityHiddenMenuItem.Checked = AnyDiagnosticsWithSeverity(ReportDiagnostic.Hidden);
-            _setSeverityNoneMenuItem.Checked = AnyDiagnosticsWithSeverity(ReportDiagnostic.Suppress);
+            _setSeverityDefaultMenuItem.Checked = false;
+            _setSeverityErrorMenuItem.Checked = false;
+            _setSeverityWarningMenuItem.Checked = false;
+            _setSeverityInfoMenuItem.Checked = false;
+            _setSeverityHiddenMenuItem.Checked = false;
+            _setSeverityNoneMenuItem.Checked = false;
+
+            var workspace = TryGetWorkspace() as VisualStudioWorkspaceImpl;
+            if (workspace == null)
+            {
+                return;
+            }
+
+            HashSet<ReportDiagnostic> selectedItemSeverities = new HashSet<ReportDiagnostic>();
+
+            var groups = _tracker.SelectedDiagnosticItems.GroupBy(item => item.AnalyzerItem.AnalyzersFolder.ProjectId);
+
+            foreach (var group in groups)
+            {
+                var project = (AbstractProject)workspace.GetHostProject(group.Key);
+                IRuleSetFile ruleSet = project.RuleSetFile;
+
+                if (ruleSet != null)
+                {
+                    var specificOptions = ruleSet.GetSpecificDiagnosticOptions();
+
+                    foreach (var diagnosticItem in group)
+                    {
+                        ReportDiagnostic ruleSetSeverity;
+                        if (specificOptions.TryGetValue(diagnosticItem.Descriptor.Id, out ruleSetSeverity))
+                        {
+                            selectedItemSeverities.Add(ruleSetSeverity);
+                        }
+                        else
+                        {
+                            // The rule has no setting.
+                            selectedItemSeverities.Add(ReportDiagnostic.Default);
+                        }
+                    }
+                }
+            }
+
+            if (selectedItemSeverities.Count != 1)
+            {
+                return;
+            }
+
+            switch (selectedItemSeverities.Single())
+            {
+                case ReportDiagnostic.Default:
+                    _setSeverityDefaultMenuItem.Checked = true;
+                    break;
+                case ReportDiagnostic.Error:
+                    _setSeverityErrorMenuItem.Checked = true;
+                    break;
+                case ReportDiagnostic.Warn:
+                    _setSeverityWarningMenuItem.Checked = true;
+                    break;
+                case ReportDiagnostic.Info:
+                    _setSeverityInfoMenuItem.Checked = true;
+                    break;
+                case ReportDiagnostic.Hidden:
+                    _setSeverityHiddenMenuItem.Checked = true;
+                    break;
+                case ReportDiagnostic.Suppress:
+                    _setSeverityNoneMenuItem.Checked = true;
+                    break;
+                default:
+                    break;
+            }
         }
 
         private bool AnyDiagnosticsWithSeverity(ReportDiagnostic severity)
         {
-            return _selectedDiagnosticItems.Any(item => item.EffectiveSeverity == severity);
+            return _tracker.SelectedDiagnosticItems.Any(item => item.EffectiveSeverity == severity);
         }
 
         private void UpdateSeverityMenuItemsEnabled()
         {
-            bool configurable = !_selectedDiagnosticItems.Any(item => item.Descriptor.CustomTags.Contains(WellKnownDiagnosticTags.NotConfigurable));
+            bool configurable = !_tracker.SelectedDiagnosticItems.Any(item => item.Descriptor.CustomTags.Contains(WellKnownDiagnosticTags.NotConfigurable));
 
+            _setSeverityDefaultMenuItem.Enabled = configurable;
             _setSeverityErrorMenuItem.Enabled = configurable;
             _setSeverityWarningMenuItem.Enabled = configurable;
             _setSeverityInfoMenuItem.Enabled = configurable;
@@ -222,16 +373,15 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
                 if (workspace != null)
                 {
                     var project = (AbstractProject)workspace.GetHostProject(projectId);
-
                     if (project == null)
                     {
-                        SendUnableToOpenRuleSetNotification(workspace, string.Format(SolutionExplorerShim.AnalyzersCommandHandler_CouldNotFindProject, projectId));
+                        SendUnableToOpenRuleSetNotification(workspace, string.Format(SolutionExplorerShim.Could_not_find_project_0, projectId));
                         return;
                     }
 
                     if (project.RuleSetFile == null)
                     {
-                        SendUnableToOpenRuleSetNotification(workspace, SolutionExplorerShim.AnalyzersCommandHandler_NoRuleSetFile);
+                        SendUnableToOpenRuleSetNotification(workspace, SolutionExplorerShim.No_rule_set_file_is_specified_or_the_file_does_not_exist);
                         return;
                     }
 
@@ -272,7 +422,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
 
                 if (project == null)
                 {
-                    SendUnableToUpdateRuleSetNotification(workspace, string.Format(SolutionExplorerShim.AnalyzersCommandHandler_CouldNotFindProject, projectId));
+                    SendUnableToUpdateRuleSetNotification(workspace, string.Format(SolutionExplorerShim.Could_not_find_project_0, projectId));
                     continue;
                 }
 
@@ -280,7 +430,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
 
                 if (pathToRuleSet == null)
                 {
-                    SendUnableToUpdateRuleSetNotification(workspace, SolutionExplorerShim.AnalyzersCommandHandler_NoRuleSetFile);
+                    SendUnableToUpdateRuleSetNotification(workspace, SolutionExplorerShim.No_rule_set_file_is_specified_or_the_file_does_not_exist);
                     continue;
                 }
 
@@ -294,7 +444,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
                         pathToRuleSet = CreateCopyOfRuleSetForProject(pathToRuleSet, envDteProject);
                         if (pathToRuleSet == null)
                         {
-                            SendUnableToUpdateRuleSetNotification(workspace, string.Format(SolutionExplorerShim.AnalyzersCommandHandler_CouldNotCreateRuleSetFile, envDteProject.Name));
+                            SendUnableToUpdateRuleSetNotification(workspace, string.Format(SolutionExplorerShim.Could_not_create_a_rule_set_for_project_0, envDteProject.Name));
                             continue;
                         }
 
@@ -305,8 +455,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
                     var componentModel = (IComponentModel)_serviceProvider.GetService(typeof(SComponentModel));
                     var waitIndicator = componentModel.GetService<IWaitIndicator>();
                     waitIndicator.Wait(
-                        title: SolutionExplorerShim.AnalyzersCommandHandler_RuleSet,
-                        message: string.Format(SolutionExplorerShim.AnalyzersCommandHandler_CheckingOutRuleSet, Path.GetFileName(pathToRuleSet)),
+                        title: SolutionExplorerShim.Rule_Set,
+                        message: string.Format(SolutionExplorerShim.Checking_out_0_for_editing, Path.GetFileName(pathToRuleSet)),
                         allowCancel: false,
                         action: c =>
                         {
@@ -327,29 +477,29 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
 
         private void OpenDiagnosticHelpLinkHandler(object sender, EventArgs e)
         {
-            if (_tracker.SelectedDiagnosticItems.Length != 1 ||
-                string.IsNullOrWhiteSpace(_tracker.SelectedDiagnosticItems[0].Descriptor.HelpLinkUri))
+            if (_tracker.SelectedDiagnosticItems.Length != 1)
             {
                 return;
             }
 
-            string link = _tracker.SelectedDiagnosticItems[0].Descriptor.HelpLinkUri;
-
-            Uri uri;
-            if (BrowserHelper.TryGetUri(link, out uri))
+            var uri = _tracker.SelectedDiagnosticItems[0].GetHelpLink();
+            if (uri != null)
             {
-                BrowserHelper.StartBrowser(_serviceProvider, uri);
+                BrowserHelper.StartBrowser(uri);
             }
         }
 
         private void SetActiveRuleSetHandler(object sender, EventArgs e)
         {
             EnvDTE.Project project;
-            string fileName;
+            string ruleSetFileFullPath;
             if (_tracker.SelectedHierarchy.TryGetProject(out project) &&
-                _tracker.SelectedHierarchy.TryGetItemName(_tracker.SelectedItemId, out fileName))
+                _tracker.SelectedHierarchy.TryGetCanonicalName(_tracker.SelectedItemId, out ruleSetFileFullPath))
             {
-                UpdateProjectConfigurationsToUseRuleSetFile(project, fileName);
+                string projectDirectoryFullPath = Path.GetDirectoryName(project.FullName);
+                string ruleSetFileRelativePath = FilePathUtilities.GetRelativePath(projectDirectoryFullPath, ruleSetFileFullPath);
+
+                UpdateProjectConfigurationsToUseRuleSetFile(project, ruleSetFileRelativePath);
             }
         }
 
@@ -373,7 +523,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
 
                 try
                 {
-                    EnvDTE.Property codeAnalysisRuleSetFileProperty = properties.Item("CodeAnalysisRuleSet");
+                    EnvDTE.Property codeAnalysisRuleSetFileProperty = properties?.Item("CodeAnalysisRuleSet");
 
                     if (codeAnalysisRuleSetFileProperty != null)
                     {
@@ -425,6 +575,10 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
             {
                 switch (selectedItem.CommandID.ID)
                 {
+                    case ID.RoslynCommands.SetSeverityDefault:
+                        selectedAction = ReportDiagnostic.Default;
+                        break;
+
                     case ID.RoslynCommands.SetSeverityError:
                         selectedAction = ReportDiagnostic.Error;
                         break;
@@ -458,7 +612,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
         {
             SendErrorNotification(
                 workspace,
-                SolutionExplorerShim.AnalyzersCommandHandler_RuleSetFileCouldNotBeOpened,
+                SolutionExplorerShim.The_rule_set_file_could_not_be_opened,
                 message);
         }
 
@@ -466,27 +620,29 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
         {
             SendErrorNotification(
                 workspace,
-                SolutionExplorerShim.AnalyzersCommandHandler_RuleSetFileCouldNotBeUpdated,
+                SolutionExplorerShim.The_rule_set_file_could_not_be_updated,
                 message);
         }
 
-        private void SendErrorNotification(Workspace workspace, string title, string message)
+        private void SendErrorNotification(Workspace workspace, string message1, string message2)
         {
             var notificationService = workspace.Services.GetService<INotificationService>();
 
-            notificationService.SendNotification(message, title, NotificationSeverity.Error);
+            notificationService.SendNotification(message1 + Environment.NewLine + Environment.NewLine + message2, severity: NotificationSeverity.Error);
         }
 
         int IVsUpdateSolutionEvents.UpdateSolution_Begin(ref int pfCancelUpdate)
         {
-            DisableMenuItems();
+            _allowProjectSystemOperations = false;
+            UpdateOtherMenuItemsEnabled();
 
             return VSConstants.S_OK;
         }
 
         int IVsUpdateSolutionEvents.UpdateSolution_Done(int fSucceeded, int fModified, int fCancelCommand)
         {
-            EnableMenuItems();
+            _allowProjectSystemOperations = true;
+            UpdateOtherMenuItemsEnabled();
 
             return VSConstants.S_OK;
         }
@@ -498,7 +654,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
 
         int IVsUpdateSolutionEvents.UpdateSolution_Cancel()
         {
-            EnableMenuItems();
+            _allowProjectSystemOperations = true;
+            UpdateOtherMenuItemsEnabled();
 
             return VSConstants.S_OK;
         }
@@ -506,24 +663,6 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
         int IVsUpdateSolutionEvents.OnActiveProjectCfgChange(IVsHierarchy pIVsHierarchy)
         {
             return VSConstants.S_OK;
-        }
-
-        private void DisableMenuItems()
-        {
-            _addMenuItem.Enabled = false;
-            _projectAddMenuItem.Enabled = false;
-            _projectContextAddMenuItem.Enabled = false;
-            _referencesContextAddMenuItem.Enabled = false;
-            _removeMenuItem.Enabled = false;
-        }
-
-        private void EnableMenuItems()
-        {
-            _addMenuItem.Enabled = true;
-            _projectAddMenuItem.Enabled = true;
-            _projectContextAddMenuItem.Enabled = true;
-            _referencesContextAddMenuItem.Enabled = true;
-            _removeMenuItem.Enabled = true;
         }
 
         private Workspace TryGetWorkspace()

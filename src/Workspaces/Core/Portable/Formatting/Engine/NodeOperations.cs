@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.Formatting.Rules;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.Formatting
 {
@@ -15,10 +13,10 @@ namespace Microsoft.CodeAnalysis.Formatting
     {
         public static NodeOperations Empty = new NodeOperations();
 
-        public Task<List<IndentBlockOperation>> IndentBlockOperationTask { get; private set; }
-        public Task<List<SuppressOperation>> SuppressOperationTask { get; private set; }
-        public Task<List<AlignTokensOperation>> AlignmentOperationTask { get; private set; }
-        public Task<List<AnchorIndentationOperation>> AnchorIndentationOperationsTask { get; private set; }
+        public Task<List<IndentBlockOperation>> IndentBlockOperationTask { get; }
+        public Task<List<SuppressOperation>> SuppressOperationTask { get; }
+        public Task<List<AlignTokensOperation>> AlignmentOperationTask { get; }
+        public Task<List<AnchorIndentationOperation>> AnchorIndentationOperationsTask { get; }
 
         public NodeOperations(Task<List<IndentBlockOperation>> indentBlockOperationTask, Task<List<SuppressOperation>> suppressOperationTask, Task<List<AnchorIndentationOperation>> anchorIndentationOperationsTask, Task<List<AlignTokensOperation>> alignmentOperationTask)
         {

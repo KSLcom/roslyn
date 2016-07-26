@@ -2,10 +2,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Editor;
@@ -13,7 +13,6 @@ using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Formatting.Rules;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.LanguageServices;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Shared.Extensions;
@@ -21,6 +20,7 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.Text.Shared.Extensions;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem;
+using Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem.Legacy;
 using Microsoft.VisualStudio.LanguageServices.Implementation.Utilities;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -43,8 +43,10 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private const string ReturnReplacementString = @"{|r|}";
         private const string NewLineReplacementString = @"{|n|}";
 
-        private const string HTML = "HTML";
-        private const string Razor = "Razor";
+        private const string HTML = nameof(HTML);
+        private const string HTMLX = nameof(HTMLX);
+        private const string Razor = nameof(Razor);
+        private const string XOML = nameof(XOML);
 
         private const char RazorExplicit = '@';
 
@@ -65,18 +67,18 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private readonly IComponentModel _componentModel;
         private readonly Workspace _workspace;
         private readonly ITextDifferencingSelectorService _differenceSelectorService;
-        private readonly IOptionService _optionService;
         private readonly HostType _hostType;
         private readonly ReiteratedVersionSnapshotTracker _snapshotTracker;
         private readonly IFormattingRule _vbHelperFormattingRule;
         private readonly string _itemMoniker;
 
         public AbstractProject Project { get { return _containedLanguage.Project; } }
-        public DocumentId Id { get; private set; }
-        public IReadOnlyList<string> Folders { get; private set; }
-        public TextLoader Loader { get; private set; }
-        public DocumentKey Key { get; private set; }
         public bool SupportsRename { get { return _hostType == HostType.Razor; } }
+
+        public DocumentId Id { get; }
+        public IReadOnlyList<string> Folders { get; }
+        public TextLoader Loader { get; }
+        public DocumentKey Key { get; }
 
         public ContainedDocument(
             AbstractContainedLanguage containedLanguage,
@@ -88,16 +90,25 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
             IFormattingRule vbHelperFormattingRule)
         {
             Contract.ThrowIfNull(containedLanguage);
+            Contract.ThrowIfFalse(containedLanguage.Project is AbstractLegacyProject);
 
             _containedLanguage = containedLanguage;
             _sourceCodeKind = sourceCodeKind;
             _componentModel = componentModel;
             _workspace = workspace;
-            _optionService = _workspace.Services.GetService<IOptionService>();
             _hostType = GetHostType();
 
-            var rdt = (IVsRunningDocumentTable)componentModel.GetService<SVsServiceProvider>().GetService(typeof(SVsRunningDocumentTable));
-            var filePath = rdt.GetMonikerForHierarchyAndItemId(hierarchy, itemId);
+            string filePath;
+            if (!ErrorHandler.Succeeded(((IVsProject)hierarchy).GetMkDocument(itemId, out filePath)))
+            {
+                // we couldn't look up the document moniker from an hierarchy for an itemid.
+                // Since we only use this moniker as a key, we could fall back to something else, like the document name.
+                Debug.Assert(false, "Could not get the document moniker for an item from its hierarchy.");
+                if (!hierarchy.TryGetItemName(itemId, out filePath))
+                {
+                    Environment.FailFast("Failed to get document moniker for a contained document");
+                }
+            }
 
             if (Project.Hierarchy != null)
             {
@@ -108,7 +119,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 
             this.Key = new DocumentKey(Project, filePath);
             this.Id = DocumentId.CreateNewId(Project.Id, filePath);
-            this.Folders = containedLanguage.Project.GetFolderNames(itemId);
+            this.Folders = ((AbstractLegacyProject)containedLanguage.Project).GetFolderNames(itemId);
             this.Loader = TextLoader.From(containedLanguage.SubjectBuffer.AsTextContainer(), VersionStamp.Create(), filePath);
             _differenceSelectorService = componentModel.GetService<ITextDifferencingSelectorService>();
             _snapshotTracker = new ReiteratedVersionSnapshotTracker(_containedLanguage.SubjectBuffer);
@@ -117,14 +128,34 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 
         private HostType GetHostType()
         {
-            if (_containedLanguage.DataBuffer.SourceBuffers.Any(b => b.ContentType.IsOfType(HTML)))
+            var projectionBuffer = _containedLanguage.DataBuffer as IProjectionBuffer;
+            if (projectionBuffer != null)
             {
-                return HostType.HTML;
-            }
+                // For TypeScript hosted in HTML the source buffers will have type names
+                // HTMLX and TypeScript. RazorCSharp has an HTMLX base type but should 
+                // not be associated with the HTML host type. Use ContentType.TypeName 
+                // instead of ContentType.IsOfType for HTMLX to ensure the Razor host 
+                // type is identified correctly.
+                if (projectionBuffer.SourceBuffers.Any(b => b.ContentType.IsOfType(HTML) ||
+                    string.Compare(HTMLX, b.ContentType.TypeName, StringComparison.OrdinalIgnoreCase) == 0))
+                {
+                    return HostType.HTML;
+                }
 
-            if (_containedLanguage.DataBuffer.SourceBuffers.Any(b => b.ContentType.IsOfType(Razor)))
+                if (projectionBuffer.SourceBuffers.Any(b => b.ContentType.IsOfType(Razor)))
+                {
+                    return HostType.Razor;
+                }
+            }
+            else
             {
-                return HostType.Razor;
+                // XOML is set up differently. For XOML, the secondary buffer (i.e. SubjectBuffer)
+                // is a projection buffer, while the primary buffer (i.e. DataBuffer) is not. Instead,
+                // the primary buffer is a regular unprojected ITextBuffer with the HTML content type.
+                if (_containedLanguage.DataBuffer.CurrentSnapshot.ContentType.IsOfType(HTML))
+                {
+                    return HostType.XOML;
+                }
             }
 
             throw ExceptionUtilities.Unreachable;
@@ -373,7 +404,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private bool TryGetSubTextChanges(
             SourceText originalText, TextSpan visibleSpanInOriginalText, string leftText, string rightText, int offsetInOriginalText, List<TextChange> changes)
         {
-            // these are expensive. but hopely, we don't hit this as much except the boundary cases.
+            // these are expensive. but hopefully we don't hit this as much except the boundary cases.
             using (var leftPool = SharedPools.Default<List<TextSpan>>().GetPooledObject())
             using (var rightPool = SharedPools.Default<List<TextSpan>>().GetPooledObject())
             {
@@ -410,7 +441,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private IEnumerable<TextChange> GetSubTextChanges(
             SourceText originalText, TextSpan visibleSpanInOriginalText, string leftText, string rightText, int offsetInOriginalText)
         {
-            // these are expensive. but hopely, we don't hit this as much except the boundary cases.
+            // these are expensive. but hopefully we don't hit this as much except the boundary cases.
             using (var leftPool = SharedPools.Default<List<ValueTuple<int, int>>>().GetPooledObject())
             using (var rightPool = SharedPools.Default<List<ValueTuple<int, int>>>().GetPooledObject())
             {
@@ -534,7 +565,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
             var firstLineOfRightTextSnippet = snippetInRightText.GetFirstLineText();
             var lastLineOfRightTextSnippet = snippetInRightText.GetLastLineText();
 
-            // there are 4 complex cases - these are all heuristic. not sure what better way I have. and the heristic is heavily based on
+            // there are 4 complex cases - these are all heuristic. not sure what better way I have. and the heuristic is heavily based on
             // text differ's behavior.
 
             // 1. it is a single line
@@ -629,17 +660,17 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 
         private static string GetReplacementStrings(string leftText, string rightText, string initialReplacement)
         {
-            if (leftText.IndexOf(initialReplacement) < 0 && rightText.IndexOf(initialReplacement) < 0)
+            if (leftText.IndexOf(initialReplacement, StringComparison.Ordinal) < 0 && rightText.IndexOf(initialReplacement, StringComparison.Ordinal) < 0)
             {
                 return initialReplacement;
             }
 
             // okay, there is already one in the given text.
-            var format = "{{|{0}|{1}|{0}|}}";
+            const string format = "{{|{0}|{1}|{0}|}}";
             for (var i = 0; true; i++)
             {
                 var replacement = string.Format(format, i.ToString(), initialReplacement);
-                if (leftText.IndexOf(replacement) < 0 && rightText.IndexOf(replacement) < 0)
+                if (leftText.IndexOf(replacement, StringComparison.Ordinal) < 0 && rightText.IndexOf(replacement, StringComparison.Ordinal) < 0)
                 {
                     return replacement;
                 }
@@ -707,11 +738,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         public IEnumerable<TextSpan> GetEditorVisibleSpans()
         {
             var subjectBuffer = (IProjectionBuffer)this.GetOpenTextBuffer();
-            return _containedLanguage.DataBuffer.CurrentSnapshot
-                       .GetSourceSpans()
-                       .Where(ss => ss.Snapshot.TextBuffer == subjectBuffer)
-                       .Select(s => s.Span.ToTextSpan())
-                       .OrderBy(s => s.Start);
+
+            var projectionDataBuffer = _containedLanguage.DataBuffer as IProjectionBuffer;
+            if (projectionDataBuffer != null)
+            {
+                return projectionDataBuffer.CurrentSnapshot
+                    .GetSourceSpans()
+                    .Where(ss => ss.Snapshot.TextBuffer == subjectBuffer)
+                    .Select(s => s.Span.ToTextSpan())
+                    .OrderBy(s => s.Start);
+            }
+            else
+            {
+                return SpecializedCollections.EmptyEnumerable<TextSpan>();
+            }
         }
 
         private static void ApplyChanges(
@@ -762,10 +802,15 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 
             var snapshot = subjectBuffer.CurrentSnapshot;
             var document = _workspace.CurrentSolution.GetDocument(this.Id);
+            if (!document.SupportsSyntaxTree)
+            {
+                return;
+            }
+
             var originalText = document.GetTextAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None);
             Contract.Requires(object.ReferenceEquals(originalText, snapshot.AsText()));
 
-            var root = document.GetSyntaxRootAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None);
+            var root = document.GetSyntaxRootSynchronously(CancellationToken.None);
 
             var editorOptionsFactory = _componentModel.GetService<IEditorOptionsFactoryService>();
             var editorOptions = editorOptionsFactory.GetOptions(_containedLanguage.DataBuffer);
@@ -797,7 +842,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private void AdjustIndentationForSpan(
             Document document, ITextEdit edit, TextSpan visibleSpan, IFormattingRule baseIndentationRule, OptionSet options)
         {
-            var root = document.GetSyntaxRootAsync(CancellationToken.None).WaitAndGetResult(CancellationToken.None);
+            var root = document.GetSyntaxRootSynchronously(CancellationToken.None);
 
             using (var rulePool = SharedPools.Default<List<IFormattingRule>>().GetPooledObject())
             using (var spanPool = SharedPools.Default<List<TextSpan>>().GetPooledObject())
@@ -911,6 +956,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
                         out indentSize,
                         out useTabs,
                         out tabSize));
+
                 if (!string.IsNullOrEmpty(baseIndentationString))
                 {
                     return baseIndentationString.GetColumnFromLineOffset(baseIndentationString.Length, editorOptions.GetTabSize()) + additionalIndentation;
@@ -962,7 +1008,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         {
             if (_hostType == HostType.HTML)
             {
-                return _optionService.GetOption(FormattingOptions.IndentationSize, this.Project.Language);
+                return _workspace.Options.GetOption(FormattingOptions.IndentationSize, this.Project.Language);
             }
 
             if (_hostType == HostType.Razor)
@@ -1020,7 +1066,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
                         }
                     }
 
-                    return _optionService.GetOption(FormattingOptions.IndentationSize, this.Project.Language);
+                    return _workspace.Options.GetOption(FormattingOptions.IndentationSize, this.Project.Language);
                 }
             }
 
@@ -1029,9 +1075,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
 
         private RazorCodeBlockType GetRazorCodeBlockType(int position)
         {
+            Debug.Assert(_hostType == HostType.Razor);
+
             var subjectBuffer = (IProjectionBuffer)this.GetOpenTextBuffer();
             var subjectSnapshot = subjectBuffer.CurrentSnapshot;
-            var surfaceSnapshot = _containedLanguage.DataBuffer.CurrentSnapshot;
+            var surfaceSnapshot = ((IProjectionBuffer)_containedLanguage.DataBuffer).CurrentSnapshot;
 
             var surfacePoint = surfaceSnapshot.MapFromSourceSnapshot(new SnapshotPoint(subjectSnapshot, position), PositionAffinity.Predecessor);
             if (!surfacePoint.HasValue)
@@ -1138,8 +1186,9 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
             }
 
             uint itemId;
-            Project.Hierarchy.ParseCanonicalName(_itemMoniker, out itemId);
-            return itemId;
+            return Project.Hierarchy.ParseCanonicalName(_itemMoniker, out itemId) == VSConstants.S_OK
+                ? itemId
+                : (uint)VSConstants.VSITEMID.Nil;
         }
 
         private enum RazorCodeBlockType
@@ -1153,7 +1202,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Venus
         private enum HostType
         {
             HTML,
-            Razor
+            Razor,
+            XOML
         }
     }
 }

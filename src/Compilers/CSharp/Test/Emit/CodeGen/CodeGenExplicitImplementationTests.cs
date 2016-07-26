@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
@@ -131,7 +132,7 @@ I2.Property
 ");
         }
 
-        [WorkItem(540431, "DevDiv")]
+        [WorkItem(540431, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540431")]
         [Fact]
         public void TestExpImpInterfaceImplementationMetadata()
         {
@@ -222,7 +223,7 @@ class Test
             CompileAndVerify(comp, expectedOutput: @"CSS11Imp CSS1Exp CSS11Exp CSF1Imp CSF1Exp CSF11Exp");
         }
 
-        [WorkItem(540431, "DevDiv")]
+        [WorkItem(540431, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540431")]
         [Fact]
         public void TestVBInterfaceImplementationMetadata()
         {
@@ -255,7 +256,7 @@ class Test
             CompileAndVerify(comp, expectedOutput: @"VBS1_V VBS1_V VBS11_OL VBF1_V VBF1_V VBF11");
         }
 
-        [WorkItem(540431, "DevDiv")]
+        [WorkItem(540431, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540431")]
         [Fact]
         public void TestExpImpInterfaceImplementationPropMetadata()
         {
@@ -378,7 +379,7 @@ class Test
         }
 
         [Fact]
-        public void TestExplicitImplSigntureMismatches_ParamsAndOptionals()
+        public void TestExplicitImplSignatureMismatches_ParamsAndOptionals()
         {
             // Tests:
             // Replace params with non-params in signature of implemented member (and vice-versa)
@@ -463,7 +464,7 @@ Class2.Method(4, 5, c)",
                 Diagnostic(ErrorCode.WRN_DefaultValueForUnconsumedLocation, "d").WithArguments("d"));
         }
 
-        [WorkItem(540501, "DevDiv")]
+        [WorkItem(540501, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540501")]
         [Fact]
         public void TestImplementingGenericNestedInterfaces_Explicit()
         {
@@ -619,7 +620,7 @@ Derived6.Method",
             comp.VerifyDiagnostics(); // No Errors
         }
 
-        [WorkItem(540501, "DevDiv")]
+        [WorkItem(540501, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/540501")]
         [Fact]
         public void TestImplementingGenericNestedInterfaces_Explicit_HideTypeParameter()
         {
@@ -691,7 +692,7 @@ Derived1.Method`2",
             // Tests:
             // Implement I<string> explicitly in base class and I<int> explicitly in derived class –
             // assuming I<string> and I<int> have members with same signature (i.e. members 
-            // that don’t depend on generic-ness of the interface) test which (base / derived class) 
+            // that don't depend on generic-ness of the interface) test which (base / derived class) 
             // members are invoked when calling through each interface
 
             var source = @"
@@ -757,7 +758,7 @@ Derived`2.Method()");
         public void TestExplicitImplementationInBaseGenericType2()
         {
             // Tests:
-            // Variation of TestExplciitImplementationInBaseGenericType with re-implementation
+            // Variation of TestExplicitImplementationInBaseGenericType with re-implementation
 
             var source = @"
 using System;
@@ -930,12 +931,12 @@ I1.M9
 I1.P").VerifyDiagnostics(); // No errors
         }
 
-        [WorkItem(543426, "DevDiv")]
+        [WorkItem(543426, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543426")]
         [Fact]
         public void TestExplicitlyImplementInterfaceNestedInGenericType()
         {
             // Tests:
-            // Variation of TestExplciitImplementationInBaseGenericType with re-implementation
+            // Variation of TestExplicitImplementationInBaseGenericType with re-implementation
 
             var source = @"
 class Outer<T>
@@ -961,7 +962,7 @@ class Outer<T>
             comp.VerifyDiagnostics(); // No errors
         }
 
-        [WorkItem(598052, "DevDiv")]
+        [WorkItem(598052, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/598052")]
         [Fact]
         public void TestExternAliasInName()
         {
@@ -995,13 +996,13 @@ class C : Q::I
             var classCMembers = classC.GetMembers();
 
             // The alias is preserved, in case a similar interface is implemented from another aliased assembly.
-            AssertEx.All(classCMembers.Select(m => m.Name), name => name == WellKnownMemberNames.InstanceConstructorName || name.StartsWith("Q::I."));
-            AssertEx.All(classCMembers.Select(m => m.MetadataName), metadataName => metadataName == WellKnownMemberNames.InstanceConstructorName || metadataName.StartsWith("Q::I."));
+            AssertEx.All(classCMembers.Select(m => m.Name), name => name == WellKnownMemberNames.InstanceConstructorName || name.StartsWith("Q::I.", StringComparison.Ordinal));
+            AssertEx.All(classCMembers.Select(m => m.MetadataName), metadataName => metadataName == WellKnownMemberNames.InstanceConstructorName || metadataName.StartsWith("Q::I.", StringComparison.Ordinal));
             AssertEx.None(classCMembers.Select(m => m.ToString()), id => id.Contains("Q"));
             AssertEx.None(classCMembers.Select(m => m.GetDocumentationCommentId()), id => id.Contains("Q"));
         }
 
-        [WorkItem(598052, "DevDiv")]
+        [WorkItem(598052, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/598052")]
         [Fact]
         public void TestImplementMultipleExternAliasInterfaces()
         {
@@ -1061,7 +1062,9 @@ class C : A::I, B::I
             });
 
             // Simple verification that the test infrastructure supports such methods.
-            verifier2.VerifyIL("A$$C.I.M()", @"
+            var testData = verifier2.TestData;
+            var pair = testData.Methods.Single(m => m.Key.Name == "A::I.M");
+            pair.Value.VerifyIL(@"
 {
   // Code size        1 (0x1)
   .maxstack  0

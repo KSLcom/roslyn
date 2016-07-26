@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Threading;
 using Microsoft.CodeAnalysis;
@@ -25,8 +24,8 @@ namespace Roslyn.Utilities
         // a different tree will either return the same type of node as the original, or will fail.  
         protected struct PathSegment
         {
-            public int Ordinal { get; private set; }
-            public int Kind { get; private set; }
+            public int Ordinal { get; }
+            public int Kind { get; }
 
             public PathSegment(int ordinal, int kind)
                 : this()
@@ -53,7 +52,7 @@ namespace Roslyn.Utilities
             var parent = nodeOrToken.Parent;
             if (parent != null)
             {
-                AddSegment((SyntaxNodeOrToken)parent);
+                AddSegment(parent);
 
                 // TODO(cyrusn): Is there any way to optimize this for large lists?  I would like to
                 // be able to do a binary search.  However, there's no easy way to tell if a node

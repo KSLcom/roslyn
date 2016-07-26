@@ -52,7 +52,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             }
         }
 
-        private void TypeChecks(TypeSymbol type, BaseFieldDeclarationSyntax fieldSyntax, VariableDeclaratorSyntax declarator, DiagnosticBag diagnostics)
+        private void TypeChecks(TypeSymbol type, BaseFieldDeclarationSyntax fieldSyntax, DiagnosticBag diagnostics)
         {
             if (type.IsStatic)
             {
@@ -248,7 +248,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                             fieldsBeingBound = new ConsList<FieldSymbol>(this, fieldsBeingBound);
 
                             var initializerBinder = new ImplicitlyTypedFieldBinder(binder, fieldsBeingBound);
-                            var initializerOpt = initializerBinder.BindInferredVariableInitializer(diagnostics, declarator.Initializer, declarator);
+                            var initializerOpt = initializerBinder.BindInferredVariableInitializer(diagnostics, RefKind.None, (EqualsValueClauseSyntax)declarator.Initializer, declarator);
 
                             if (initializerOpt != null)
                             {
@@ -275,16 +275,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                         diagnostics.Add(ErrorCode.ERR_FixedNotInStruct, ErrorLocation);
                     }
 
-                    if (IsStatic)
-                    {
-                        diagnostics.Add(ErrorCode.ERR_BadMemberFlag, ErrorLocation, SyntaxFacts.GetText(SyntaxKind.StaticKeyword));
-                    }
-
-                    if (IsVolatile)
-                    {
-                        diagnostics.Add(ErrorCode.ERR_BadMemberFlag, ErrorLocation, SyntaxFacts.GetText(SyntaxKind.VolatileKeyword));
-                    }
-
                     var elementType = ((PointerTypeSymbol)type).PointedAtType;
                     int elementSize = elementType.FixedBufferElementSizeInBytes();
                     if (elementSize == 0)
@@ -303,15 +293,15 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             // update the lazyType only if it contains value last seen by the current thread:
             if ((object)Interlocked.CompareExchange(ref _lazyType, type, null) == null)
             {
-                TypeChecks(type, fieldSyntax, declarator, diagnostics);
+                TypeChecks(type, fieldSyntax, diagnostics);
 
                 // CONSIDER: SourceEventFieldSymbol would like to suppress these diagnostics.
-                compilation.SemanticDiagnostics.AddRange(diagnostics);
+                compilation.DeclarationDiagnostics.AddRange(diagnostics);
 
                 bool isFirstDeclarator = fieldSyntax.Declaration.Variables[0] == declarator;
                 if (isFirstDeclarator)
                 {
-                    compilation.SemanticDiagnostics.AddRange(diagnosticsForFirstDeclarator);
+                    compilation.DeclarationDiagnostics.AddRange(diagnosticsForFirstDeclarator);
                 }
 
                 state.NotePartComplete(CompletionPart.Type);
@@ -365,10 +355,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         protected sealed override ConstantValue MakeConstantValue(HashSet<SourceFieldSymbolWithSyntaxReference> dependencies, bool earlyDecodingWellKnownAttributes, DiagnosticBag diagnostics)
         {
-            EqualsValueClauseSyntax initializer;
-            return !this.IsConst || ((initializer = VariableDeclaratorNode.Initializer) == null)
-                ? null
-                : ConstantValueUtils.EvaluateFieldConstant(this, initializer, dependencies, earlyDecodingWellKnownAttributes, diagnostics);
+            if (!this.IsConst || VariableDeclaratorNode.Initializer == null)
+            {
+                return null;
+            }
+
+            return ConstantValueUtils.EvaluateFieldConstant(this, (EqualsValueClauseSyntax)VariableDeclaratorNode.Initializer, dependencies, earlyDecodingWellKnownAttributes, diagnostics);
         }
 
         public override int FixedSize
@@ -411,6 +403,37 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 diagnostics.Add(ErrorCode.ERR_AbstractField, errorLocation);
                 result &= ~DeclarationModifiers.Abstract;
             }
+
+            if ((result & DeclarationModifiers.Fixed) != 0)
+            {
+                if ((result & DeclarationModifiers.Static) != 0)
+                {
+                    // The modifier 'static' is not valid for this item
+                    diagnostics.Add(ErrorCode.ERR_BadMemberFlag, errorLocation, SyntaxFacts.GetText(SyntaxKind.StaticKeyword));
+                }
+
+                if ((result & DeclarationModifiers.ReadOnly) != 0)
+                {
+                    // The modifier 'readonly' is not valid for this item
+                    diagnostics.Add(ErrorCode.ERR_BadMemberFlag, errorLocation, SyntaxFacts.GetText(SyntaxKind.ReadOnlyKeyword));
+                }
+
+                if ((result & DeclarationModifiers.Const) != 0)
+                {
+                    // The modifier 'const' is not valid for this item
+                    diagnostics.Add(ErrorCode.ERR_BadMemberFlag, errorLocation, SyntaxFacts.GetText(SyntaxKind.ConstKeyword));
+                }
+
+                if ((result & DeclarationModifiers.Volatile) != 0)
+                {
+                    // The modifier 'volatile' is not valid for this item
+                    diagnostics.Add(ErrorCode.ERR_BadMemberFlag, errorLocation, SyntaxFacts.GetText(SyntaxKind.VolatileKeyword));
+                }
+
+                result &= ~(DeclarationModifiers.Static | DeclarationModifiers.ReadOnly | DeclarationModifiers.Const | DeclarationModifiers.Volatile);
+                Debug.Assert((result & ~(DeclarationModifiers.AccessibilityMask | DeclarationModifiers.Fixed | DeclarationModifiers.Unsafe | DeclarationModifiers.New)) == 0);
+            }
+
 
             if ((result & DeclarationModifiers.Const) != 0)
             {

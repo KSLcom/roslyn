@@ -11,9 +11,11 @@ using Microsoft.CodeAnalysis.Editor.Commands;
 using Microsoft.CodeAnalysis.Editor.CSharp.CallHierarchy;
 using Microsoft.CodeAnalysis.Editor.Host;
 using Microsoft.CodeAnalysis.Editor.Implementation.CallHierarchy;
+using Microsoft.CodeAnalysis.Editor.Implementation.Notification;
 using Microsoft.CodeAnalysis.Editor.SymbolMapping;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Utilities;
 using Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces;
+using Microsoft.CodeAnalysis.Notification;
 using Microsoft.VisualStudio.Language.CallHierarchy;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
@@ -90,17 +92,27 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.CallHierarchy
             }
         }
 
-        public CallHierarchyTestState(XElement markup, params Type[] additionalTypes)
+        public static async Task<CallHierarchyTestState> CreateAsync(XElement markup, params Type[] additionalTypes)
         {
             var exportProvider = CreateExportProvider(additionalTypes);
+            var workspace = await TestWorkspace.CreateAsync(markup, exportProvider: exportProvider);
 
-            this.Workspace = TestWorkspaceFactory.CreateWorkspace(markup, exportProvider: exportProvider);
+            return new CallHierarchyTestState(workspace);
+        }
+
+        private CallHierarchyTestState(TestWorkspace workspace)
+        {
+            this.Workspace = workspace;
             var testDocument = Workspace.Documents.Single(d => d.CursorPosition.HasValue);
 
             _textView = testDocument.GetTextView();
             _subjectBuffer = testDocument.GetTextBuffer();
 
             var provider = Workspace.GetService<CallHierarchyProvider>();
+
+            var notificationService = Workspace.Services.GetService<INotificationService>() as INotificationServiceCallback;
+            var callback = new Action<string, string, NotificationSeverity>((message, title, severity) => NotificationMessage = message);
+            notificationService.NotificationCallback = callback;
 
             _presenter = new MockCallHierarchyPresenter();
             _commandHandler = new CallHierarchyCommandHandler(new[] { _presenter }, provider, TestWaitIndicator.Default);
@@ -111,15 +123,22 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.CallHierarchy
             var catalog = TestExportProvider.MinimumCatalogWithCSharpAndVisualBasic
                 .WithPart(typeof(CallHierarchyProvider))
                 .WithPart(typeof(SymbolMappingServiceFactory))
+                .WithPart(typeof(EditorNotificationServiceFactory))
                 .WithParts(additionalTypes);
 
             return MinimalTestExportProvider.CreateExportProvider(catalog);
         }
 
-        public CallHierarchyTestState(string markup, params Type[] additionalTypes)
+        public static async Task<CallHierarchyTestState> CreateAsync(string markup, params Type[] additionalTypes)
         {
             var exportProvider = CreateExportProvider(additionalTypes);
-            this.Workspace = CSharpWorkspaceFactory.CreateWorkspaceFromFile(markup, exportProvider: exportProvider);
+            var workspace = await TestWorkspace.CreateCSharpAsync(markup, exportProvider: exportProvider);
+            return new CallHierarchyTestState(markup, workspace);
+        }
+
+        private CallHierarchyTestState(string markup, TestWorkspace workspace)
+        {
+            this.Workspace = workspace;
             var testDocument = Workspace.Documents.Single(d => d.CursorPosition.HasValue);
 
             _textView = testDocument.GetTextView();
@@ -127,8 +146,18 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.CallHierarchy
 
             var provider = Workspace.GetService<CallHierarchyProvider>();
 
+            var notificationService = Workspace.Services.GetService<INotificationService>() as INotificationServiceCallback;
+            var callback = new Action<string, string, NotificationSeverity>((message, title, severity) => NotificationMessage = message);
+            notificationService.NotificationCallback = callback;
+
             _presenter = new MockCallHierarchyPresenter();
             _commandHandler = new CallHierarchyCommandHandler(new[] { _presenter }, provider, TestWaitIndicator.Default);
+        }
+
+        internal string NotificationMessage
+        {
+            get;
+            private set;
         }
 
         internal CallHierarchyItem GetRoot()

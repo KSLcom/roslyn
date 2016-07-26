@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using Roslyn.Utilities;
@@ -7,23 +7,23 @@ namespace Microsoft.CodeAnalysis.Options
 {
     public struct OptionKey : IEquatable<OptionKey>
     {
-        public readonly IOption Option;
-        public readonly string Language;
+        public IOption Option { get; }
+        public string Language { get; }
 
         public OptionKey(IOption option, string language = null)
         {
             if (option == null)
             {
-                throw new ArgumentNullException("option");
+                throw new ArgumentNullException(nameof(option));
             }
 
             if (language != null && !option.IsPerLanguage)
             {
-                throw new ArgumentException(WorkspacesResources.InvalidLanguageNameOption);
+                throw new ArgumentException(WorkspacesResources.A_language_name_cannot_be_specified_for_this_option);
             }
             else if (language == null && option.IsPerLanguage)
             {
-                throw new ArgumentNullException(WorkspacesResources.InvalidLanguageNameOption2);
+                throw new ArgumentNullException(WorkspacesResources.A_language_name_must_be_specified_for_this_option);
             }
 
             this.Option = option;

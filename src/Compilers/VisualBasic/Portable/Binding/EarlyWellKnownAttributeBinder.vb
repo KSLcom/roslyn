@@ -20,15 +20,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
     Friend NotInheritable Class EarlyWellKnownAttributeBinder
         Inherits Binder
 
-        Private owner As Symbol
+        Private ReadOnly _owner As Symbol
         Friend Sub New(owner As Symbol, containingBinder As Binder)
             MyBase.New(containingBinder, isEarlyAttributeBinder:=True)
-            Me.owner = owner
+            Me._owner = owner
         End Sub
 
         Public Overrides ReadOnly Property ContainingMember As Symbol
             Get
-                Return If(owner, MyBase.ContainingMember)
+                Return If(_owner, MyBase.ContainingMember)
             End Get
         End Property
 
@@ -91,7 +91,8 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Case _
                     SyntaxKind.SimpleMemberAccessExpression,
                     SyntaxKind.GlobalName,
-                    SyntaxKind.IdentifierName
+                    SyntaxKind.IdentifierName,
+                    SyntaxKind.PredefinedType
                     ' References to constant type members or constant locals.
                     ' References to members of enumeration types.
                     Return True
@@ -168,7 +169,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                         End If
 
                         Dim boundMethodGroup = TryCast(boundExpression, BoundMethodGroup)
-                        If boundMethodGroup IsNot Nothing AndAlso boundMethodGroup.Methods.Count = 1 Then
+                        If boundMethodGroup IsNot Nothing AndAlso boundMethodGroup.Methods.Length = 1 Then
 
                             Dim method = boundMethodGroup.Methods(0)
 

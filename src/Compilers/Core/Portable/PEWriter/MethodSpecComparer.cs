@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Generic;
+using Roslyn.Utilities;
 
 namespace Microsoft.Cci
 {
@@ -21,14 +22,15 @@ namespace Microsoft.Cci
             }
 
             return
-                _metadataWriter.GetMethodDefOrRefCodedIndex(x.GetGenericMethod(_metadataWriter.Context)) == _metadataWriter.GetMethodDefOrRefCodedIndex(y.GetGenericMethod(_metadataWriter.Context)) &&
-                _metadataWriter.GetMethodInstanceSignatureIndex(x) == _metadataWriter.GetMethodInstanceSignatureIndex(y);
+                _metadataWriter.GetMethodDefinitionOrReferenceHandle(x.GetGenericMethod(_metadataWriter.Context)) == _metadataWriter.GetMethodDefinitionOrReferenceHandle(y.GetGenericMethod(_metadataWriter.Context)) &&
+                _metadataWriter.GetMethodSpecificationSignatureHandle(x) == _metadataWriter.GetMethodSpecificationSignatureHandle(y);
         }
 
         public int GetHashCode(IGenericMethodInstanceReference methodInstanceReference)
         {
-            return (int)((_metadataWriter.GetMethodDefOrRefCodedIndex(methodInstanceReference.GetGenericMethod(_metadataWriter.Context)) << 2) ^
-              _metadataWriter.GetMethodInstanceSignatureIndex(methodInstanceReference));
+            return Hash.Combine(
+                _metadataWriter.GetMethodDefinitionOrReferenceHandle(methodInstanceReference.GetGenericMethod(_metadataWriter.Context)).GetHashCode(),
+                _metadataWriter.GetMethodSpecificationSignatureHandle(methodInstanceReference).GetHashCode());
         }
     }
 }

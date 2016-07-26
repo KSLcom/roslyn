@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+
+using System;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -9,14 +11,14 @@ namespace Microsoft.VisualStudio.InteractiveWindow
 {
     internal sealed class ResizingAdorner : Adorner
     {
-        private readonly VisualCollection visualChildren;
-        private readonly Thumb bottomRight;
+        private readonly VisualCollection _visualChildren;
+        private readonly Thumb _bottomRight;
 
         public ResizingAdorner(UIElement adornedElement)
             : base(adornedElement)
         {
-            visualChildren = new VisualCollection(this);
-            bottomRight = BuildAdornerCorner(Cursors.SizeNWSE, HandleBottomRight);
+            _visualChildren = new VisualCollection(this);
+            _bottomRight = BuildAdornerCorner(Cursors.SizeNWSE, HandleBottomRight);
         }
 
         private Thumb BuildAdornerCorner(Cursor cursor, DragDeltaEventHandler dragHandler)
@@ -33,21 +35,13 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             thumb.DragDelta += dragHandler;
             thumb.DragStarted += (s, e) =>
             {
-                var handler = ResizeStarted;
-                if (handler != null)
-                {
-                    handler(this, e);
-                }
+                ResizeStarted?.Invoke(this, e);
             };
             thumb.DragCompleted += (s, e) =>
             {
-                var handler = ResizeCompleted;
-                if (handler != null)
-                {
-                    handler(this, e);
-                }
+                ResizeCompleted?.Invoke(this, e);
             };
-            visualChildren.Add(thumb);
+            _visualChildren.Add(thumb);
             return thumb;
         }
 
@@ -73,7 +67,7 @@ namespace Microsoft.VisualStudio.InteractiveWindow
             var adornerWidth = DesiredSize.Width;
             var adornerHeight = DesiredSize.Height;
 
-            bottomRight.Arrange(new Rect((desiredWidth - adornerWidth) / 2,
+            _bottomRight.Arrange(new Rect((desiredWidth - adornerWidth) / 2,
                 (desiredHeight - adornerHeight) / 2, adornerWidth, adornerHeight));
 
             return finalSize;
@@ -81,12 +75,12 @@ namespace Microsoft.VisualStudio.InteractiveWindow
 
         protected override int VisualChildrenCount
         {
-            get { return visualChildren.Count; }
+            get { return _visualChildren.Count; }
         }
 
         protected override Visual GetVisualChild(int index)
         {
-            return visualChildren[index];
+            return _visualChildren[index];
         }
 
         public event RoutedEventHandler ResizeStarted;

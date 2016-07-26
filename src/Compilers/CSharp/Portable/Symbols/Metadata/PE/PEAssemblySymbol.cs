@@ -1,10 +1,12 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using Roslyn.Utilities;
 using System.Diagnostics;
+
 using System.Linq;
+using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
 {
@@ -56,11 +58,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
         /// </summary>
         private ImmutableArray<CSharpAttributeData> _lazyCustomAttributes;
 
-        /// <summary>
-        /// Lazily initialized by MightContainExtensionMethods property.
-        /// </summary>
-        private ThreeState _lazyContainsExtensionMethods;
-
         internal PEAssemblySymbol(PEAssembly assembly, DocumentationProvider documentationProvider, bool isLinked, MetadataImportOptions importOptions)
         {
             Debug.Assert(assembly != null);
@@ -94,6 +91,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
                 return _assembly.Identity;
             }
         }
+
+        // TODO: https://github.com/dotnet/roslyn/issues/9000
+        public override Version AssemblyVersionPattern => null;
 
         public override ImmutableArray<ModuleSymbol> Modules
         {
@@ -233,20 +233,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
         {
             get
             {
-                if (!_lazyContainsExtensionMethods.HasValue())
-                {
-                    var moduleSymbol = this.PrimaryModule;
-                    var module = moduleSymbol.Module;
-                    // The F# compiler may not emit an assembly-level ExtensionAttribute, and previous versions of C# never checked for it.
-                    // In order to avoid a breaking change (while preserving the perceived performance benefits of not looking for extension
-                    // methods in assemblies that don't contain them), we'll also look for FSharpInterfaceDataVersionAttribute.
-                    var mightContainExtensionMethods = module.HasExtensionAttribute(_assembly.Handle, ignoreCase: false) ||
-                                                       module.HasFSharpInterfaceDataVersionAttribute(_assembly.Handle);
-
-                    _lazyContainsExtensionMethods = mightContainExtensionMethods.ToThreeState();
-                }
-
-                return _lazyContainsExtensionMethods.Value();
+                // While the specification for ExtensionAttribute requires that the containing assembly
+                // have the attribute if any type in the assembly has the attribute, some compilers do
+                // not properly follow that spec. Therefore we pessimistically assume every assembly
+                // may contain extension methods.
+                return true;
             }
         }
 
@@ -262,5 +253,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols.Metadata.PE
         {
             get { return null; }
         }
+
+        public override AssemblyMetadata GetMetadata() => _assembly.GetNonDisposableMetadata();
     }
 }

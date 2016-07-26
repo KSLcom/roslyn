@@ -1,17 +1,13 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
-using System.Linq;
 using Microsoft.CodeAnalysis.Editor.Commands;
 using Microsoft.CodeAnalysis.Editor.Host;
-using Microsoft.CodeAnalysis.Editor.Navigation;
 using Microsoft.CodeAnalysis.Editor.Shared.Extensions;
-using Microsoft.CodeAnalysis.Editor.SymbolMapping;
-using Microsoft.CodeAnalysis.FindSymbols;
-using Microsoft.CodeAnalysis.LanguageServices;
-using Microsoft.CodeAnalysis.Shared.Extensions;
+using Microsoft.CodeAnalysis.FindReferences;
+using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Text;
 using Roslyn.Utilities;
@@ -23,13 +19,13 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.FindReferences
     internal class FindReferencesCommandHandler :
         ICommandHandler<FindReferencesCommandArgs>
     {
-        private readonly IEnumerable<IReferencedSymbolsPresenter> _presenters;
+        private readonly IEnumerable<IDefinitionsAndReferencesPresenter> _presenters;
         private readonly IWaitIndicator _waitIndicator;
 
         [ImportingConstructor]
         internal FindReferencesCommandHandler(
             IWaitIndicator waitIndicator,
-            [ImportMany] IEnumerable<IReferencedSymbolsPresenter> presenters)
+            [ImportMany] IEnumerable<IDefinitionsAndReferencesPresenter> presenters)
         {
             Contract.ThrowIfNull(waitIndicator);
             Contract.ThrowIfNull(presenters);
@@ -41,8 +37,8 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.FindReferences
         internal void FindReferences(ITextSnapshot snapshot, int caretPosition)
         {
             _waitIndicator.Wait(
-                title: EditorFeaturesResources.FindReferences,
-                message: EditorFeaturesResources.FindingReferences,
+                title: EditorFeaturesResources.Find_References,
+                message: EditorFeaturesResources.Finding_references,
                 action: context =>
             {
                 Document document = snapshot.GetOpenDocumentInCurrentContextWithChanges();
@@ -51,12 +47,15 @@ namespace Microsoft.CodeAnalysis.Editor.Implementation.FindReferences
                     var service = document.Project.LanguageServices.GetService<IFindReferencesService>();
                     if (service != null)
                     {
-                        if (!service.TryFindReferences(document, caretPosition, context))
+                        using (Logger.LogBlock(FunctionId.CommandHandler_FindAllReference, context.CancellationToken))
                         {
-                            foreach (var presenter in _presenters)
+                            if (!service.TryFindReferences(document, caretPosition, context))
                             {
-                                presenter.DisplayResult(document.Project.Solution, SpecializedCollections.EmptyEnumerable<ReferencedSymbol>());
-                                return;
+                                foreach (var presenter in _presenters)
+                                {
+                                    presenter.DisplayResult(DefinitionsAndReferences.Empty);
+                                    return;
+                                }
                             }
                         }
                     }

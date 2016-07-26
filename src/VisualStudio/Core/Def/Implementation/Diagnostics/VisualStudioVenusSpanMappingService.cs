@@ -52,7 +52,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Diagnostics
                 var textLines = location.SourceTree.GetText().Lines;
                 var startPos = textLines.GetPosition(originalSpan.Start);
                 var endPos = textLines.GetPosition(originalSpan.End);
-                sourceSpan = new TextSpan(startPos, endPos - startPos);
+
+                sourceSpan = TextSpan.FromBounds(startPos, Math.Max(startPos, endPos));
             }
 
             if (mappedSpan.Start != mappedLineInfo.StartLinePosition || mappedSpan.End != mappedLineInfo.EndLinePosition)
@@ -156,7 +157,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.Diagnostics
             }
 
             // we can't directly map span in subject buffer to surface buffer. see whether there is any visible span we can use from the subject buffer span
-            if (VSConstants.S_OK != containedLanguageHost.GetNearestVisibleToken(originalSpanOnSecondaryBuffer, spansOnPrimaryBuffer))
+            if (containedLanguageHost != null &&
+                VSConstants.S_OK != containedLanguageHost.GetNearestVisibleToken(originalSpanOnSecondaryBuffer, spansOnPrimaryBuffer))
             {
                 // no visible span we can use.
                 return false;

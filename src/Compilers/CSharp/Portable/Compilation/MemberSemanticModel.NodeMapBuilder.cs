@@ -2,17 +2,17 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Globalization;
 using Microsoft.CodeAnalysis.Collections;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Roslyn.Utilities;
+using System.Diagnostics;
+using System.Linq;
 
 namespace Microsoft.CodeAnalysis.CSharp
 {
     internal partial class MemberSemanticModel
     {
-        protected sealed class NodeMapBuilder : BoundTreeWalker
+        protected sealed class NodeMapBuilder : BoundTreeWalkerWithStackGuard
         {
             private NodeMapBuilder(OrderPreservingMultiDictionary<CSharpSyntaxNode, BoundNode> map, CSharpSyntaxNode thisSyntaxNodeOnly)
             {
@@ -48,7 +48,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 {
                     if (map.ContainsKey(key))
                     {
-#if DEBUG
+#if DEBUG && PATTERNS_FIXED
                         // It's possible that AddToMap was previously called with a subtree of root.  If this is the case,
                         // then we'll see an entry in the map.  Since the incremental binder should also have seen the
                         // pre-existing map entry, the entry in addition map should be identical.
@@ -66,7 +66,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         var existing = map[key];
                         var added = additionMap[key];
-                        FailFast.Assert(existing.Length == added.Length, "existing.Length == added.Length");
+                        Debug.Assert(existing.Length == added.Length, "existing.Length == added.Length");
                         for (int i = 0; i < existing.Length; i++)
                         {
                             // TODO: it would be great if we could check !ReferenceEquals(existing[i], added[i]) (DevDiv #11584).
@@ -76,12 +76,12 @@ namespace Microsoft.CodeAnalysis.CSharp
                             //      since nothing is cached for the statement syntax.
                             if (existing[i].Kind != added[i].Kind)
                             {
-                                FailFast.Assert(!(key is StatementSyntax), "!(key is StatementSyntax)");
+                                Debug.Assert(!(key is StatementSyntax), "!(key is StatementSyntax)");
 
                                 // This also seems to be happening when we get equivalent BoundTypeExpression and BoundTypeOrValueExpression nodes.
                                 if (existing[i].Kind == BoundKind.TypeExpression && added[i].Kind == BoundKind.TypeOrValueExpression)
                                 {
-                                    FailFast.Assert(
+                                    Debug.Assert(
                                         ((BoundTypeExpression)existing[i]).Type == ((BoundTypeOrValueExpression)added[i]).Type,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -89,7 +89,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 }
                                 else if (existing[i].Kind == BoundKind.TypeOrValueExpression && added[i].Kind == BoundKind.TypeExpression)
                                 {
-                                    FailFast.Assert(
+                                    Debug.Assert(
                                         ((BoundTypeOrValueExpression)existing[i]).Type == ((BoundTypeExpression)added[i]).Type,
                                         string.Format(
                                             CultureInfo.InvariantCulture,
@@ -97,12 +97,12 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 }
                                 else
                                 {
-                                    FailFast.Assert(false, "New bound node does not match existing bound node");
+                                    Debug.Assert(false, "New bound node does not match existing bound node");
                                 }
                             }
                             else
                             {
-                                FailFast.Assert(
+                                Debug.Assert(
                                     (object)existing[i] == added[i] || !(key is StatementSyntax),
                                     string.Format(
                                         CultureInfo.InvariantCulture,
@@ -223,8 +223,13 @@ namespace Microsoft.CodeAnalysis.CSharp
             /// <param name="currentBoundNode">The bound node.</param>
             private bool ShouldAddNode(BoundNode currentBoundNode)
             {
+                BoundBlock block;
+
                 // Do not add compiler generated nodes.
-                if (currentBoundNode.WasCompilerGenerated)
+                if (currentBoundNode.WasCompilerGenerated &&
+                    (currentBoundNode.Kind != BoundKind.Block ||
+                     (block = (BoundBlock)currentBoundNode).Statements.Length != 1 ||
+                     block.Statements.Single().WasCompilerGenerated))
                 {
                     return false;
                 }
@@ -248,6 +253,24 @@ namespace Microsoft.CodeAnalysis.CSharp
             public override BoundNode VisitBinaryOperator(BoundBinaryOperator node)
             {
                 throw ExceptionUtilities.Unreachable;
+            }
+
+            public override BoundNode VisitDeconstructionAssignmentOperator(BoundDeconstructionAssignmentOperator node)
+            {
+                // For deconstruction declarations, the BoundLocals in the LeftVariables should not be added to the map
+                if (!node.IsDeclaration)
+                {
+                    VisitList(node.LeftVariables);
+                }
+
+                Visit(node.Right);
+                // don't map the deconstruction, conversion or assignment steps
+                return null;
+            }
+
+            protected override bool ConvertInsufficientExecutionStackExceptionToCancelledByStackGuardException()
+            {
+                return false;
             }
         }
     }

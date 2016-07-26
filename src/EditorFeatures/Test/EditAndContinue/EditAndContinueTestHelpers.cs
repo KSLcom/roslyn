@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Differencing;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.Test.Utilities;
@@ -79,9 +80,9 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
         {
             var oldActiveStatements = description.OldSpans;
 
-            if (description.TrackingSpans != null)
+            if (description.OldTrackingSpans != null)
             {
-                Assert.Equal(oldActiveStatements.Length, description.TrackingSpans.Length);
+                Assert.Equal(oldActiveStatements.Length, description.OldTrackingSpans.Length);
             }
 
             string newSource = editScript.Match.NewRoot.SyntaxTree.ToString();
@@ -93,15 +94,15 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
             var diagnostics = new List<RudeEditDiagnostic>();
             var actualNewActiveStatements = new LinePositionSpan[oldActiveStatements.Length];
             var actualNewExceptionRegions = new ImmutableArray<LinePositionSpan>[oldActiveStatements.Length];
-            var updatedActiveMethodMatches = new List<ValueTuple<int, IReadOnlyDictionary<SyntaxNode, SyntaxNode>>>();
+            var updatedActiveMethodMatches = new List<AbstractEditAndContinueAnalyzer.UpdatedMemberInfo>();
             var editMap = Analyzer.BuildEditMap(editScript);
 
             DocumentId documentId = DocumentId.CreateNewId(ProjectId.CreateNewId("TestEnCProject"), "TestEnCDocument");
 
             TestActiveStatementTrackingService trackingService;
-            if (description.TrackingSpans != null)
+            if (description.OldTrackingSpans != null)
             {
-                trackingService = new TestActiveStatementTrackingService(documentId, description.TrackingSpans);
+                trackingService = new TestActiveStatementTrackingService(documentId, description.OldTrackingSpans);
             }
             else
             {
@@ -155,8 +156,9 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
                 }
             }
 
-            if (description.TrackingSpans != null)
+            if (description.OldTrackingSpans != null)
             {
+                // Verify that the new tracking spans are equal to the new active statements.
                 AssertEx.Equal(trackingService.TrackingSpans, description.NewSpans.Select(s => (TextSpan?)s));
             }
         }
@@ -232,14 +234,23 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
             var oldCompilation = CreateLibraryCompilation("Old", oldTrees);
             var newCompilation = CreateLibraryCompilation("New", newTrees);
 
-            oldTrees.SelectMany(tree => tree.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
-            newTrees.SelectMany(tree => tree.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
+            if (oldCompilation is CSharpCompilation)
+            {
+                oldCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
+                newCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
+            }
+            else
+            {
+                // TODO: verify all compilation diagnostics like C# does (tests need to be updated)
+                oldTrees.SelectMany(tree => tree.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
+                newTrees.SelectMany(tree => tree.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error).Verify();
+            }
 
             var oldModel = oldCompilation.GetSemanticModel(oldRoot.SyntaxTree);
             var newModel = newCompilation.GetSemanticModel(newRoot.SyntaxTree);
 
             var oldActiveStatements = activeStatements.OldSpans.AsImmutable();
-            var updatedActiveMethodMatches = new List<ValueTuple<int, IReadOnlyDictionary<SyntaxNode, SyntaxNode>>>();
+            var updatedActiveMethodMatches = new List<AbstractEditAndContinueAnalyzer.UpdatedMemberInfo>();
             var triviaEdits = new List<KeyValuePair<SyntaxNode, SyntaxNode>>();
             var actualLineEdits = new List<LineChange>();
             var actualSemanticEdits = new List<SemanticEdit>();
@@ -333,10 +344,8 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
 
                         newNodes.Add(newNode);
                     }
-
-                    AssertEx.SetEqual(newNodes, GetDeclarators(actualNewSymbol));
                 }
-                else
+                else if (!expectedSemanticEdits[i].PreserveLocalVariables)
                 {
                     Assert.Null(actualSyntaxMap);
                 }
@@ -355,6 +364,51 @@ namespace Microsoft.CodeAnalysis.EditAndContinue.UnitTests
         private static string DisplaySpan(string source, TextSpan span)
         {
             return span + ": [" + source.Substring(span.Start, span.Length).Replace("\r\n", " ") + "]";
+        }
+
+        internal static IEnumerable<KeyValuePair<SyntaxNode, SyntaxNode>> GetMethodMatches(AbstractEditAndContinueAnalyzer analyzer, Match<SyntaxNode> bodyMatch)
+        {
+            Dictionary<SyntaxNode, AbstractEditAndContinueAnalyzer.LambdaInfo> lazyActiveOrMatchedLambdas = null;
+            var map = analyzer.ComputeMap(bodyMatch, Array.Empty<AbstractEditAndContinueAnalyzer.ActiveNode>(), ref lazyActiveOrMatchedLambdas, new List<RudeEditDiagnostic>());
+
+            var result = new Dictionary<SyntaxNode, SyntaxNode>();
+            foreach (var pair in map.Forward)
+            {
+                if (pair.Value == bodyMatch.NewRoot)
+                {
+                    Assert.Same(pair.Key, bodyMatch.OldRoot);
+                    continue;
+                }
+
+                result.Add(pair.Key, pair.Value);
+            }
+
+            return result;
+        }
+
+        public static MatchingPairs ToMatchingPairs(Match<SyntaxNode> match)
+        {
+            return ToMatchingPairs(match.Matches.Where(partners => partners.Key != match.OldRoot));
+        }
+
+        public static MatchingPairs ToMatchingPairs(IEnumerable<KeyValuePair<SyntaxNode, SyntaxNode>> matches)
+        {
+            return new MatchingPairs(matches
+                .OrderBy(partners => partners.Key.GetLocation().SourceSpan.Start)
+                .ThenByDescending(partners => partners.Key.Span.Length)
+                .Select(partners => new MatchingPair
+                {
+                    Old = partners.Key.ToString().Replace("\r\n", " ").Replace("\n", " "),
+                    New = partners.Value.ToString().Replace("\r\n", " ").Replace("\n", " ")
+                }));
+        }
+
+        private static IEnumerable<KeyValuePair<K, V>> ReverseMapping<K, V>(IEnumerable<KeyValuePair<V, K>> mapping)
+        {
+            foreach (var pair in mapping)
+            {
+                yield return KeyValuePair.Create(pair.Value, pair.Key);
+            }
         }
     }
 

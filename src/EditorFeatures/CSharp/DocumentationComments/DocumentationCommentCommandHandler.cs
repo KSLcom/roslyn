@@ -11,7 +11,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editor.Host;
 using Microsoft.CodeAnalysis.Editor.Implementation.DocumentationComments;
 using Microsoft.CodeAnalysis.Shared.Extensions;
-using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Text.Operations;
 using Microsoft.VisualStudio.Utilities;
 
@@ -113,7 +112,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.DocumentationComments
             {
                 foreach (var typeParam in typeParameterList.Parameters)
                 {
-                    list.Add("/// <typeparam name=\"" + typeParam.Identifier.ToString() + "\"></typeparam>");
+                    list.Add("/// <typeparam name=\"" + typeParam.Identifier.ValueText + "\"></typeparam>");
                 }
             }
 
@@ -122,7 +121,7 @@ namespace Microsoft.CodeAnalysis.Editor.CSharp.DocumentationComments
             {
                 foreach (var param in parameterList.Parameters)
                 {
-                    list.Add("/// <param name=\"" + param.Identifier.ToString() + "\"></param>");
+                    list.Add("/// <param name=\"" + param.Identifier.ValueText + "\"></param>");
                 }
             }
 

@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.CodeAnalysis.Shared.Collections
 {
@@ -11,28 +9,15 @@ namespace Microsoft.CodeAnalysis.Shared.Collections
     {
         private readonly IIntervalIntrospector<T> _introspector;
 
-        public SimpleIntervalTree(IIntervalIntrospector<T> introspector) : this(introspector, root: null)
-        {
-        }
-
-        protected SimpleIntervalTree(IIntervalIntrospector<T> introspector, Node root) : base(root)
-        {
-            if (introspector == null)
-            {
-                throw new ArgumentNullException(nameof(introspector));
-            }
-
-            _introspector = introspector;
-        }
-
         public SimpleIntervalTree(IIntervalIntrospector<T> introspector, IEnumerable<T> values)
-            : this(introspector, root: null)
         {
+            _introspector = introspector;
+
             if (values != null)
             {
                 foreach (var value in values)
                 {
-                    root = Insert(root, new Node(introspector, value), introspector, inPlace: true);
+                    root = Insert(root, new Node(value), introspector);
                 }
             }
         }
@@ -60,12 +45,6 @@ namespace Microsoft.CodeAnalysis.Shared.Collections
         public bool IntersectsWith(int position)
         {
             return GetIntersectingIntervals(position, 0).Any();
-        }
-
-        public SimpleIntervalTree<T> AddInterval(T value)
-        {
-            var newNode = new Node(_introspector, value);
-            return new SimpleIntervalTree<T>(_introspector, Insert(root, newNode, _introspector, inPlace: false));
         }
 
         protected int MaxEndValue(Node node)

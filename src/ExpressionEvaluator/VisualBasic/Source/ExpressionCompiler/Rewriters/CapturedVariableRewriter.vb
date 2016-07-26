@@ -5,7 +5,7 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 
 Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
     Friend NotInheritable Class CapturedVariableRewriter
-        Inherits BoundTreeRewriter
+        Inherits BoundTreeRewriterWithStackGuardWithoutRecursionOnTheLeftOfBinaryOperator
 
         Friend Shared Function Rewrite(
             targetMethodMeParameter As ParameterSymbol,
@@ -30,6 +30,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
             _displayClassVariables = displayClassVariables
             _diagnostics = diagnostics
         End Sub
+
+        Public Overrides Function Visit(node As BoundNode) As BoundNode
+            ' Ignore nodes that will be rewritten to literals in the LocalRewriter.
+            If TryCast(node, BoundExpression)?.ConstantValueOpt IsNot Nothing Then
+                Return node
+            End If
+
+            Return MyBase.Visit(node)
+        End Function
 
         Public Overrides Function VisitBlock(node As BoundBlock) As BoundNode
             Dim rewrittenLocals = node.Locals.WhereAsArray(AddressOf IncludeLocal)
@@ -122,12 +131,15 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.ExpressionEvaluator
         End Function
 
         Private Function RewriteParameter(syntax As VisualBasicSyntaxNode, symbol As ParameterSymbol, node As BoundExpression) As BoundExpression
-            Dim variable = Me.GetVariable(symbol.Name)
+            Dim name As String = symbol.Name
+            Dim variable = Me.GetVariable(name)
             If variable Is Nothing Then
                 ' The state machine case is for async lambdas.  The state machine
                 ' will have a hoisted "me" field if it needs access to the containing
                 ' display class, but the display class may not have a "me" field.
-                If symbol.Type.IsClosureOrStateMachineType() Then
+                If symbol.Type.IsClosureOrStateMachineType() AndAlso
+                    GeneratedNames.GetKind(name) <> GeneratedNameKind.TransparentIdentifier Then
+
                     ReportMissingMe(syntax)
                 End If
 

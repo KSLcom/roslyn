@@ -218,15 +218,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
         {
             get
             {
-                return this.ReturnType is ByRefReturnErrorTypeSymbol;
+                return this.RefKind == RefKind.Ref;
             }
         }
 
         Cci.ITypeReference Cci.ISignature.GetType(EmitContext context)
         {
-            ByRefReturnErrorTypeSymbol byRefType = this.ReturnType as ByRefReturnErrorTypeSymbol;
-            return ((PEModuleBuilder)context.Module).Translate(
-                (object)byRefType == null ? this.ReturnType : byRefType.ReferencedType,
+            return ((PEModuleBuilder)context.Module).Translate(this.ReturnType,
                 syntaxNodeOpt: (CSharpSyntaxNode)context.SyntaxNodeOpt,
                 diagnostics: context.Diagnostics);
         }
@@ -366,7 +364,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
                 // Enforce C#'s notion of internal virtual
                 // If the method is private or internal and virtual but not final
-                // Set the new bit to indicate that it can only be overriden
+                // Set the new bit to indicate that it can only be overridden
                 // by classes that can normally access this member.
                 Accessibility accessibility = this.DeclaredAccessibility;
                 return (accessibility == Accessibility.Private ||

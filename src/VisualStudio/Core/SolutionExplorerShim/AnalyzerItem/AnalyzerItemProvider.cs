@@ -10,13 +10,16 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.SolutionExplore
     [Export(typeof(IAttachedCollectionSourceProvider))]
     [Name("AnalyzerItemsProvider")]
     [Order]
-    internal class AnalyzerItemProvider : AttachedCollectionSourceProvider<AnalyzersFolderItem>
+    internal sealed class AnalyzerItemProvider : AttachedCollectionSourceProvider<AnalyzersFolderItem>
     {
+        [Import(typeof(AnalyzersCommandHandler))]
+        private IAnalyzersCommandHandler _commandHandler = null;
+
         protected override IAttachedCollectionSource CreateCollectionSource(AnalyzersFolderItem analyzersFolder, string relationshipName)
         {
             if (relationshipName == KnownRelationships.Contains)
             {
-                return new AnalyzerItemSource(analyzersFolder);
+                return new AnalyzerItemSource(analyzersFolder, _commandHandler);
             }
 
             return null;

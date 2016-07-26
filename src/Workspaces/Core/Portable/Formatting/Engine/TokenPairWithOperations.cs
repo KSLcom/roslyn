@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using Microsoft.CodeAnalysis.Formatting.Rules;
-using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.Formatting
@@ -11,11 +10,11 @@ namespace Microsoft.CodeAnalysis.Formatting
     /// </summary>
     internal struct TokenPairWithOperations
     {
-        public TokenStream TokenStream { get; private set; }
-        public AdjustSpacesOperation SpaceOperation { get; private set; }
-        public AdjustNewLinesOperation LineOperation { get; private set; }
+        public TokenStream TokenStream { get; }
+        public AdjustSpacesOperation SpaceOperation { get; }
+        public AdjustNewLinesOperation LineOperation { get; }
 
-        public int PairIndex { get; private set; }
+        public int PairIndex { get; }
 
         public TokenPairWithOperations(
             TokenStream tokenStream,

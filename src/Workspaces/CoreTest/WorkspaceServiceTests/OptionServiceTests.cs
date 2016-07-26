@@ -10,7 +10,7 @@ namespace Microsoft.CodeAnalysis.UnitTests.WorkspaceServices
     public class OptionServiceTests
     {
         [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
-        public void OptionWithNullOrWhitepace()
+        public void OptionWithNullOrWhitespace()
         {
             var optionService = TestOptionService.GetService();
             var optionSet = optionService.GetOptions();
@@ -156,7 +156,6 @@ namespace Microsoft.CodeAnalysis.UnitTests.WorkspaceServices
             var newOptionSet = optionSet.WithChangedOption(optionKey, false);
             Assert.NotSame(optionSet, newOptionSet);
             Assert.NotEqual(optionSet, newOptionSet);
-            Assert.NotEqual(optionSet.GetAccessedOptions().Count(), newOptionSet.GetAccessedOptions().Count());
         }
     }
 }

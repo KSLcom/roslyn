@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Linq;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.Text;
 using Roslyn.Test.Utilities;
 using Xunit;
 using System.Collections.Generic;
+using System;
 
 namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols
 {
@@ -173,11 +174,11 @@ namespace Microsoft.CodeAnalysis.CSharp.UnitTests.Symbols
                 for (int j = 0; j < types.Length; ++j)
                 {
                     var kind = conversions[i, j];
-                    var result = c.ClassifyConversion(types[j], types[i], ref useSiteDiagnostics);
+                    var result = c.ClassifyConversionFromType(types[j], types[i], ref useSiteDiagnostics);
                     //Assert.Equal doesn't allow a string explanation, so provide one this way.
                     if (kind != result.Kind)
                     {
-                        var result2 = c.ClassifyConversion(types[j], types[i], ref useSiteDiagnostics); // set breakpoint here if this test is failing...
+                        var result2 = c.ClassifyConversionFromType(types[j], types[i], ref useSiteDiagnostics); // set breakpoint here if this test is failing...
                         Assert.True(false, string.Format("Expected {0} but got {1} when converting {2} -> {3}", kind, result, types[j], types[i]));
                     }
                 }
@@ -239,41 +240,41 @@ class X {
             string s = f7Type.ToTestDisplayString();
 
             Assert.False(f1Type.Equals(f2Type));
-            Assert.True(f1Type.Equals(f2Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f2Type.Equals(f1Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f1Type.Equals(f1Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f2Type.Equals(f2Type, ignoreCustomModifiers: true, ignoreDynamic: true));
+            Assert.True(f1Type.Equals(f2Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f2Type.Equals(f1Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f1Type.Equals(f1Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f2Type.Equals(f2Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
 
             Assert.False(f3Type.Equals(f4Type));
-            Assert.True(f3Type.Equals(f4Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f4Type.Equals(f3Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.False(f4Type.Equals(f5Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.False(f5Type.Equals(f4Type, ignoreCustomModifiers: true, ignoreDynamic: true));
+            Assert.True(f3Type.Equals(f4Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f4Type.Equals(f3Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.False(f4Type.Equals(f5Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.False(f5Type.Equals(f4Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
 
             Assert.False(f6Type.Equals(f7Type));
             Assert.False(f6Type.Equals(f8Type));
             Assert.False(f7Type.Equals(f8Type));
-            Assert.True(f6Type.Equals(f7Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f7Type.Equals(f6Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f6Type.Equals(f6Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f7Type.Equals(f7Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f8Type.Equals(f7Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f7Type.Equals(f8Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f8Type.Equals(f8Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f7Type.Equals(f7Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f8Type.Equals(f6Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f6Type.Equals(f8Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f8Type.Equals(f8Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(f6Type.Equals(f6Type, ignoreCustomModifiers: true, ignoreDynamic: true));
+            Assert.True(f6Type.Equals(f7Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f7Type.Equals(f6Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f6Type.Equals(f6Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f7Type.Equals(f7Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f8Type.Equals(f7Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f7Type.Equals(f8Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f8Type.Equals(f8Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f7Type.Equals(f7Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f8Type.Equals(f6Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f6Type.Equals(f8Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f8Type.Equals(f8Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(f6Type.Equals(f6Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
 
-            Assert.False(f9Type.Equals(f10Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.False(f10Type.Equals(f9Type, ignoreCustomModifiers: true, ignoreDynamic: true));
+            Assert.False(f9Type.Equals(f10Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.False(f10Type.Equals(f9Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
 
             Assert.False(g1Type.Equals(g2Type));
-            Assert.True(g1Type.Equals(g2Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(g2Type.Equals(g1Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(g1Type.Equals(g1Type, ignoreCustomModifiers: true, ignoreDynamic: true));
-            Assert.True(g2Type.Equals(g2Type, ignoreCustomModifiers: true, ignoreDynamic: true));
+            Assert.True(g1Type.Equals(g2Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(g2Type.Equals(g1Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(g1Type.Equals(g1Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
+            Assert.True(g2Type.Equals(g2Type, ignoreCustomModifiersAndArraySizesAndLowerBounds: true, ignoreDynamic: true));
         }
 
         /// <summary>
@@ -305,23 +306,23 @@ class C
             var interfaceI3 = compilation.GlobalNamespace.GetMember<NamedTypeSymbol>("I3");
             var typeIntArrayWithCustomModifiers = interfaceI3.GetMember<MethodSymbol>("M1").Parameters.Single().Type;
 
-            Assert.True(typeIntArrayWithCustomModifiers.HasCustomModifiers());
+            Assert.True(typeIntArrayWithCustomModifiers.HasCustomModifiers(flagNonDefaultArraySizesOrLowerBounds: false));
 
             var conv = new BuckStopsHereBinder(compilation).Conversions;
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
 
             // no custom modifiers to custom modifiers
-            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversion(typeIntArray, typeIntArrayWithCustomModifiers, ref useSiteDiagnostics).Kind);
+            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversionFromType(typeIntArray, typeIntArrayWithCustomModifiers, ref useSiteDiagnostics).Kind);
 
             // custom modifiers to no custom modifiers
-            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversion(typeIntArrayWithCustomModifiers, typeIntArray, ref useSiteDiagnostics).Kind);
+            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversionFromType(typeIntArrayWithCustomModifiers, typeIntArray, ref useSiteDiagnostics).Kind);
 
             // custom modifiers to custom modifiers
-            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversion(typeIntArrayWithCustomModifiers, typeIntArrayWithCustomModifiers, ref useSiteDiagnostics).Kind);
+            Assert.Equal(ConversionKind.Identity, conv.ClassifyConversionFromType(typeIntArrayWithCustomModifiers, typeIntArrayWithCustomModifiers, ref useSiteDiagnostics).Kind);
         }
 
-        [WorkItem(529056, "DevDiv")]
-        [WorkItem(529056, "DevDiv")]
+        [WorkItem(529056, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529056")]
+        [WorkItem(529056, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529056")]
         [Fact()]
         public void TestConversion_ParenthesizedExpression()
         {
@@ -345,7 +346,7 @@ public class Program
             Assert.Equal(ConversionKind.Identity, tuple.Item2.ClassifyConversion(tuple.Item1, comp.GetSpecialType(SpecialType.System_Boolean)).Kind);
         }
 
-        [WorkItem(544571, "DevDiv")]
+        [WorkItem(544571, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/544571")]
         [Fact]
         public void TestClassifyConversion()
         {
@@ -386,27 +387,27 @@ class Program
 
             // Get VariableDeclaratorSyntax corresponding to variable 'ii' above.
             var variableDeclarator = (VariableDeclaratorSyntax)tree.GetCompilationUnitRoot()
-                .FindToken(source.IndexOf("ii")).Parent;
+                .FindToken(source.IndexOf("ii", StringComparison.Ordinal)).Parent;
 
             // Get TypeSymbol corresponding to above VariableDeclaratorSyntax.
             TypeSymbol targetType = ((LocalSymbol)model.GetDeclaredSymbol(variableDeclarator)).Type;
 
             // Perform ClassifyConversion for expressions from within the above SyntaxTree.
             var sourceExpression1 = (ExpressionSyntax)tree.GetCompilationUnitRoot()
-                .FindToken(source.IndexOf("jj)")).Parent;
+                .FindToken(source.IndexOf("jj)", StringComparison.Ordinal)).Parent;
             Conversion conversion = model.ClassifyConversion(sourceExpression1, targetType);
             Assert.True(conversion.IsImplicit);
             Assert.True(conversion.IsNumeric);
 
             var sourceExpression2 = (ExpressionSyntax)tree.GetCompilationUnitRoot()
-                .FindToken(source.IndexOf("ss)")).Parent;
+                .FindToken(source.IndexOf("ss)", StringComparison.Ordinal)).Parent;
             conversion = model.ClassifyConversion(sourceExpression2, targetType);
             Assert.False(conversion.Exists);
 
             // Perform ClassifyConversion for constructed expressions
             // at the position identified by the comment '// Perform ...' above.
             ExpressionSyntax sourceExpression3 = SyntaxFactory.IdentifierName("jj");
-            var position = source.IndexOf("//");
+            var position = source.IndexOf("//", StringComparison.Ordinal);
             conversion = model.ClassifyConversion(position, sourceExpression3, targetType);
             Assert.True(conversion.IsImplicit);
             Assert.True(conversion.IsNumeric);
@@ -555,7 +556,7 @@ class Program
             CreateCompilationWithMscorlib(source).VerifyDiagnostics();
         }
 
-        [WorkItem(542540, "DevDiv")]
+        [WorkItem(542540, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/542540")]
         [Fact]
         public void TestMethodGroupConversionWithOptionalParameter()
         {
@@ -574,7 +575,7 @@ class C
                 Diagnostic(ErrorCode.ERR_MethDelegateMismatch, "foo").WithArguments("foo", "System.Action"));
         }
 
-        [WorkItem(543119, "DevDiv")]
+        [WorkItem(543119, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543119")]
         [Fact]
         public void TestConversion_IntToNullableShort()
         {
@@ -593,7 +594,7 @@ class C
             CreateCompilationWithMscorlib(source).VerifyDiagnostics();
         }
 
-        [WorkItem(543450, "DevDiv")]
+        [WorkItem(543450, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/543450")]
         [Fact()]
         public void TestConversion_IntToByte()
         {
@@ -1108,10 +1109,13 @@ class Convertible
     }
 }";
             CreateCompilationWithMscorlib(source).VerifyDiagnostics(
-                // (8,13): error CS0150: A constant value is expected
-                Diagnostic(ErrorCode.ERR_ConstantExpected, "case default(Convertible):"),
+                // (8,18): error CS0150: A constant value is expected
+                //             case default(Convertible): return;
+                Diagnostic(ErrorCode.ERR_ConstantExpected, "default(Convertible)").WithLocation(8, 18),
                 // (8,40): warning CS0162: Unreachable code detected
-                Diagnostic(ErrorCode.WRN_UnreachableCode, "return"));
+                //             case default(Convertible): return;
+                Diagnostic(ErrorCode.WRN_UnreachableCode, "return").WithLocation(8, 40)
+                );
         }
 
         [Fact]
@@ -1138,10 +1142,13 @@ class Convertible
     }
 }";
             CreateCompilationWithMscorlib(source).VerifyDiagnostics(
-                // (9,13): error CS0150: A constant value is expected
-                Diagnostic(ErrorCode.ERR_ConstantExpected, "case c:"),
+                // (9,18): error CS0150: A constant value is expected
+                //             case c: return;
+                Diagnostic(ErrorCode.ERR_ConstantExpected, "c").WithLocation(9, 18),
                 // (9,21): warning CS0162: Unreachable code detected
-                Diagnostic(ErrorCode.WRN_UnreachableCode, "return"));
+                //             case c: return;
+                Diagnostic(ErrorCode.WRN_UnreachableCode, "return").WithLocation(9, 21)
+                );
         }
 
         [Fact]
@@ -1200,7 +1207,7 @@ class C
                 );
         }
 
-        [WorkItem(529568, "DevDiv")]
+        [WorkItem(529568, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/529568")]
         [Fact()]
         public void AmbiguousConversions()
         {
@@ -1515,8 +1522,8 @@ public class Test {
                 );
         }
 
-        [WorkItem(545361, "DevDiv")]
-        [Fact]
+        [WorkItem(545361, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545361")]
+        [ClrOnlyFact]
         public void NullableIntToStructViaDecimal()
         {
             var source = @"
@@ -1614,8 +1621,8 @@ public struct S
             CompileAndVerify(source, expectedOutput: @"1ttt");
         }
 
-        [WorkItem(545471, "DevDiv")]
-        [Fact]
+        [WorkItem(545471, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/545471")]
+        [ClrOnlyFact]
         public void CheckedConversionsInExpressionTrees()
         {
             var source = @"
@@ -1663,7 +1670,7 @@ namespace ExpressionTest
 ");
         }
 
-        [WorkItem(647055, "DevDiv")]
+        [WorkItem(647055, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/647055")]
         [Fact]
         public void AmbiguousImplicitExplicitUserDefined()
         {
@@ -1716,8 +1723,8 @@ class C<T>
             AssertEx.SetEqual(elementConversion.OriginalUserDefinedConversions, conversionSymbols);
         }
 
-        [WorkItem(715207, "DevDiv")]
-        [Fact]
+        [WorkItem(715207, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/715207")]
+        [ClrOnlyFact]
         public void LiftingReturnTypeOfExplicitUserDefinedConversion()
         {
             var source = @"
@@ -1747,7 +1754,7 @@ struct BigInteger
 ");
         }
 
-        [WorkItem(737732, "DevDiv")]
+        [WorkItem(737732, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/737732")]
         [Fact]
         public void ConsiderSourceExpressionWhenDeterminingBestUserDefinedConversion()
         {
@@ -1781,7 +1788,7 @@ public class Test
             Assert.Equal(SpecialType.System_Byte, method.ParameterTypes.Single().SpecialType);
         }
 
-        [WorkItem(737732, "DevDiv")]
+        [WorkItem(737732, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/737732")]
         [Fact]
         public void Repro737732()
         {
@@ -1815,8 +1822,8 @@ public struct C
             Assert.Equal(SpecialType.System_Byte, method.ParameterTypes.Single().SpecialType);
         }
 
-        [WorkItem(742345, "DevDiv")]
-        [Fact]
+        [WorkItem(742345, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742345")]
+        [ClrOnlyFact]
         public void MethodGroupConversion_ContravarianceAndDynamic()
         {
             var source = @"
@@ -1838,7 +1845,7 @@ public class C
             CompileAndVerify(source, new[] { SystemCoreRef }, expectedOutput: "B");
         }
 
-        [WorkItem(742345, "DevDiv")]
+        [WorkItem(742345, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/742345")]
         [Fact]
         public void MethodGroupConversion_CovarianceAndDynamic()
         {
@@ -1868,7 +1875,7 @@ public class C
                 Diagnostic(ErrorCode.ERR_BadRetType, "F").WithArguments("C.F()", "dynamic"));
         }
 
-        [WorkItem(737971, "DevDiv")]
+        [WorkItem(737971, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/737971")]
         [Fact]
         public void ConversionsFromExpressions()
         {

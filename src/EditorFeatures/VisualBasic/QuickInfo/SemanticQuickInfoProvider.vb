@@ -6,14 +6,11 @@ Imports System.Threading.Tasks
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Editor.Implementation.Intellisense.QuickInfo
 Imports Microsoft.CodeAnalysis.Editor.Shared.Utilities
-Imports Microsoft.CodeAnalysis.VisualBasic.Symbols
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Imports Microsoft.CodeAnalysis.VisualBasic.Utilities.IntrinsicOperators
 Imports Microsoft.VisualStudio.Language.Intellisense
-Imports Microsoft.VisualStudio.Text
 Imports Microsoft.VisualStudio.Text.Editor
 Imports Microsoft.VisualStudio.Text.Projection
-Imports Microsoft.VisualStudio.Utilities
 
 Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.QuickInfo
 
@@ -22,15 +19,13 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.QuickInfo
         Inherits AbstractSemanticQuickInfoProvider
 
         <ImportingConstructor>
-        Public Sub New(textBufferFactoryService As ITextBufferFactoryService,
-                       contentTypeRegistryService As IContentTypeRegistryService,
-                       projectionBufferFactoryService As IProjectionBufferFactoryService,
+        Public Sub New(projectionBufferFactoryService As IProjectionBufferFactoryService,
                        editorOptionsFactoryService As IEditorOptionsFactoryService,
                        textEditorFactoryService As ITextEditorFactoryService,
                        glyphService As IGlyphService,
                        typeMap As ClassificationTypeMap)
-            MyBase.New(textBufferFactoryService, contentTypeRegistryService, projectionBufferFactoryService,
-                       editorOptionsFactoryService, textEditorFactoryService, glyphService, typeMap)
+            MyBase.New(projectionBufferFactoryService, editorOptionsFactoryService,
+                       textEditorFactoryService, glyphService, typeMap)
         End Sub
 
         Protected Overrides Async Function BuildContentAsync(document As Document,
@@ -134,8 +129,8 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.QuickInfo
             End If
 
             If types.Count > 1 Then
-                Dim contentBuilder = New List(Of SymbolDisplayPart)
-                contentBuilder.AddText(VBEditorResources.MultipleTypes)
+                Dim contentBuilder = New List(Of TaggedText)
+                contentBuilder.AddText(VBEditorResources.Multiple_Types)
                 Return Me.CreateClassifiableDeferredContent(contentBuilder)
             End If
 
@@ -180,11 +175,12 @@ Namespace Microsoft.CodeAnalysis.Editor.VisualBasic.QuickInfo
 
             Return CreateQuickInfoDisplayDeferredContent(
                 glyph,
-                builder,
+                builder.ToTaggedText(),
                 CreateDocumentationCommentDeferredContent(documentation.DocumentationText),
-                SpecializedCollections.EmptyList(Of SymbolDisplayPart),
-                SpecializedCollections.EmptyList(Of SymbolDisplayPart),
-                SpecializedCollections.EmptyList(Of SymbolDisplayPart))
+                SpecializedCollections.EmptyList(Of TaggedText),
+                SpecializedCollections.EmptyList(Of TaggedText),
+                SpecializedCollections.EmptyList(Of TaggedText),
+                SpecializedCollections.EmptyList(Of TaggedText))
         End Function
     End Class
 End Namespace

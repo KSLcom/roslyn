@@ -10,12 +10,13 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
 using System.Collections.Generic;
+using Microsoft.CodeAnalysis.Collections;
 
 namespace Microsoft.CodeAnalysis.CSharp.Symbols
 {
     internal partial class SourceNamedTypeSymbol
     {
-        private Tuple<NamedTypeSymbol, ImmutableArray<NamedTypeSymbol>> _lazyDeclaredBases = null;
+        private Tuple<NamedTypeSymbol, ImmutableArray<NamedTypeSymbol>> _lazyDeclaredBases;
 
         private NamedTypeSymbol _lazyBaseType = ErrorTypeSymbol.UnknownResultType;
         private ImmutableArray<NamedTypeSymbol> _lazyInterfaces;
@@ -43,7 +44,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     var acyclicBase = this.MakeAcyclicBaseType(diagnostics);
                     if (ReferenceEquals(Interlocked.CompareExchange(ref _lazyBaseType, acyclicBase, ErrorTypeSymbol.UnknownResultType), ErrorTypeSymbol.UnknownResultType))
                     {
-                        AddSemanticDiagnostics(diagnostics);
+                        AddDeclarationDiagnostics(diagnostics);
                     }
                     diagnostics.Free();
                 }
@@ -69,7 +70,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 var acyclicInterfaces = MakeAcyclicInterfaces(basesBeingResolved, diagnostics);
                 if (ImmutableInterlocked.InterlockedCompareExchange(ref _lazyInterfaces, acyclicInterfaces, default(ImmutableArray<NamedTypeSymbol>)).IsDefault)
                 {
-                    AddSemanticDiagnostics(diagnostics);
+                    AddDeclarationDiagnostics(diagnostics);
                 }
                 diagnostics.Free();
             }
@@ -192,7 +193,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                 DiagnosticBag diagnostics = DiagnosticBag.GetInstance();
                 if (Interlocked.CompareExchange(ref _lazyDeclaredBases, MakeDeclaredBases(basesBeingResolved, diagnostics), null) == null)
                 {
-                    AddSemanticDiagnostics(diagnostics);
+                    AddDeclarationDiagnostics(diagnostics);
                 }
 
                 diagnostics.Free();
@@ -225,6 +226,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
             var baseInterfaces = ArrayBuilder<NamedTypeSymbol>.GetInstance();
 
             NamedTypeSymbol baseType = null;
+            SourceLocation baseTypeLocation = null;
+            var interfaceLocations = PooledDictionary<NamedTypeSymbol, SourceLocation>.GetInstance();
 
             foreach (var decl in this.declaration.Declarations)
             {
@@ -238,50 +241,51 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     if ((object)baseType == null)
                     {
                         baseType = partBase;
+                        baseTypeLocation = decl.NameLocation;
                     }
                     else if (baseType.TypeKind == TypeKind.Error && (object)partBase != null)
                     {
                         // if the old base was an error symbol, copy it to the interfaces list so it doesn't get lost
                         partInterfaces = partInterfaces.Add(baseType);
                         baseType = partBase;
+                        baseTypeLocation = decl.NameLocation;
                     }
                     else if ((object)partBase != null && partBase != baseType && partBase.TypeKind != TypeKind.Error)
                     {
                         // the parts do not agree
                         var info = diagnostics.Add(ErrorCode.ERR_PartialMultipleBases, Locations[0], this);
                         baseType = new ExtendedErrorTypeSymbol(baseType, LookupResultKind.Ambiguous, info);
+                        baseTypeLocation = decl.NameLocation;
                         reportedPartialConflict = true;
                     }
                 }
 
-                int n = baseInterfaces.Count;
-                foreach (var t in partInterfaces) // this could probably be done more efficiently with a side hash table if it proves necessary
+                foreach (var t in partInterfaces)
                 {
-                    for (int i = 0; i < n; i++)
+                    if (!interfaceLocations.ContainsKey(t))
                     {
-                        if (t == baseInterfaces[i])
-                        {
-                            goto alreadyInInterfaceList;
-                        }
+                        baseInterfaces.Add(t);
+                        interfaceLocations.Add(t, decl.NameLocation);
                     }
-
-                    baseInterfaces.Add(t);
-                alreadyInInterfaceList:;
                 }
-            }
-
-            if ((object)baseType != null && baseType.IsStatic)
-            {
-                // '{1}': cannot derive from static class '{0}'
-                diagnostics.Add(ErrorCode.ERR_StaticBaseClass, Locations[0], baseType, this);
             }
 
             HashSet<DiagnosticInfo> useSiteDiagnostics = null;
 
-            if ((object)baseType != null && !this.IsNoMoreVisibleThan(baseType, ref useSiteDiagnostics))
+            if ((object)baseType != null)
             {
-                // Inconsistent accessibility: base class '{1}' is less accessible than class '{0}'
-                diagnostics.Add(ErrorCode.ERR_BadVisBaseClass, Locations[0], this, baseType);
+                Debug.Assert(baseTypeLocation != null);
+                if (baseType.IsStatic)
+                {
+                    // '{1}': cannot derive from static class '{0}'
+                    diagnostics.Add(ErrorCode.ERR_StaticBaseClass, baseTypeLocation, baseType, this);
+                }
+
+                if (!this.IsNoMoreVisibleThan(baseType, ref useSiteDiagnostics))
+                {
+                    // Inconsistent accessibility: base class '{1}' is less accessible than class '{0}'
+                    diagnostics.Add(ErrorCode.ERR_BadVisBaseClass, baseTypeLocation, this, baseType);
+                }
             }
 
             var baseInterfacesRO = baseInterfaces.ToImmutableAndFree();
@@ -292,10 +296,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
                     if (!i.IsAtLeastAsVisibleAs(this, ref useSiteDiagnostics))
                     {
                         // Inconsistent accessibility: base interface '{1}' is less accessible than interface '{0}'
-                        diagnostics.Add(ErrorCode.ERR_BadVisBaseInterface, Locations[0], this, i);
+                        diagnostics.Add(ErrorCode.ERR_BadVisBaseInterface, interfaceLocations[i], this, i);
                     }
                 }
             }
+
+            interfaceLocations.Free();
 
             diagnostics.Add(Locations[0], useSiteDiagnostics);
 

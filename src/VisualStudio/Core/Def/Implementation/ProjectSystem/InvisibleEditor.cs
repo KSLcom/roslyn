@@ -135,20 +135,20 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
                     _manager = null;
                 }
 
-                // Clean up our RCW. This RCW is a unqiue RCW, so this is actually safe to do!
+                // Clean up our RCW. This RCW is a unique RCW, so this is actually safe to do!
                 Marshal.ReleaseComObject(_invisibleEditor);
                 _invisibleEditor = null;
 
                 GC.SuppressFinalize(this);
             }
-            catch (Exception ex) when(FatalError.Report(ex))
+            catch (Exception ex) when (FatalError.Report(ex))
             {
             }
-            }
+        }
 
-            ~InvisibleEditor()
+        ~InvisibleEditor()
         {
-                Debug.Assert(Environment.HasShutdownStarted, GetType().Name + " was leaked without Dispose being called.");
-            }
+            Debug.Assert(Environment.HasShutdownStarted, GetType().Name + " was leaked without Dispose being called.");
         }
     }
+}

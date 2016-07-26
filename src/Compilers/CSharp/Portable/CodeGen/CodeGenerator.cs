@@ -1,19 +1,14 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Linq;
+using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.CodeGen;
-using Microsoft.CodeAnalysis.Collections;
 using Microsoft.CodeAnalysis.CSharp.Emit;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Emit;
-using Microsoft.CodeAnalysis.Symbols;
 using Microsoft.CodeAnalysis.Text;
-using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.CodeGen
 {
@@ -30,23 +25,23 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
         private readonly ILBuilder _builder;
         private readonly PEModuleBuilder _module;
         private readonly DiagnosticBag _diagnostics;
-        private readonly OptimizationLevel _optimizations;
+        private readonly ILEmitStyle _ilEmitStyle;
         private readonly bool _emitPdbSequencePoints;
 
         private readonly HashSet<LocalSymbol> _stackLocals;
 
         // not 0 when in a protected region with a handler. 
-        private int _tryNestingLevel = 0;
+        private int _tryNestingLevel;
 
         private readonly SynthesizedLocalOrdinalsDispenser _synthesizedLocalOrdinals = new SynthesizedLocalOrdinalsDispenser();
         private int _uniqueNameId;
 
-        // label used when when return is emitted in a form of store/goto
+        // label used when return is emitted in a form of store/goto
         private static readonly object s_returnLabel = new object();
 
         private int _asyncCatchHandlerOffset = -1;
-        private ArrayBuilder<int> _asyncYieldPoints = null;
-        private ArrayBuilder<int> _asyncResumePoints = null;
+        private ArrayBuilder<int> _asyncYieldPoints;
+        private ArrayBuilder<int> _asyncResumePoints;
 
         /// <summary>
         /// In some cases returns are handled as gotos to return epilogue.
@@ -70,7 +65,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             PEModuleBuilder moduleBuilder,
             DiagnosticBag diagnostics,
             OptimizationLevel optimizations,
-            bool emittingPdbs)
+            bool emittingPdb)
         {
             Debug.Assert((object)method != null);
             Debug.Assert(boundBody != null);
@@ -84,28 +79,56 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             _module = moduleBuilder;
             _diagnostics = diagnostics;
 
-            // Always optimize synthesized methods that don't contain user code.
-            // 
-            // Specifically, always optimize synthesized explicit interface implementation methods
-            // (aka bridge methods) with by-ref returns because peverify produces errors if we
-            // return a ref local (which the return local will be in such cases).
-
-            _optimizations = method.GenerateDebugInfo ? optimizations : OptimizationLevel.Release;
+            if (!method.GenerateDebugInfo)
+            {
+                // Always optimize synthesized methods that don't contain user code.
+                // 
+                // Specifically, always optimize synthesized explicit interface implementation methods
+                // (aka bridge methods) with by-ref returns because peverify produces errors if we
+                // return a ref local (which the return local will be in such cases).
+                _ilEmitStyle = ILEmitStyle.Release;
+            }
+            else
+            {
+                if (optimizations == OptimizationLevel.Debug)
+                {
+                    _ilEmitStyle = ILEmitStyle.Debug;
+                }
+                else
+                {
+                    _ilEmitStyle = IsDebugPlus() ?
+                        ILEmitStyle.DebugFriendlyRelease :
+                        ILEmitStyle.Release;
+                }
+            }
 
             // Emit sequence points unless
             // - the PDBs are not being generated
             // - debug information for the method is not generated since the method does not contain
-            //   user code that can be stepped thru, or changed during EnC.
+            //   user code that can be stepped through, or changed during EnC.
             // 
             // This setting only affects generating PDB sequence points, it shall not affect generated IL in any way.
-            _emitPdbSequencePoints = emittingPdbs && method.GenerateDebugInfo;
+            _emitPdbSequencePoints = emittingPdb && method.GenerateDebugInfo;
 
-            if (_optimizations == OptimizationLevel.Release)
+            try
             {
-                _boundBody = Optimizer.Optimize(boundBody, out _stackLocals);
+                _boundBody = Optimizer.Optimize(
+                    boundBody,
+                    debugFriendly: _ilEmitStyle != ILEmitStyle.Release,
+                    stackLocals: out _stackLocals);
+            }
+            catch (BoundTreeVisitor.CancelledByStackGuardException ex)
+            {
+                ex.AddAnError(diagnostics);
+                _boundBody = boundBody;
             }
 
             _methodBodySyntaxOpt = (method as SourceMethodSymbol)?.BodySyntax;
+        }
+
+        private bool IsDebugPlus()
+        {
+            return _module.Compilation.Options.DebugPlusMode;
         }
 
         private LocalDefinition LazyReturnTemp
@@ -116,7 +139,34 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 if (result == null)
                 {
                     Debug.Assert(!_method.ReturnsVoid, "returning something from void method?");
-                    result = AllocateTemp(_method.ReturnType, _boundBody.Syntax);
+                    var slotConstraints = _method.RefKind == RefKind.None
+                        ? LocalSlotConstraints.None
+                        : LocalSlotConstraints.ByRef;
+
+
+                    var bodySyntax = _methodBodySyntaxOpt;
+                    if (_ilEmitStyle == ILEmitStyle.Debug && bodySyntax != null)
+                    {
+                        int syntaxOffset = _method.CalculateLocalSyntaxOffset(bodySyntax.SpanStart, bodySyntax.SyntaxTree);
+                        var localSymbol = new SynthesizedLocal(_method, _method.ReturnType, SynthesizedLocalKind.FunctionReturnValue, bodySyntax);
+
+                        result = _builder.LocalSlotManager.DeclareLocal(
+                            type: _module.Translate(localSymbol.Type, bodySyntax, _diagnostics),
+                            symbol: localSymbol,
+                            name: null,
+                            kind: localSymbol.SynthesizedKind,
+                            id: new LocalDebugId(syntaxOffset, ordinal: 0),
+                            pdbAttributes: localSymbol.SynthesizedKind.PdbAttributes(),
+                            constraints: slotConstraints,
+                            isDynamic: false,
+                            dynamicTransformFlags: ImmutableArray<TypedConstant>.Empty,
+                            isSlotReusable: false);
+                    }
+                    else
+                    {
+                        result = AllocateTemp(_method.ReturnType, _boundBody.Syntax, slotConstraints);
+                    }
+
                     _returnTemp = result;
                 }
                 return result;
@@ -193,19 +243,26 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 _builder.DefineInitialHiddenSequencePoint();
             }
 
-            EmitStatement(_boundBody);
-
-            if (_indirectReturnState == IndirectReturnState.Needed)
+            try
             {
-                // it is unfortunate that return was not handled while we were in scope of the method
-                // it can happen in rare cases involving exception handling (for example all returns were from a try)
-                // in such case we can still handle return here.
-                HandleReturn();
+                EmitStatement(_boundBody);
+
+                if (_indirectReturnState == IndirectReturnState.Needed)
+                {
+                    // it is unfortunate that return was not handled while we were in scope of the method
+                    // it can happen in rare cases involving exception handling (for example all returns were from a try)
+                    // in such case we can still handle return here.
+                    HandleReturn();
+                }
+
+                if (!_diagnostics.HasAnyErrors())
+                {
+                    _builder.Realize();
+                }
             }
-
-            if (!_diagnostics.HasAnyErrors())
+            catch (EmitCancelledException)
             {
-                _builder.Realize();
+                Debug.Assert(_diagnostics.HasAnyErrors());
             }
 
             _synthesizedLocalOrdinals.Free();
@@ -243,14 +300,19 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
             _indirectReturnState = IndirectReturnState.Emitted;
         }
 
-        private void EmitSymbolToken(TypeSymbol symbol, CSharpSyntaxNode syntaxNode)
+        private void EmitTypeReferenceToken(Cci.ITypeReference symbol, CSharpSyntaxNode syntaxNode)
         {
-            _builder.EmitToken(_module.Translate(symbol, syntaxNode, _diagnostics), syntaxNode, _diagnostics);
+            _builder.EmitToken(symbol, syntaxNode, _diagnostics);
         }
 
-        private void EmitSymbolToken(MethodSymbol method, CSharpSyntaxNode syntaxNode, BoundArgListOperator optArgList)
+        private void EmitSymbolToken(TypeSymbol symbol, CSharpSyntaxNode syntaxNode)
         {
-            _builder.EmitToken(_module.Translate(method, syntaxNode, _diagnostics, optArgList), syntaxNode, _diagnostics);
+            EmitTypeReferenceToken(_module.Translate(symbol, syntaxNode, _diagnostics), syntaxNode);
+        }
+
+        private void EmitSymbolToken(MethodSymbol method, CSharpSyntaxNode syntaxNode, BoundArgListOperator optArgList, bool encodeAsRawDefinitionToken = false)
+        {
+            _builder.EmitToken(_module.Translate(method, syntaxNode, _diagnostics, optArgList, needDeclaration: encodeAsRawDefinitionToken), syntaxNode, _diagnostics, encodeAsRawDefinitionToken);
         }
 
         private void EmitSymbolToken(FieldSymbol symbol, CSharpSyntaxNode syntaxNode)
@@ -280,7 +342,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 instructionsEmitted = this.EmitStatementAndCountInstructions(statement);
             }
 
-            if (instructionsEmitted == 0 && syntax != null && _optimizations == OptimizationLevel.Debug)
+            if (instructionsEmitted == 0 && syntax != null && _ilEmitStyle == ILEmitStyle.Debug)
             {
                 // if there was no code emitted, then emit nop 
                 // otherwise this point could get associated with some random statement, possibly in a wrong scope
@@ -303,7 +365,7 @@ namespace Microsoft.CodeAnalysis.CSharp.CodeGen
                 instructionsEmitted = this.EmitStatementAndCountInstructions(statement);
             }
 
-            if (instructionsEmitted == 0 && span != default(TextSpan) && _optimizations == OptimizationLevel.Debug)
+            if (instructionsEmitted == 0 && span != default(TextSpan) && _ilEmitStyle == ILEmitStyle.Debug)
             {
                 // if there was no code emitted, then emit nop 
                 // otherwise this point could get associated with some random statement, possibly in a wrong scope
