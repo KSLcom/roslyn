@@ -3,9 +3,7 @@
   <PropertyGroup>
     <TargetNetFX20>true</TargetNetFX20>
   </PropertyGroup>
-  <ImportGroup Label="Settings">
-    <Import Project="..\..\..\..\..\..\build\Targets\VSL.Settings.targets" />
-  </ImportGroup>
+  <Import Project="..\..\..\..\..\..\build\Targets\VSL.Settings.targets" />
   <PropertyGroup>
     <OutDir>$(OutDir)NetFX20\</OutDir>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -57,6 +55,9 @@
     <Compile Include="..\..\..\..\..\Test\PdbUtilities\Shared\DateTimeUtilities.cs">
       <Link>Helpers\DateTimeUtilities.cs</Link>
     </Compile>
+    <Compile Include="..\..\ExpressionCompiler\CustomTypeInfo.cs">
+      <Link>ExpressionCompiler\CustomTypeInfo.cs</Link>
+    </Compile>
     <Compile Include="..\..\ExpressionCompiler\DynamicFlagsCustomTypeInfo.cs">
       <Link>ExpressionCompiler\DynamicFlagsCustomTypeInfo.cs</Link>
     </Compile>
@@ -67,6 +68,13 @@
     <Compile Include="..\SystemHelpers.cs">
       <Link>Helpers\SystemHelpers.cs</Link>
     </Compile>
+  </ItemGroup>
+  <ItemGroup Label="Project References">
+    <ProjectReference Include="..\..\..\..\Core\Source\Concord\Concord.csproj">
+      <Project>{5002636a-fe8d-40bf-8818-ab513a2194fa}</Project>
+      <Name>Concord</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' " />
@@ -93,7 +101,5 @@
     <None Include="project.json" />
   </ItemGroup>
   <Import Project="..\ResultProvider.projitems" Label="Shared" />
-  <ImportGroup Label="Targets">
-    <Import Project="..\..\..\..\..\..\build\Targets\VSL.Imports.targets" />
-  </ImportGroup>
+  <Import Project="..\..\..\..\..\..\build\Targets\VSL.Imports.targets" />
 </Project>

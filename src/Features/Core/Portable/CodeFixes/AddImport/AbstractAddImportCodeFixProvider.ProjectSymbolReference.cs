@@ -47,19 +47,9 @@ namespace Microsoft.CodeAnalysis.CodeFixes.AddImport
 
                 if (document.Project.Id == _project.Id)
                 {
-                    if (!SearchResult.DesiredNameDiffersFromSourceName())
+                    if (SearchResult.DesiredNameMatchesSourceName(document))
                     {
                         // The name doesn't change.  This is a normal priority action.
-                        return CodeActionPriority.Medium;
-                    }
-
-                    // We need to update the source name. If all we're doing is changing the 
-                    // casing, and this is a case insensitive language, then this is just a 
-                    // normal priority action.  Otherwise, this wil be low priority.
-                    var syntaxFacts = document.GetLanguageService<ISyntaxFactsService>();
-                    if (!syntaxFacts.IsCaseSensitive && 
-                        SearchResult.DesiredNameDiffersFromSourceNameOnlyByCase())
-                    {
                         return CodeActionPriority.Medium;
                     }
                 }
@@ -95,7 +85,7 @@ namespace Microsoft.CodeAnalysis.CodeFixes.AddImport
 
                 return project.Id == _project.Id
                     ? description
-                    : $"{description} ({string.Format(FeaturesResources.from_0, _project.Name)})";
+                    : string.Format(FeaturesResources.Add_reference_to_0, _project.Name);
             }
 
             protected override Func<Workspace, bool> GetIsApplicableCheck(Project contextProject)

@@ -468,14 +468,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.Symbols
             Debug.Assert(Not m_property.IsMustOverride)
 
             If m_property.IsAutoProperty Then
-                Return SynthesizedPropertyAccessorBase(Of PropertySymbol).GetBoundMethodBody(Me, m_property.AssociatedField, methodBodyBinder)
+                Return SynthesizedPropertyAccessorHelper.GetBoundMethodBody(Me, m_property.AssociatedField, methodBodyBinder)
             Else
                 Return MyBase.GetBoundMethodBody(compilationState, diagnostics, methodBodyBinder)
             End If
         End Function
 
         Friend Overrides Sub DecodeWellKnownAttribute(ByRef arguments As DecodeWellKnownAttributeArguments(Of AttributeSyntax, VisualBasicAttributeData, AttributeLocation))
-
             If arguments.SymbolPart = AttributeLocation.None Then
                 If arguments.Attribute.IsTargetAttribute(Me, AttributeDescription.DebuggerHiddenAttribute) Then
                     arguments.GetOrCreateData(Of MethodWellKnownAttributeData)().IsPropertyAccessorWithDebuggerHiddenAttribute = True

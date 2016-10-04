@@ -49,7 +49,15 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
 
             result.Add(_factory.Label(node.BreakLabel));
-            var translatedSwitch = _factory.Block(pslr.DeclaredTemps.ToImmutableArray().Concat(node.InnerLocals), node.InnerLocalFunctions, result.ToImmutableAndFree());
+            BoundStatement translatedSwitch = _factory.Block(pslr.DeclaredTemps.ToImmutableArray().Concat(node.InnerLocals), node.InnerLocalFunctions, result.ToImmutableAndFree());
+
+            // Create the sequence point if generating debug info and
+            // node is not compiler generated
+            if (this.Instrument && !node.WasCompilerGenerated)
+            {
+                translatedSwitch = _instrumenter.InstrumentBoundPatternSwitchStatement(node, translatedSwitch);
+            }
+
             return translatedSwitch;
         }
 
@@ -219,7 +227,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
 
                 Debug.Assert(temp.Kind == BoundKind.Local);
-                return LocalRewriter.MakeDeclarationPattern(_factory.Syntax, input, ((BoundLocal)temp).LocalSymbol, requiresNullTest: false);
+                return LocalRewriter.MakeDeclarationPattern(_factory.Syntax, input, temp, requiresNullTest: false);
             }
 
             private void LowerDecisionTree(DecisionTree.ByValue byValue)
@@ -271,6 +279,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 if (guarded.Guard == null || guarded.Guard.ConstantValue == ConstantValue.True)
                 {
                     // unconditional
+                    Debug.Assert(guarded.Default == null);
                     if (guarded.Bindings.IsDefaultOrEmpty)
                     {
                         _loweredDecisionTree.Add(_factory.Goto(targetLabel));
@@ -295,21 +304,24 @@ namespace Microsoft.CodeAnalysis.CSharp
                     var guardFailed = _factory.GenerateLabel("guardFailed");
                     sectionBuilder.Add(_factory.Goto(guardFailed));
                     _loweredDecisionTree.Add(_factory.Label(guardFailed));
+
+                    LowerDecisionTree(guarded.Expression, guarded.Default);
                 }
             }
 
-            private void AddBindings(ArrayBuilder<BoundStatement> sectionBuilder, ImmutableArray<KeyValuePair<BoundExpression, LocalSymbol>> bindings)
+            private void AddBindings(ArrayBuilder<BoundStatement> sectionBuilder, ImmutableArray<KeyValuePair<BoundExpression, BoundExpression>> bindings)
             {
-                if (bindings.IsDefaultOrEmpty)
+                if (!bindings.IsDefaultOrEmpty)
                 {
-                    return;
-                }
-
-                foreach (var kv in bindings)
-                {
-                    var source = kv.Key;
-                    var dest = kv.Value;
-                    sectionBuilder.Add(_factory.Assignment(_factory.Local(dest), source));
+                    foreach (var kv in bindings)
+                    {
+                        var source = kv.Key;
+                        var dest = kv.Value;
+                        var rewriter = this.LocalRewriter;
+                        sectionBuilder.Add(_factory.ExpressionStatement(
+                            rewriter.MakeStaticAssignmentOperator(
+                                _factory.Syntax, rewriter.VisitExpression(dest), rewriter.VisitExpression(source), RefKind.None, dest.Type, false)));
+                    }
                 }
             }
 

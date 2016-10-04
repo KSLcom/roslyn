@@ -9,7 +9,6 @@ try
 {
     $items = @(
         "ExpressionEvaluatorPackage.vsix",
-        "Microsoft.VisualStudio.VsInteractiveWindow.vsix",
         "Roslyn.VisualStudio.InteractiveComponents.vsix",
         "Roslyn.VisualStudio.Setup.Interactive.vsix",
         "Roslyn.VisualStudio.Setup.Next.vsix",
@@ -19,11 +18,11 @@ try
         "Microsoft.CodeAnalysis.VisualStudio.Setup.json",
         "Microsoft.CodeAnalysis.VisualStudio.Setup.Next.json",
         "Microsoft.CodeAnalysis.VisualStudioInteractiveComponents.json",
-        "Microsoft.CodeAnalysis.VisualStudioInteractiveWindow.json",
         "Microsoft.CodeAnalysis.LanguageServices.vsman",
         "Microsoft.CodeAnalysis.Compilers.json",
         "Microsoft.CodeAnalysis.Compilers.vsix",
-        "Microsoft.CodeAnalysis.Compilers.vsman")
+        "Microsoft.CodeAnalysis.Compilers.vsman",
+        "PortableFacades.vsman")
     $baseDestPath = join-path $binariesPath "Insertion"
     if (-not (test-path $baseDestPath))
     {

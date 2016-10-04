@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,10 +53,10 @@ namespace Microsoft.CodeAnalysis.Classification
             return allClassifications;
         }
 
-        internal static async Task<List<SymbolDisplayPart>> GetClassifiedSymbolDisplayPartsAsync(
+        internal static async Task<ImmutableArray<SymbolDisplayPart>> GetClassifiedSymbolDisplayPartsAsync(
             Document document,
             TextSpan textSpan,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
  
@@ -65,25 +66,25 @@ namespace Microsoft.CodeAnalysis.Classification
                 cancellationToken).ConfigureAwait(false);
         }
  
-        internal static async Task<List<SymbolDisplayPart>> GetClassifiedSymbolDisplayPartsAsync(
-            SemanticModel semanticModel, TextSpan textSpan, Workspace workspace, CancellationToken cancellationToken)
+        internal static async Task<ImmutableArray<SymbolDisplayPart>> GetClassifiedSymbolDisplayPartsAsync(
+            SemanticModel semanticModel, TextSpan textSpan, Workspace workspace,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var classifiedSpans = GetClassifiedSpans(semanticModel, textSpan, workspace, cancellationToken);
             var sourceText = await semanticModel.SyntaxTree.GetTextAsync(cancellationToken).ConfigureAwait(false);
 
-            return ConvertClassifications(sourceText, classifiedSpans);
+            return ConvertClassificationsToParts(sourceText, textSpan.Start, classifiedSpans);
         }
  
-        private static List<SymbolDisplayPart> ConvertClassifications(
-            SourceText sourceText, IEnumerable<ClassifiedSpan> classifiedSpans)
+        internal static ImmutableArray<SymbolDisplayPart> ConvertClassificationsToParts(
+            SourceText sourceText, int startPosition, IEnumerable<ClassifiedSpan> classifiedSpans)
         {
-            var parts = new List<SymbolDisplayPart>();
+            var parts = ArrayBuilder<SymbolDisplayPart>.GetInstance();
  
-            ClassifiedSpan? lastSpan = null;
             foreach (var span in classifiedSpans)
             {
                 // If there is space between this span and the last one, then add a space.
-                if (lastSpan != null && lastSpan.Value.TextSpan.End != span.TextSpan.Start)
+                if (startPosition != span.TextSpan.Start)
                 {
                     parts.AddRange(Space());
                 }
@@ -92,14 +93,14 @@ namespace Microsoft.CodeAnalysis.Classification
                 if (kind != null)
                 {
                     parts.Add(new SymbolDisplayPart(kind.Value, null, sourceText.ToString(span.TextSpan)));
- 
-                    lastSpan = span;
+
+                    startPosition = span.TextSpan.End;
                 }
             }
  
-            return parts;
+            return parts.ToImmutableAndFree();
         }
- 
+
         private static IEnumerable<SymbolDisplayPart> Space(int count = 1)
         {
             yield return new SymbolDisplayPart(SymbolDisplayPartKind.Space, null, new string(' ', count));

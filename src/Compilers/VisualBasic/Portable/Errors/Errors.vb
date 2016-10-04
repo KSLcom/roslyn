@@ -1451,7 +1451,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ERR_MultilineLambdasCannotContainOnError = 36668
         'ERR_BranchOutOfMultilineLambda = 36669 obsolete - was not even reported in Dev10 any more.
         ERR_LambdaBindingMismatch2 = 36670
-        ERR_MultilineLambdaShadowLocal1 = 36671
+        'ERR_MultilineLambdaShadowLocal1 = 36671 'unused in Roslyn
         ERR_StaticInLambda = 36672
         ERR_MultilineLambdaMissingSub = 36673
         ERR_MultilineLambdaMissingFunction = 36674
@@ -1468,7 +1468,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ERR_OverloadCandidate1 = 36712
         ERR_AutoPropertyInitializedInStructure = 36713
         ERR_InitializedExpandedProperty = 36714
-        ERR_NewExpandedProperty = 36715
+        'ERR_NewExpandedProperty = 36715 'unused in Roslyn
 
         ERR_LanguageVersion = 36716
         ERR_ArrayInitNoType = 36717
@@ -1545,7 +1545,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ERR_CannotUseGenericBaseTypeAcrossAssemblyBoundaries = 36925
         ERR_BadAsyncByRefParam = 36926
         ERR_BadIteratorByRefParam = 36927
-        ERR_BadAsyncExpressionLambda = 36928
+        'ERR_BadAsyncExpressionLambda = 36928 'unused in Roslyn
         ERR_BadAsyncInQuery = 36929
         ERR_BadGetAwaiterMethod1 = 36930
         'ERR_ExpressionTreeContainsAwait = 36931
@@ -1561,7 +1561,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         '// unused 36941
         ERR_BadReturnValueInIterator = 36942
         ERR_BadAwaitInTryHandler = 36943
-        ERR_BadAwaitObject = 36944
+        'ERR_BadAwaitObject = 36944 'unused in Roslyn
         ERR_BadAsyncReturn = 36945
         ERR_BadResumableAccessReturnVariable = 36946
         ERR_BadIteratorExpressionLambda = 36947
@@ -1570,7 +1570,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ERR_ConstructorAsync = 36950
         ERR_InvalidLambdaModifier = 36951
         ERR_ReturnFromNonGenericTaskAsync = 36952
-        ERR_BadAutoPropertyFlags1 = 36953
+        'ERR_BadAutoPropertyFlags1 = 36953 'unused in Roslyn
 
         ERR_BadOverloadCandidates2 = 36954
         ERR_BadStaticInitializerInResumable = 36955
@@ -1686,9 +1686,24 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         ERR_PeWritingFailure = 37256
 
         ERR_OptionMustBeAbsolutePath = 37257
+        ERR_DocFileGen = 37258
 
-        ERR_LastPlusOne
+        ERR_TupleTooFewElements = 37259
+        ERR_TupleReservedElementNameAnyPosition = 37260
+        ERR_TupleReservedElementName = 37261
+        ERR_TupleDuplicateElementName = 37262
 
+        ERR_RefReturningCallInExpressionTree = 37263
+
+        ERR_SourceLinkRequiresPortablePdb = 37264
+        ERR_CannotEmbedWithoutPdb = 37265
+
+        ERR_InvalidInstrumentationKind = 37266
+
+        ERR_ValueTupleTypeRefResolutionError = 37267
+
+        ERR_TupleElementNamesAttributeMissing = 37268
+        ERR_ExplicitTupleElementNamesAttribute = 37269
 
         '// WARNINGS BEGIN HERE
         WRN_UseOfObsoleteSymbol2 = 40000
@@ -1754,8 +1769,9 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         WRN_ConstraintsFailedForInferredArgs2 = 41006
         WRN_ConditionalNotValidOnFunction = 41007
         WRN_UseSwitchInsteadOfAttribute = 41008
+        WRN_TupleLiteralNameMismatch = 41009
 
-        '// AVAILABLE                             41009 - 41199
+        '// AVAILABLE                             41010 - 41199
         WRN_ReferencedAssemblyDoesNotHaveStrongName = 41997
         WRN_RecursiveAddHandlerCall = 41998
         WRN_ImplicitConversionCopyBack = 41999
@@ -1921,7 +1937,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         IDS_ProjectSettingsLocationName = 56000
         IDS_FunctionReturnType = 56001
         IDS_TheSystemCannotFindThePathSpecified = 56002
-        IDS_UnrecognizedFileFormat = 56003
+        ' available: 56003
         IDS_MSG_ADDMODULE = 56004
         IDS_MSG_ADDLINKREFERENCE = 56005
         IDS_MSG_ADDREFERENCE = 56006
@@ -1957,5 +1973,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         FEATURE_ImplementingReadonlyOrWriteonlyPropertyWithReadwrite
         FEATURE_DigitSeparators
         FEATURE_BinaryLiterals
+        FEATURE_Tuples
+        FEATURE_IOperation
     End Enum
 End Namespace

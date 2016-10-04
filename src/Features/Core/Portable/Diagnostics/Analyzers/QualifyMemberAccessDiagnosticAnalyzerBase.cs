@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Immutable;
+using System.Reflection;
 using Microsoft.CodeAnalysis.CodeStyle;
 using Microsoft.CodeAnalysis.Options;
 using Microsoft.CodeAnalysis.Semantics;
@@ -14,38 +16,37 @@ namespace Microsoft.CodeAnalysis.Diagnostics.QualifyMemberAccess
 
         private static readonly LocalizableString s_qualifyMembersTitle = new LocalizableResourceString(nameof(FeaturesResources.Add_this_or_Me_qualification), FeaturesResources.ResourceManager, typeof(FeaturesResources));
 
-        private static readonly DiagnosticDescriptor s_descriptorQualifyMemberAccessInfo = new DiagnosticDescriptor(IDEDiagnosticIds.AddQualificationDiagnosticId,
+        private static readonly DiagnosticDescriptor s_descriptorQualifyMemberAccess = new DiagnosticDescriptor(IDEDiagnosticIds.AddQualificationDiagnosticId,
                                                                     s_qualifyMembersTitle,
                                                                     s_shouldBeQualifiedMessage,
                                                                     DiagnosticCategory.Style,
-                                                                    DiagnosticSeverity.Info,
-                                                                    isEnabledByDefault: true,
-                                                                    customTags: DiagnosticCustomTags.Unnecessary);
-        private static readonly DiagnosticDescriptor s_descriptorQualifyMemberAccessWarning = new DiagnosticDescriptor(IDEDiagnosticIds.AddQualificationDiagnosticId,
-                                                                    s_qualifyMembersTitle,
-                                                                    s_shouldBeQualifiedMessage,
-                                                                    DiagnosticCategory.Style,
-                                                                    DiagnosticSeverity.Warning,
-                                                                    isEnabledByDefault: true,
-                                                                    customTags: DiagnosticCustomTags.Unnecessary);
-        private static readonly DiagnosticDescriptor s_descriptorQualifyMemberAccessError = new DiagnosticDescriptor(IDEDiagnosticIds.AddQualificationDiagnosticId,
-                                                                    s_qualifyMembersTitle,
-                                                                    s_shouldBeQualifiedMessage,
-                                                                    DiagnosticCategory.Style,
-                                                                    DiagnosticSeverity.Error,
+                                                                    DiagnosticSeverity.Hidden,
                                                                     isEnabledByDefault: true,
                                                                     customTags: DiagnosticCustomTags.Unnecessary);
 
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            s_descriptorQualifyMemberAccessInfo,
-            s_descriptorQualifyMemberAccessWarning,
-            s_descriptorQualifyMemberAccessError);
+        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(s_descriptorQualifyMemberAccess);
+
+        public bool OpenFileOnly(Workspace workspace)
+        {
+            var qualifyFieldAccessOption = workspace.Options.GetOption(CodeStyleOptions.QualifyFieldAccess, GetLanguageName()).Notification;
+            var qualifyPropertyAccessOption = workspace.Options.GetOption(CodeStyleOptions.QualifyPropertyAccess, GetLanguageName()).Notification;
+            var qualifyMethodAccessOption = workspace.Options.GetOption(CodeStyleOptions.QualifyMethodAccess, GetLanguageName()).Notification;
+            var qualifyEventAccessOption = workspace.Options.GetOption(CodeStyleOptions.QualifyEventAccess, GetLanguageName()).Notification;
+
+            return !(qualifyFieldAccessOption == NotificationOption.Warning || qualifyFieldAccessOption == NotificationOption.Error ||
+                     qualifyPropertyAccessOption == NotificationOption.Warning || qualifyPropertyAccessOption == NotificationOption.Error ||
+                     qualifyMethodAccessOption == NotificationOption.Warning || qualifyMethodAccessOption == NotificationOption.Error ||
+                     qualifyEventAccessOption == NotificationOption.Warning || qualifyEventAccessOption == NotificationOption.Error);
+        }
+
+        protected abstract string GetLanguageName();
 
         protected abstract bool IsAlreadyQualifiedMemberAccess(SyntaxNode node);
 
         public override void Initialize(AnalysisContext context)
         {
-            context.RegisterOperationAction(AnalyzeOperation, OperationKind.FieldReferenceExpression, OperationKind.PropertyReferenceExpression, OperationKind.MethodBindingExpression);
+            var internalMethod = typeof(AnalysisContext).GetTypeInfo().GetDeclaredMethod("RegisterOperationActionImmutableArrayInternal");
+            internalMethod.Invoke(context, new object[] { new Action<OperationAnalysisContext>(AnalyzeOperation), ImmutableArray.Create(OperationKind.FieldReferenceExpression, OperationKind.PropertyReferenceExpression, OperationKind.MethodBindingExpression) });
         }
 
         private void AnalyzeOperation(OperationAnalysisContext context)
@@ -85,27 +86,18 @@ namespace Microsoft.CodeAnalysis.Diagnostics.QualifyMemberAccess
             var isQualificationPresent = IsAlreadyQualifiedMemberAccess(memberReference.Instance.Syntax);
             if (shouldOptionBePresent && !isQualificationPresent)
             {
-                DiagnosticDescriptor descriptor;
-                switch (optionValue.Notification.Value)
+                var severity = optionValue.Notification.Value;
+                if (severity != DiagnosticSeverity.Hidden)
                 {
-                    case DiagnosticSeverity.Hidden:
-                        descriptor = null;
-                        break;
-                    case DiagnosticSeverity.Info:
-                        descriptor = s_descriptorQualifyMemberAccessInfo;
-                        break;
-                    case DiagnosticSeverity.Warning:
-                        descriptor = s_descriptorQualifyMemberAccessWarning;
-                        break;
-                    case DiagnosticSeverity.Error:
-                        descriptor = s_descriptorQualifyMemberAccessError;
-                        break;
-                    default:
-                        throw ExceptionUtilities.Unreachable;
-                }
+                    var descriptor = new DiagnosticDescriptor(
+                        IDEDiagnosticIds.AddQualificationDiagnosticId,
+                        s_qualifyMembersTitle,
+                        s_shouldBeQualifiedMessage,
+                        DiagnosticCategory.Style,
+                        severity,
+                        isEnabledByDefault: true,
+                        customTags: DiagnosticCustomTags.Unnecessary);
 
-                if (descriptor != null)
-                {
                     context.ReportDiagnostic(Diagnostic.Create(descriptor, context.Operation.Syntax.GetLocation()));
                 }
             }

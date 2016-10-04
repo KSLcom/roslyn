@@ -30,6 +30,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
         private const string ReportDiagnosticAttributeName = "ReportDiagnostic";
         private const string ParseOptionsElementName = "ParseOptions";
         private const string LanguageVersionAttributeName = "LanguageVersion";
+        private const string FeaturesAttributeName = "Features";
         private const string DocumentationModeAttributeName = "DocumentationMode";
         private const string DocumentElementName = "Document";
         private const string AnalyzerElementName = "Analyzer";
@@ -54,7 +55,6 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
         private const string AnalyzerFullPathAttributeName = "FullPath";
         private const string AliasAttributeName = "Alias";
         private const string ProjectNameAttribute = "Name";
-        private const string FeaturesAttributeName = "Features";
 
         /// <summary>
         /// Creates a single buffer in a workspace.
@@ -130,7 +130,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.Workspaces
                 documentElements.Add(CreateDocumentElement(file, "test" + index++ + extension, parseOptions));
             }
 
-            metadataReferences = metadataReferences ?? SpecializedCollections.EmptyArray<string>();
+            metadataReferences = metadataReferences ?? Array.Empty<string>();
             foreach (var reference in metadataReferences)
             {
                 documentElements.Add(CreateMetadataReference(reference));

@@ -2048,30 +2048,33 @@ namespace x
 ";
             // TODO: this appears to be a severe regression from Dev10, which neatly reported 3 errors.
             ParseAndValidate(text, TestOptions.Regular,
-    // (7,21): error CS1031: Type expected
-    //             e = new base;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_TypeExpected, "base").WithLocation(7, 21),
-    // (7,21): error CS1526: A new expression requires (), [], or {} after type
-    //             e = new base;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_BadNewExpr, "base").WithLocation(7, 21),
-    // (7,21): error CS1002: ; expected
-    //             e = new base;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_SemicolonExpected, "base").WithLocation(7, 21),
-    // (8,21): error CS1031: Type expected
-    //             e = new this;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_TypeExpected, "this").WithLocation(8, 21),
-    // (8,21): error CS1526: A new expression requires (), [], or {} after type
-    //             e = new this;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_BadNewExpr, "this").WithLocation(8, 21),
-    // (8,21): error CS1002: ; expected
-    //             e = new this;   // CS1031, not a type
-    Diagnostic(ErrorCode.ERR_SemicolonExpected, "this").WithLocation(8, 21),
-    // (9,21): error CS8096: Tuple type must have at least two elements.
-    //             e = new ();     // CS1031, too few tuple elements
-    Diagnostic(ErrorCode.ERR_TupleTooFewElements, "()").WithLocation(9, 21),
-    // (9,23): error CS1526: A new expression requires (), [], or {} after type
-    //             e = new ();     // CS1031, too few tuple elements
-    Diagnostic(ErrorCode.ERR_BadNewExpr, ";").WithLocation(9, 23)
+                // (7,21): error CS1031: Type expected
+                //             e = new base;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_TypeExpected, "base").WithLocation(7, 21),
+                // (7,21): error CS1526: A new expression requires (), [], or {} after type
+                //             e = new base;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_BadNewExpr, "base").WithLocation(7, 21),
+                // (7,21): error CS1002: ; expected
+                //             e = new base;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_SemicolonExpected, "base").WithLocation(7, 21),
+                // (8,21): error CS1031: Type expected
+                //             e = new this;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_TypeExpected, "this").WithLocation(8, 21),
+                // (8,21): error CS1526: A new expression requires (), [], or {} after type
+                //             e = new this;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_BadNewExpr, "this").WithLocation(8, 21),
+                // (8,21): error CS1002: ; expected
+                //             e = new this;   // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_SemicolonExpected, "this").WithLocation(8, 21),
+                // (9,21): error CS8181: 'new' cannot be used with tuple type. Use a tuple literal expression instead.
+                //             e = new ();     // CS1031, too few tuple elements
+                Diagnostic(ErrorCode.ERR_NewWithTupleTypeSyntax, "()").WithLocation(9, 21),
+                // (9,21): error CS8124: Tuple must contain at least two elements.
+                //             e = new ();     // CS1031, too few tuple elements
+                Diagnostic(ErrorCode.ERR_TupleTooFewElements, "()").WithLocation(9, 21),
+                // (9,23): error CS1526: A new expression requires (), [], or {} after type
+                //             e = new ();     // CS1031, too few tuple elements
+                Diagnostic(ErrorCode.ERR_BadNewExpr, ";").WithLocation(9, 23)
              );
         }
 
@@ -2111,7 +2114,10 @@ namespace x
                 // (8,21): error CS1002: ; expected
                 //             e = new this;   // CS1031, not a type
                 Diagnostic(ErrorCode.ERR_SemicolonExpected, "this").WithLocation(8, 21),
-                // (9,21): error CS8200: Tuple must contain at least two elements.
+                // (9,21): error CS8181: 'new' cannot be used with tuple type. Use a tuple literal expression instead.
+                //             e = new ();     // CS1031, not a type
+                Diagnostic(ErrorCode.ERR_NewWithTupleTypeSyntax, "()").WithLocation(9, 21),
+                // (9,21): error CS8124: Tuple must contain at least two elements.
                 //             e = new ();     // CS1031, not a type
                 Diagnostic(ErrorCode.ERR_TupleTooFewElements, "()").WithLocation(9, 21),
                 // (9,21): error CS8059: Feature 'tuples' is not available in C# 6.  Please use language version 7 or greater.
@@ -2248,7 +2254,7 @@ class A
                 // (4,32): error CS1041: Identifier expected; 'operator' is a keyword
                 //     public static int explicit operator ()
                 Diagnostic(ErrorCode.ERR_IdentifierExpectedKW, "operator").WithArguments("", "operator").WithLocation(4, 32),
-                // (4,41): error CS8200: Tuple must contain at least two elements.
+                // (4,41): error CS8124: Tuple must contain at least two elements.
                 //     public static int explicit operator ()
                 Diagnostic(ErrorCode.ERR_TupleTooFewElements, "()").WithLocation(4, 41),
                 // (4,41): error CS8059: Feature 'tuples' is not available in C# 6.  Please use language version 7 or greater.
@@ -2416,7 +2422,7 @@ Diagnostic(ErrorCode.ERR_RbraceExpected, ")"));
 
         // TODO: extra error CS1014
         [Fact]
-        public void CS1043ERR_SemiOrLBraceExpected()
+        public void CS7887ERR_SemiOrLBraceOrArrowExpected()
         {
             var test = @"
 using System;
@@ -2434,9 +2440,9 @@ return 1;
 ";
 
             ParseAndValidate(test,
-    // (7,13): error CS1043: { or ; expected
+    // (7,13): error CS7887: { or ; or => expected
     //         get return 1;
-    Diagnostic(ErrorCode.ERR_SemiOrLBraceExpected, "return"),
+    Diagnostic(ErrorCode.ERR_SemiOrLBraceOrArrowExpected, "return"),
     // (8,2): error CS1513: } expected
     Diagnostic(ErrorCode.ERR_RbraceExpected, ""));
         }
@@ -3452,6 +3458,7 @@ class MyClass {
         }
 
         // TODO: extra error CS1001
+
         [Fact]
         public void CS1536ERR_NoVoidParameter()
         {
@@ -3469,6 +3476,23 @@ class Test
     // (4,25): error CS1001: Identifier expected
     //     public void foo(void){}
     Diagnostic(ErrorCode.ERR_IdentifierExpected, ")"));
+        }
+
+        [Fact]
+        public void CS1536ERR_NoVoidParameter_02()
+        {
+            var test = @"
+class Test
+{
+    object o = (ref void x) => {};
+}
+";
+
+            ParseAndValidate(test,
+                // (4,21): error CS1536: Invalid parameter type 'void'
+                //     object o = (ref void x) => {};
+                Diagnostic(ErrorCode.ERR_NoVoidParameter, "void").WithLocation(4, 21)
+                );
         }
 
         [Fact]
@@ -3628,7 +3652,7 @@ public class MainClass
                 // (3,32): error CS1041: Identifier expected; 'operator' is a keyword
                 //     public static int implicit operator (foo f) { return 6; }    // Error
                 Diagnostic(ErrorCode.ERR_IdentifierExpectedKW, "operator").WithArguments("", "operator").WithLocation(3, 32),
-                // (3,41): error CS8200: Tuple must contain at least two elements.
+                // (3,41): error CS8124: Tuple must contain at least two elements.
                 //     public static int implicit operator (foo f) { return 6; }    // Error
                 Diagnostic(ErrorCode.ERR_TupleTooFewElements, "(foo f)").WithLocation(3, 41),
                 // (3,41): error CS8059: Feature 'tuples' is not available in C# 6.  Please use language version 7 or greater.

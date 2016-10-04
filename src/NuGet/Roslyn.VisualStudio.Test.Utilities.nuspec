@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package >
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Roslyn.VisualStudio.Test.Utilities</id>
     <description>Utility methods used to run Roslyn Visual Studio integration tests.</description>
@@ -18,5 +18,6 @@
   </metadata>
   <files>
     <file src="Roslyn.VisualStudio.Test.Utilities.dll" target="lib\net46" />
+    <file src="Microsoft.VisualStudio.Setup.Configuration.Interop.dll" target="lib\net46" />
   </files>
 </package>

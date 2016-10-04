@@ -73,7 +73,8 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.MoveType
             string originalCode,
             string expectedDocumentName = null,
             bool expectedCodeAction = true,
-            bool compareTokens = true)
+            bool compareTokens = true,
+            IList<string> destinationDocumentContainers = null)
         {
             using (var workspace = await CreateWorkspaceFromFileAsync(originalCode, parseOptions: null, compilationOptions: null))
             {
@@ -82,10 +83,8 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.MoveType
                     Assert.True(expectedDocumentName != null, $"{nameof(expectedDocumentName)} should be present if {nameof(expectedCodeAction)} is true.");
 
                     var oldDocumentId = workspace.Documents[0].Id;
-
-                    string expectedText;
-                    IList<TextSpan> spans;
-                    MarkupTestFile.GetSpans(originalCode, out expectedText, out spans);
+                    var expectedText = workspace.Documents[0].TextBuffer.CurrentSnapshot.GetText();
+                    var spans = workspace.Documents[0].SelectedSpans;
 
                     var codeActionTitle = string.Format(RenameFileCodeActionTitle, expectedDocumentName);
 
@@ -96,6 +95,12 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.MoveType
                     // the original source document does not exist in the new solution.
                     var newSolution = oldSolutionAndNewSolution.Item2;
                     Assert.Null(newSolution.GetDocument(oldDocumentId));
+
+                    if (destinationDocumentContainers != null)
+                    {
+                        var newDocument = newSolution.Projects.First().Documents.First();
+                        Assert.Equal(destinationDocumentContainers, newDocument.Folders);
+                    }
                 }
                 else
                 {
@@ -117,7 +122,7 @@ namespace Microsoft.CodeAnalysis.Editor.UnitTests.MoveType
             bool compareTokens)
         {
             var actions = await GetCodeActionsAsync(workspace, fixAllActionEquivalenceKey: null);
-            var action = actions.Single(a => a.Title.StartsWith(operation));
+            var action = actions.Single(a => a.Title.Equals(operation, StringComparison.CurrentCulture));
             var operations = await action.GetOperationsAsync(CancellationToken.None);
 
             return await TestOperationsAsync(workspace,

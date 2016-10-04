@@ -144,6 +144,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Add missing param nodes.
+        /// </summary>
+        internal static string Add_missing_param_nodes {
+            get {
+                return ResourceManager.GetString("Add_missing_param_nodes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Add optional parameters to &apos;{0}({1})&apos;.
         /// </summary>
         internal static string Add_optional_parameters_to_0_1 {
@@ -1315,6 +1324,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Implement Abstract Class.
+        /// </summary>
+        internal static string Implement_Abstract_Class {
+            get {
+                return ResourceManager.GetString("Implement_Abstract_Class", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Implement interface.
         /// </summary>
         internal static string Implement_interface {
@@ -1401,6 +1419,15 @@ namespace Microsoft.CodeAnalysis {
         internal static string Install_0_1 {
             get {
                 return ResourceManager.GetString("Install_0_1", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Install package &apos;{0}&apos;.
+        /// </summary>
+        internal static string Install_package_0 {
+            get {
+                return ResourceManager.GetString("Install_package_0", resourceCulture);
             }
         }
         
@@ -1617,6 +1644,24 @@ namespace Microsoft.CodeAnalysis {
         internal static string location_unknown {
             get {
                 return ResourceManager.GetString("location_unknown", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Make containing scope async.
+        /// </summary>
+        internal static string Make_containing_scope_async {
+            get {
+                return ResourceManager.GetString("Make_containing_scope_async", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Make containing scope async (return Task).
+        /// </summary>
+        internal static string Make_containing_scope_async_return_Task {
+            get {
+                return ResourceManager.GetString("Make_containing_scope_async_return_Task", resourceCulture);
             }
         }
         
@@ -1904,6 +1949,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Object initialization can be simplified.
+        /// </summary>
+        internal static string Object_initialization_can_be_simplified {
+            get {
+                return ResourceManager.GetString("Object_initialization_can_be_simplified", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Only methods with a single argument, which is not an out variable declaration, can be replaced with a property..
         /// </summary>
         internal static string Only_methods_with_a_single_argument_which_is_not_an_out_variable_declaration_can_be_replaced_with_a_property {
@@ -1969,6 +2023,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to (Unknown).
+        /// </summary>
+        internal static string paren_Unknown_paren {
+            get {
+                return ResourceManager.GetString("paren_Unknown_paren", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to &lt;Pending&gt;.
         /// </summary>
         internal static string Pending {
@@ -1992,6 +2055,15 @@ namespace Microsoft.CodeAnalysis {
         internal static string Project {
             get {
                 return ResourceManager.GetString("Project", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to project .
+        /// </summary>
+        internal static string project_space {
+            get {
+                return ResourceManager.GetString("project_space", resourceCulture);
             }
         }
         
@@ -2082,6 +2154,15 @@ namespace Microsoft.CodeAnalysis {
         internal static string Remove_Suppression_0 {
             get {
                 return ResourceManager.GetString("Remove_Suppression_0", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Remove tag.
+        /// </summary>
+        internal static string Remove_tag {
+            get {
+                return ResourceManager.GetString("Remove_tag", resourceCulture);
             }
         }
         
@@ -2542,6 +2623,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to type .
+        /// </summary>
+        internal static string type_space {
+            get {
+                return ResourceManager.GetString("type_space", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Unable to create hosting process..
         /// </summary>
         internal static string Unable_to_create_hosting_process {
@@ -2795,6 +2885,15 @@ namespace Microsoft.CodeAnalysis {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Use framework type.
+        /// </summary>
+        internal static string Use_framework_type {
+            get {
+                return ResourceManager.GetString("Use_framework_type", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Use local version &apos;{0}&apos;.
         /// </summary>
         internal static string Use_local_version_0 {
@@ -2810,6 +2909,15 @@ namespace Microsoft.CodeAnalysis {
         internal static string Use_locally_installed_0_version_1_This_version_used_in_colon_2 {
             get {
                 return ResourceManager.GetString("Use_locally_installed_0_version_1_This_version_used_in_colon_2", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Use &apos;throw&apos; expression.
+        /// </summary>
+        internal static string Use_throw_expression {
+            get {
+                return ResourceManager.GetString("Use_throw_expression", resourceCulture);
             }
         }
         

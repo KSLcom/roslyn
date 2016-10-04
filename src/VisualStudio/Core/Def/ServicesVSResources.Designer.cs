@@ -344,6 +344,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Close.
+        /// </summary>
+        internal static string Close {
+            get {
+                return ResourceManager.GetString("Close", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Computing remove suppressions fix....
         /// </summary>
         internal static string Computing_remove_suppressions_fix {
@@ -358,6 +367,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         internal static string Computing_suppressions_fix {
             get {
                 return ResourceManager.GetString("Computing_suppressions_fix", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Copy to Clipboard.
+        /// </summary>
+        internal static string Copy_to_Clipboard {
+            get {
+                return ResourceManager.GetString("Copy_to_Clipboard", resourceCulture);
             }
         }
         
@@ -524,6 +542,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to --- End of inner exception stack trace ---.
+        /// </summary>
+        internal static string End_of_inner_exception_stack {
+            get {
+                return ResourceManager.GetString("End_of_inner_exception_stack", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to End position must be &gt;= start position.
         /// </summary>
         internal static string End_position_must_be_start_position {
@@ -625,6 +652,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Expression preferences:.
+        /// </summary>
+        internal static string Expression_preferences_colon {
+            get {
+                return ResourceManager.GetString("Expression_preferences_colon", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Extract Interface.
         /// </summary>
         internal static string Extract_Interface {
@@ -684,6 +720,24 @@ namespace Microsoft.VisualStudio.LanguageServices {
         internal static string First_word_upper {
             get {
                 return ResourceManager.GetString("First_word_upper", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to For locals, parameters and members.
+        /// </summary>
+        internal static string For_locals_parameters_and_members {
+            get {
+                return ResourceManager.GetString("For_locals_parameters_and_members", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to For member access expressions.
+        /// </summary>
+        internal static string For_member_access_expressions {
+            get {
+                return ResourceManager.GetString("For_member_access_expressions", resourceCulture);
             }
         }
         
@@ -783,6 +837,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         internal static string Implements_ {
             get {
                 return ResourceManager.GetString("Implements_", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to in {0}:line {1}.
+        /// </summary>
+        internal static string in_0_line_1 {
+            get {
+                return ResourceManager.GetString("in_0_line_1", resourceCulture);
             }
         }
         
@@ -1105,6 +1168,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to N/A.
+        /// </summary>
+        internal static string NotApplicable {
+            get {
+                return ResourceManager.GetString("NotApplicable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to OK.
         /// </summary>
         internal static string OK {
@@ -1209,6 +1281,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         internal static string Prefer_framework_type {
             get {
                 return ResourceManager.GetString("Prefer_framework_type", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Prefer object initializer.
+        /// </summary>
+        internal static string Prefer_object_initializer {
+            get {
+                return ResourceManager.GetString("Prefer_object_initializer", resourceCulture);
             }
         }
         
@@ -1507,6 +1588,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Suppression state is supported only for intellisense diagnostics, which are for the current solution snapshot. Switch to &apos;Intellisense&apos; diagnostics for suppression..
+        /// </summary>
+        internal static string SuppressionNotSupportedToolTip {
+            get {
+                return ResourceManager.GetString("SuppressionNotSupportedToolTip", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Symbol Kinds (can match any).
         /// </summary>
         internal static string Symbol_Kinds_can_match_any {
@@ -1686,6 +1776,15 @@ namespace Microsoft.VisualStudio.LanguageServices {
         internal static string Uninstalling_0_failed_Additional_information_colon_1 {
             get {
                 return ResourceManager.GetString("Uninstalling_0_failed_Additional_information_colon_1", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to &lt;Unknown Parameters&gt;.
+        /// </summary>
+        internal static string Unknown_parameters {
+            get {
+                return ResourceManager.GetString("Unknown_parameters", resourceCulture);
             }
         }
         

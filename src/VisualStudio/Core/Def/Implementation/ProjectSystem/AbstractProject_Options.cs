@@ -9,17 +9,53 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
 {
     internal abstract partial class AbstractProject
     {
+        #region Options
+        private string _lastParsedCompilerOptions;
         private CommandLineArguments _lastParsedCommandLineArguments;
+        private CompilationOptions _currentCompilationOptions;
+        private ParseOptions _currentParseOptions;
+
+        // internal for testing purposes.
+        internal CompilationOptions CurrentCompilationOptions => _currentCompilationOptions;
+        internal ParseOptions CurrentParseOptions => _currentParseOptions;
+
+        private void SetOptionsCore(CompilationOptions newCompilationOptions)
+        {
+            lock (_gate)
+            {
+                _currentCompilationOptions = newCompilationOptions;
+            }
+        }
+
+        private void SetOptionsCore(CompilationOptions newCompilationOptions, ParseOptions newParseOptions)
+        {
+            lock (_gate)
+            {
+                _currentCompilationOptions = newCompilationOptions;
+                _currentParseOptions = newParseOptions;
+            }
+        }
+
+        private void SetArgumentsCore(string commandLine, CommandLineArguments commandLineArguments)
+        {
+            lock (_gate)
+            {
+                _lastParsedCompilerOptions = commandLine;
+                _lastParsedCommandLineArguments = commandLineArguments;
+            }
+        }
+        #endregion
 
         /// <summary>
         /// Creates and sets new options using the last parsed command line arguments.
         /// </summary>
         protected void UpdateOptions()
         {
-            Contract.ThrowIfNull(_lastParsedCommandLineArguments);
+            CommandLineArguments lastParsedCommandLineArguments = _lastParsedCommandLineArguments;
+            Contract.ThrowIfNull(lastParsedCommandLineArguments);
 
-            var newParseOptions = CreateParseOptions(_lastParsedCommandLineArguments);
-            var newCompilationOptions = CreateCompilationOptions(_lastParsedCommandLineArguments, newParseOptions);
+            var newParseOptions = CreateParseOptions(lastParsedCommandLineArguments);
+            var newCompilationOptions = CreateCompilationOptions(lastParsedCommandLineArguments, newParseOptions);
             if (newCompilationOptions == CurrentCompilationOptions && newParseOptions == CurrentParseOptions)
             {
                 return;
@@ -29,21 +65,43 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
         }
 
         /// <summary>
-        /// Sets the given command line arguments to be the last parsed command line arguments.
+        /// Parses the given command line and sets new command line arguments.
+        /// Subsequently, creates and sets new options using the last parsed command line arguments.
         /// </summary>
-        protected void SetArguments(CommandLineArguments commandLineArguments)
+        protected CommandLineArguments SetArgumentsAndUpdateOptions(string commandLine)
         {
-            _lastParsedCommandLineArguments = commandLineArguments;
+            var commandLineArguments = SetArguments(commandLine);
+            UpdateOptions();
+            return commandLineArguments;
         }
 
         /// <summary>
-        /// Sets the given command line arguments to be the last parsed command line arguments and
-        /// creates and sets new options using these command line arguments.
+        /// Resets the last parsed command line and updates options with the same command line.
         /// </summary>
-        protected void SetArgumentsAndUpdateOptions(CommandLineArguments commandLineArguments)
+        /// <remarks>
+        /// Use this method when options can go stale due to side effects, even though the command line is identical.
+        /// For example, changes to contents of a ruleset file needs to force update the options for the same command line.
+        /// </remarks>
+        protected CommandLineArguments ResetArgumentsAndUpdateOptions()
         {
-            SetArguments(commandLineArguments);
-            UpdateOptions();            
+            // Clear last parsed command line.
+            string savedLastParsedCompilerOptions = _lastParsedCompilerOptions;
+            SetArgumentsCore(commandLine: null, commandLineArguments: null);
+
+            // Now set arguments and update options with the saved command line.
+            return SetArgumentsAndUpdateOptions(savedLastParsedCompilerOptions);
+        }
+
+        /// <summary>
+        /// Parses the given command line and sets new command line arguments.
+        /// </summary>
+        protected CommandLineArguments SetArguments(string commandLine)
+        {
+            // Command line options have changed, so update options with new parsed CommandLineArguments.
+            var splitArguments = CommandLineParser.SplitCommandLineIntoArguments(commandLine, removeHashComments: false);
+            var parsedCommandLineArguments = CommandLineParserService?.Parse(splitArguments, this.ContainingDirectoryPathOpt, isInteractive: false, sdkDirectory: null);
+            SetArgumentsCore(commandLine, parsedCommandLineArguments);
+            return parsedCommandLineArguments;
         }
 
         /// <summary>
@@ -54,8 +112,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Implementation.ProjectSystem
             this.UpdateRuleSetError(this.RuleSetFile);
 
             // Set options.
-            CurrentCompilationOptions = newCompilationOptions;
-            CurrentParseOptions = newParseOptions;
+            this.SetOptionsCore(newCompilationOptions, newParseOptions);
 
             if (_pushingChangesToWorkspaceHosts)
             {

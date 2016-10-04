@@ -1385,6 +1385,20 @@ class C1
         }
 
         [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
+        public void TestCompilationOptions_CSharp_DebugType_Portable()
+        {
+            CreateCSharpFilesWith("DebugType", "portable");
+            AssertOptions(0, options => options.Errors.Length);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
+        public void TestCompilationOptions_CSharp_DebugType_Embedded()
+        {
+            CreateCSharpFilesWith("DebugType", "embedded");
+            AssertOptions(0, options => options.Errors.Length);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
         public void TestCompilationOptions_CSharp_OutputKind_DynamicallyLinkedLibrary()
         {
             CreateCSharpFilesWith("OutputType", "Library");
@@ -1556,6 +1570,20 @@ class C1
         public void TestCompilationOptions_VisualBasic_DebugType_PDBOnly()
         {
             CreateVBFilesWith("DebugType", "pdbonly");
+            AssertVBOptions(0, options => options.Errors.Length);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
+        public void TestCompilationOptions_VisualBasic_DebugType_Portable()
+        {
+            CreateVBFilesWith("DebugType", "portable");
+            AssertVBOptions(0, options => options.Errors.Length);
+        }
+
+        [Fact, Trait(Traits.Feature, Traits.Features.Workspace)]
+        public void TestCompilationOptions_VisualBasic_DebugType_Embedded()
+        {
+            CreateVBFilesWith("DebugType", "embedded");
             AssertVBOptions(0, options => options.Errors.Length);
         }
 
@@ -2678,9 +2706,11 @@ class C1
             Assert.Equal(true, type.ToString().StartsWith("public class CSharpClass", StringComparison.Ordinal));
             Assert.NotNull(compilation);
 
-            var cacheService = new WeakReference(sol.Workspace.CurrentSolution.Services.CacheService);
-            var weakSolution = new WeakReference(sol);
-            var weakCompilation = new WeakReference(compilation);
+            // MSBuildWorkspace doesn't have a cache service
+            Assert.Null(workspace.CurrentSolution.Services.CacheService);
+
+            var weakSolution = ObjectReference.Create(sol);
+            var weakCompilation = ObjectReference.Create(compilation);
 
             sol.Workspace.Dispose();
             project = null;
@@ -2690,13 +2720,8 @@ class C1
             sol = null;
             compilation = null;
 
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-
-            Assert.False(cacheService.IsAlive);
-            Assert.False(weakSolution.IsAlive);
-            Assert.False(weakCompilation.IsAlive);
+            weakSolution.AssertReleased();
+            weakCompilation.AssertReleased();
         }
 
         [Fact, WorkItem(1088127, "http://vstfdevdiv:8080/DevDiv2/DevDiv/_workitems/edit/1088127")]
